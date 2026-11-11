@@ -102,6 +102,16 @@ test("AC1: manifest fields are valid (id, version, manifest_version, Zotero 10.0
   assert.equal(z.strict_max_version, "10.0.*");
 });
 
+// Zotero refuses to install a plugin whose manifest lacks applications.zotero.update_url
+// ("applications.zotero.update_url not provided"). Source: zotero/zotero tag 10.0.9,
+// app/scripts/fetch_xulrunner L246-254; see docs/zotero-api-notes.md (manifest row).
+test("AC1: manifest has applications.zotero.update_url (required for install)", () => {
+  const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
+  const url = manifest.applications?.zotero?.update_url;
+  assert.equal(typeof url, "string", "applications.zotero.update_url is missing");
+  assert.match(url, /^https:\/\/\S+$/, "update_url must be an https:// URL");
+});
+
 test("AC1: versions agree (XPI file name, manifest, package.json)", () => {
   const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
