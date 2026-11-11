@@ -61,3 +61,9 @@ JavaScript and Zotero plugin development — explain non-obvious concepts briefl
   independent review (reviewer) → PR → owner merges.
 - Parallelize only tasks with non-overlapping file scopes; use worktree isolation for them.
   Worktrees branch from `main`, so a task cannot build on unmerged work.
+- **Owner instructions (standing rule):** When the owner must do something, give numbered
+  steps. Each step names the exact app and window (e.g. "the dev Zotero window", "the Claude
+  Code session in Terminal"), the exact menu path or button label, and the exact text to
+  paste in a code block. Say what the owner should see when the step works. Never use "it"
+  or "this" for a file, window, app, or check — name the thing every time. Explain any term
+  the owner hasn't seen before in one sentence.
