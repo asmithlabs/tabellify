@@ -1,33 +1,47 @@
 # Development environment
 
-> Status: draft. Steps marked **(verify)** are confirmed by the architect in Feature 001 T1.
+> Status: owner-verified on Zotero 10.0.9 (macOS, ARM64), 2026-11-11. These are the steps
+> the owner actually followed.
 
 ## Golden rule
 
 Never develop against your real Zotero library. Use a **separate Zotero profile and data
-directory**. Claude Code is denied access to `~/Zotero` and the Zotero profiles folder
-(`.claude/settings.json`); you perform the profile steps below yourself.
+directory**. Claude Code is denied access to `~/Zotero`, the Zotero profiles folder, and the
+dev data directory `~/Zotero tabellify-dev` (`.claude/settings.json`); you perform the
+profile steps below yourself.
+
+A **profile** is Zotero's folder of settings and installed plugins; the **data directory**
+is where Zotero keeps the library database and attachments. The dev setup has its own of each.
 
 ## One-time setup
 
-1. **Install Zotero** 10.0.x (owner currently on 10.0.8). Note the version in Zotero → About Zotero.
-2. **Create a dev profile** — quit Zotero, then run the Profile Manager **(verify flag)**:
-   `/Applications/Zotero.app/Contents/MacOS/zotero -P`
-   Create a profile named `tabellify-dev`.
-3. **Use a separate data directory** in that profile: Settings → Advanced → Files and
-   Folders → Data Directory Location → custom: `~/Zotero tabellify-dev` (note the space; quote the path in a shell). Add a few test items
-   and a test collection (or import a small sample library). **(verify)**
-4. **Point Zotero at the source** with an extension proxy file **(verify)**: in the dev
-   profile's `extensions/` folder, create a file named exactly `tabellify@asmithlabs.com`
-   whose only content is the absolute path to this repo's `src/` folder.
-5. Start the dev profile with debugging, e.g.
-   `/Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev -ZoteroDebugText -jsdebugger`
-   **(verify flags)**
+1. **Quit Zotero** completely (Zotero → Quit Zotero).
+2. **Open the Profile Manager.** In Terminal, run:
+   ```bash
+   /Applications/Zotero.app/Contents/MacOS/zotero -P
+   ```
+   The Zotero Profile Manager window opens.
+3. **Create the dev profile.** In the Profile Manager window, click **Create Profile…** and
+   name the profile `tabellify-dev`.
+4. **Start Zotero** with the `tabellify-dev` profile selected (click **Start Zotero** in
+   the Profile Manager window).
+5. **Set the dev data directory.** In the dev Zotero window: Settings → Advanced → Files and
+   Folders → Data Directory Location → custom, and choose `~/Zotero tabellify-dev`
+   (the folder name contains a space; quote the path when typing it in a shell).
+
+## Starting the dev profile
+
+In Terminal, run:
+```bash
+/Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev
+```
 
 ## Everyday loop
 
-- Edit files in `src/` → restart Zotero (dev profile) → check Help → Debug Output Logging.
-- `npm test` before every commit; `npm run build` to produce an installable `.xpi`.
+- `npm test` before every commit; `npm run build` produces `build/tabellify-<version>.xpi`.
+- Install the build in the dev Zotero window: Tools → Plugins → Install Plugin From File…,
+  then pick the `.xpi` from `build/`.
+- Check logging in the dev Zotero window: Help → Debug Output Logging → View Output.
 - Manual checklists: `docs/testing/manual/`.
 
 ## Git basics for this repo
