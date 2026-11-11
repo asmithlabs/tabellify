@@ -38,7 +38,7 @@ JavaScript and Zotero plugin development — explain non-obvious concepts briefl
 
 ## Technical baseline (see ADRs 0002–0004, 0008)
 - Zotero compatibility: `strict_min_version` 10.0, `strict_max_version` 10.0.* (raised per release after testing).
-  Owner runs Zotero 10.0.8. Use Zotero 10 APIs (e.g. plural selection getters
+  Owner runs Zotero 10.0.9. Use Zotero 10 APIs (e.g. plural selection getters
   `getSelectedCollections()`); older-version examples online may be wrong for 10.
 - Plugin ID: `tabellify@asmithlabs.com` (permanent). Preference prefix: `extensions.tabellify.`
 - Plain modern JavaScript (ES2022+), strict mode, no bundler. JSDoc for types.
