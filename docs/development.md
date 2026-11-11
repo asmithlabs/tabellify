@@ -15,7 +15,7 @@ directory**. Claude Code is denied access to `~/Zotero` and the Zotero profiles 
    `/Applications/Zotero.app/Contents/MacOS/zotero -P`
    Create a profile named `tabellify-dev`.
 3. **Use a separate data directory** in that profile: Settings → Advanced → Files and
-   Folders → Data Directory Location → custom, e.g. `~/ZoteroDev`. Add a few test items
+   Folders → Data Directory Location → custom: `~/Zotero tabellify-dev` (note the space; quote the path in a shell). Add a few test items
    and a test collection (or import a small sample library). **(verify)**
 4. **Point Zotero at the source** with an extension proxy file **(verify)**: in the dev
    profile's `extensions/` folder, create a file named exactly `tabellify@asmithlabs.com`
