@@ -81,8 +81,8 @@ Reads nothing from the library. Writes nothing. Write guard enforces this.
 |---|---|---|---|---|
 | T0 | `git init`, first commit, create public GitHub repo, branch protection | Owner | — | — |
 | T1 | Read make-it-red source; verify UNVERIFIED APIs on Zotero 10.0.8; update api-notes; finalize this spec | architect | T0 | `docs/` |
-| T2 | manifest + logging-only bootstrap + build script → installable no-op XPI | developer | T1 | `src/manifest.json`, `src/bootstrap.js`, `scripts/`, `package.json` |
-| T3 | Menu item, workspace window, Fluent strings, full cleanup | developer | T2 | `src/tabellify.js`, `src/content/`, `src/locale/` |
+| T2 | manifest + final bootstrap (registerChrome, loads `tabellify.js`, forwards hooks) + logging-only `Tabellify` stub + build script → installable no-op XPI | developer | T1 | `src/manifest.json`, `src/bootstrap.js`, `src/tabellify.js` (stub), `scripts/`, `package.json` |
+| T3 | Menu item, workspace window, Fluent strings, full cleanup (fills in the T2 stub; does not touch `bootstrap.js`) | developer | T2 | `src/tabellify.js`, `src/content/`, `src/locale/` |
 | T4 | Static tests + manual checklist | tester | T2 | `tests/`, `docs/testing/manual/001-plugin-shell.md` |
 | T5 | CI workflow | developer | T2 | `.github/workflows/` |
 | T6 | Run tests; owner runs manual checklist | tester + owner | T3, T4 | — |
