@@ -21,8 +21,8 @@ item, a placeholder workspace window, build script, static tests, CI, manual che
 - [ ] AC1 `[manual]` + `[auto]` The built `.xpi` installs via Tools → Plugins (drag-and-drop or "Install Plugin From File"). Auto: XPI contains `manifest.json`, `bootstrap.js` at root; manifest fields valid.
 - [ ] AC2 `[manual]` After install and after restart, Debug Output shows Tabellify startup messages and no Tabellify errors.
 - [ ] AC3 `[manual]` A "Tabellify…" menu item opens the workspace window.
-- [ ] AC4 `[manual]` The window shows localized placeholder content (title + short description). Reopening focuses/opens without errors.
-- [ ] AC5 `[manual]` + `[auto]` Disabling removes the menu item and closes/cleans up the window with no errors; re-enabling restores it. Auto: register/unregister symmetry check.
+- [ ] AC4 `[manual]` The window shows localized placeholder content (title + short description). The window is single-instance: choosing the menu item while it is open focuses the existing window instead of opening a second one, without errors.
+- [ ] AC5 `[manual]` + `[auto]` Disabling removes the menu item and closes/cleans up the window with no errors; re-enabling restores it. Auto: register/unregister symmetry check, plus `shutdown` closes all `tabellify:workspace` windows **before** `chromeHandle.destruct()`, and removes the main-window `tabellify.ftl` `<link>` (in `shutdown` and `onMainWindowUnload`).
 - [ ] AC6 `[auto]` + review: `src/` contains no library-write calls (write guard passes).
 
 ## Design
@@ -53,8 +53,8 @@ owner to run in the dev profile.
 **tabellify.js (T3)**
 - Menu [MenuManager rows]: `Zotero.MenuManager.registerMenu({ menuID, pluginID, target, menus: [{ menuType: "menuitem", l10nID, onCommand }] })`.
   Keep the **returned** (namespaced) ID and pass it to `unregisterMenu(id)` in `shutdown`.
-  Zotero also auto-removes the menu on disable. Target per the menu-placement decision below
-  (Tools = `"main/menubar/tools"`).
+  Zotero also auto-removes the menu on disable. Target: `"main/menubar/tools"` (Tools menu;
+  owner decision, see Open questions).
 - Menu label strings [insertFTLIfNeeded]: MenuManager does **not** load plugin `.ftl` files.
   In `onMainWindowLoad` (and for each `Zotero.getMainWindows()` window during `startup`)
   call `window.MozXULElement.insertFTLIfNeeded("tabellify.ftl")`. Remove the
@@ -84,11 +84,13 @@ Reads nothing from the library. Writes nothing. Write guard enforces this.
 | T2 | manifest + logging-only bootstrap + build script → installable no-op XPI | developer | T1 | `src/manifest.json`, `src/bootstrap.js`, `scripts/`, `package.json` |
 | T3 | Menu item, workspace window, Fluent strings, full cleanup | developer | T2 | `src/tabellify.js`, `src/content/`, `src/locale/` |
 | T4 | Static tests + manual checklist | tester | T2 | `tests/`, `docs/testing/manual/001-plugin-shell.md` |
-| T5 | CI workflow | developer (worktree) | T2 | `.github/workflows/` |
+| T5 | CI workflow | developer | T2 | `.github/workflows/` |
 | T6 | Run tests; owner runs manual checklist | tester + owner | T3, T4 | — |
 | T7 | Independent review | reviewer | T5, T6 | read-only |
 
-T3, T4, T5 run in parallel after T2 is merged to `main`.
+**Execution (owner decision):** all tasks run **sequentially on `feat/001-plugin-shell`**,
+in order T2 → T3 → T4 → T5 → T6 → T7. No parallel worktrees for F001 (worktrees branch from
+`main` and could not build on unmerged T2 work). Owner runs runtime check R1 before T2 starts.
 
 ## Open questions
 - ~~Installed Zotero version~~ Resolved: 10.0.8 → verify all APIs against Zotero 10.
@@ -102,7 +104,8 @@ T3, T4, T5 run in parallel after T2 is merged to `main`.
   (`insertFTLIfNeeded`) and removed on unload/shutdown. This is already within T3's file
   scope (`src/tabellify.js`). It does rely on T2's `bootstrap.js` forwarding
   `onMainWindowLoad/Unload` to `Tabellify`, which matches the Design ("forwards hooks").
-- **Menu placement: NEEDS OWNER DECISION.** All three are valid MenuManager targets on 10.0.8:
+- ~~Menu placement~~ **Resolved (owner):** Tools menu (`main/menubar/tools`) for F001. A
+  collection right-click item (`main/library/collection`) is deferred to F002. Options considered:
 
   | Option | Target | Pros | Cons |
   |---|---|---|---|
@@ -114,11 +117,7 @@ T3, T4, T5 run in parallel after T2 is merged to `main`.
   simplest, always visible, and needs no context handling. Consider *adding* a collection
   context item in F002, when Tabellify actually uses the selected collection. Registering a
   second menu is one more `registerMenu` call, not a redesign.
-- Proposal (no change made): AC4 says "Reopening focuses/opens". The design above makes the
-  window single-instance (reopening focuses the existing window). Owner may want to state
-  that explicitly in AC4.
-- Proposal (no change made): AC5's auto check ("register/unregister symmetry") could also
-  assert that `shutdown` closes `tabellify:workspace` windows before `chromeHandle.destruct()`
-  and removes the main-window FTL `<link>`.
+- ~~AC4 single-instance wording~~ **Resolved (owner):** accepted and applied to AC4.
+- ~~AC5 shutdown-order / FTL-link auto check~~ **Resolved (owner):** accepted and applied to AC5.
 - `resultLevel` call syntax and tag-at-annotation-level search are UNVERIFIED (api-notes R6).
   They don't affect F001 and must be settled before F004.
