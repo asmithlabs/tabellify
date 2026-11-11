@@ -21,9 +21,9 @@ Never run these steps in your normal Zotero profile.
 
 ## Before you start
 
-**Already verified:** AC1 (install) and AC2 (startup messages) were manually verified on
-2026-11-11 with Zotero 10.0.9, on an earlier build (`94df0a1`). Re-run them here on the
-final build anyway: the build has changed since then (T3 added the menu and window).
+**Not yet verified:** AC1 (install) and AC2 (startup messages) are open. An earlier
+"verified" note was withdrawn: builds before the `update_url` fix were rejected by Zotero
+10.0.9 ("could not be installed. It may be incompatible with this version of Zotero.").
 
 **Known Zotero errors to ignore.** These come from Zotero itself, appeared before Tabellify
 was ever installed (runtime check R1), and are not Tabellify failures:
