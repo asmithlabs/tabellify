@@ -23,13 +23,24 @@ item, a placeholder workspace window, build script, static tests, CI, manual che
   header lists "extensions => Tabellify (0.1.0, extension)". (The earlier build from `94df0a1`
   was rejected because `applications.zotero.update_url` was missing.) Auto: `tests/static/xpi.test.mjs`.*
 - [ ] AC2 `[manual]` After install and after restart, Debug Output shows Tabellify startup messages and no Tabellify errors.
-  — *Not verified. Earlier "verified" note (2026-11-11) withdrawn by owner: the plugin never installed (see AC1).*
+  — *Manually verified (owner), 2026-11-11, Zotero 10.0.9, build from `7361c3c`, Debug Output
+  captured from launch with `-ZoteroDebugText`: "startup (version 0.1.0, reason 1)", "init",
+  "menu registered", "onMainWindowLoad: inserted FTL"; no Tabellify errors. Two Terminal
+  (stderr) messages not naming Tabellify (`uncaught exception: undefined`, `No such
+  JSProcessActor 'BrowserToolboxDevToolsProcess'`) are non-blocking; reviewer to assess.*
 - [ ] AC3 `[manual]` A "Tabellify…" menu item opens the workspace window.
   — *Manually verified (owner), 2026-11-11, Zotero 10.0.9, build from `7361c3c`: Tools →
   Tabellify… opened a window titled "Tabellify Workspace" with the heading "Tabellify
   Workspace" and the sentence "Your literature tables will appear here."*
 - [ ] AC4 `[manual]` The window shows localized placeholder content (title + short description). The window is single-instance: choosing the menu item while it is open focuses the existing window instead of opening a second one, without errors.
+  — *Manually verified (owner), 2026-11-11, Zotero 10.0.9: second Tools → Tabellify… logged
+  "workspace already open; focusing it" and brought the same window to the front; no second
+  window.*
 - [ ] AC5 `[manual]` + `[auto]` Disabling removes the menu item and closes/cleans up the window with no errors; re-enabling restores it. Auto: register/unregister symmetry check, plus `shutdown` closes all `tabellify:workspace` windows **before** `chromeHandle.destruct()`, and removes the main-window `tabellify.ftl` `<link>` (in `shutdown` and `onMainWindowUnload`).
+  — *Manually verified (owner), 2026-11-11, Zotero 10.0.9, twice: disable logged "shutdown
+  (reason 4)", "closing workspace window", "menu unregistered", "onMainWindowUnload: removed
+  FTL"; window closed and menu item disappeared. Re-enable logged "startup (reason 3)",
+  "init", "menu registered", "inserted FTL"; Tools → Tabellify… opened the window again.*
 - [ ] AC6 `[auto]` + review: `src/` contains no library-write calls (write guard passes).
 
 ## Design
