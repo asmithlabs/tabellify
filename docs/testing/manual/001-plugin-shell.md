@@ -137,19 +137,31 @@ Zotero errors listed in "Before you start".
 - Notes:
 
 ### Step 6: Check Debug Output after a restart
-**Where:** the dev Zotero window, then Terminal, then the Debug Output window.
-**Do:** quit the dev Zotero window (Zotero → Quit Zotero). In Terminal, start the dev
-profile again with the same command as step 3:
+**Where:** the dev Zotero window, then Terminal.
+**Do:** quit the dev Zotero window (Zotero → Quit Zotero). In Terminal, from the repository
+folder, start the dev profile with Debug Output written to a file from launch
+(`-ZoteroDebugText` is the startup flag documented at
+https://www.zotero.org/support/debug_output for Zotero before 11; `build/` is gitignored):
 ```bash
-/Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev
+/Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev -ZoteroDebugText > build/debug-1.txt
 ```
-Then in the dev Zotero window choose Help → Debug Output Logging → View Output.
+Leave Zotero running for the remaining steps; when you finish, quit it and run:
+```bash
+grep -n "Tabellify" build/debug-1.txt
+```
 **Expected:** the Debug Output window shows `Tabellify: startup (version 0.1.0, reason 1)`
 (reason 1 means "Zotero is starting up"), followed later by
 `Tabellify: onMainWindowLoad (reason 9)` and `Tabellify: onMainWindowLoad: inserted FTL`.
 No Tabellify errors.
 
-> Debug Output may have to be switched on again after a restart; see the note in step 5.
+> Logging switched on from the Help menu starts only after launch, so it misses the startup
+> lines. Use the Terminal command above for this step.
+>
+> Messages that Zotero prints to Terminal (stderr) rather than to `build/debug-1.txt`, such
+> as `uncaught exception: undefined` and `No such JSProcessActor
+> 'BrowserToolboxDevToolsProcess'`, were seen on 2026-11-11 before any Tabellify action and
+> are recorded as **non-blocking**; the F001 reviewer assesses whether Tabellify could cause
+> them.
 
 - [ ] Pass  [ ] Fail
 - Notes:
@@ -162,8 +174,7 @@ No Tabellify errors.
 **Where:** the dev Zotero window, then the Run JavaScript window.
 **Do:** in the dev Zotero window choose Tools → Developer → Run JavaScript. In the Run
 JavaScript window, leave "Run as async function" unticked, paste the code below into the
-code box, and run the code (with the Run JavaScript window's run button; the button's
-exact label is not recorded in our docs).
+code box, and click **Run** (or press Cmd-R).
 ```js
 const l10n = new Localization(["tabellify.ftl"], true);
 [
@@ -251,10 +262,10 @@ that disabling Tabellify closes the Tabellify Workspace window.
 ### Step 13: Disable Tabellify
 **Where:** the dev Zotero window, then the Plugins window.
 **Do:** in the dev Zotero window choose Tools → Plugins. In the Plugins window, find the
-Tabellify row and switch Tabellify off with the row's enable/disable control (the exact
-label or shape of that control is not recorded in our docs; describe it in Notes).
-**Expected:** the Tabellify Workspace window closes by itself. The Plugins window shows
-Tabellify as disabled. No error dialog appears.
+Tabellify row and switch Tabellify off with the unlabeled toggle switch on the right of the
+Tabellify row.
+**Expected:** the Tabellify Workspace window closes by itself. The Tabellify row title in the
+Plugins window reads "Tabellify (disabled)". No error dialog appears.
 
 - [ ] Pass  [ ] Fail
 - Notes:
@@ -304,7 +315,8 @@ window, zero workspace windows, and no FTL link in the dev Zotero window.
 ### Step 17: Re-enable Tabellify
 **Where:** the dev Zotero window, then the Plugins window.
 **Do:** in the dev Zotero window choose Tools → Plugins, and switch Tabellify back on with
-the Tabellify row's enable/disable control.
+the unlabeled toggle switch on the right of the Tabellify row (the row title loses
+"(disabled)").
 **Expected:** the Plugins window shows Tabellify as enabled. The Debug Output window
 (Help → Debug Output Logging → View Output) shows a new
 `Tabellify: startup (version 0.1.0, reason 3)` (reason 3 means "plugin enabled"),
@@ -329,6 +341,14 @@ and sentence as in step 10. No Tabellify errors in the Debug Output window.
 **Do:** close the Tabellify Workspace window (Cmd+W while the Tabellify Workspace window is
 in front). Optionally quit the dev Zotero window (Zotero → Quit Zotero).
 **Expected:** the Tabellify Workspace window closes without an error dialog.
+
+> Quitting Zotero while Tabellify is **disabled** logs no Tabellify `shutdown` line: a
+> disabled plugin has already been shut down, so there is nothing left to shut down at quit. (On 2026-11-11 the owner quit after step 13's
+> second disable, which explains the missing line in `build/debug-1.txt`.) Tabellify's
+> `shutdown` has no early return for app quit, so quitting while Tabellify is **enabled**
+> should log `Tabellify: shutdown (version 0.1.0, reason 2)` (reason 2 = app shutdown).
+> This has not been observed yet; it is checked in F002, whose design depends on quit-time
+> cleanup.
 
 - [ ] Pass  [ ] Fail
 - Notes:
@@ -357,8 +377,11 @@ Automated coverage (run by `npm test`, step 1): AC1 in `tests/static/xpi.test.mj
 These controls are not described in `docs/development.md` or `docs/zotero-api-notes.md`,
 so the steps above describe them instead of naming them. Please write the real labels in
 the Notes fields so this checklist can be corrected:
-- The run button in the Run JavaScript window (steps 7, 12, 16).
-- The enable/disable control on the Tabellify row in the Plugins window (steps 13, 17).
+- ~~The run button in the Run JavaScript window~~ Confirmed by owner: **Run** (Cmd-R),
+  next to the "Run as async function" checkbox.
+- ~~The enable/disable control in the Plugins window~~ Confirmed by owner: an unlabeled
+  toggle switch on the right of the plugin row; when off, the row title reads
+  "Tabellify (disabled)".
 - The menu item that switches Debug Output logging on (notes under steps 5 and 6).
 - Whether the Debug Output window supports Cmd+F search (step 5).
 - How the Run JavaScript window displays `undefined` inside an array (step 16).
