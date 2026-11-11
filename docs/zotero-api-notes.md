@@ -4,29 +4,125 @@ Every Zotero/Mozilla API used in `src/` must appear here with a source link and 
 versions it was verified against. Status values: **Verified (docs)**, **Verified (source)**,
 **Verified (runtime)**, **UNVERIFIED**.
 
-Primary sources:
-- Zotero 7 for Developers — https://www.zotero.org/support/dev/zotero_7_for_developers
-- Zotero 8 for Developers — https://www.zotero.org/support/dev/zotero_8_for_developers
-- Zotero 10 for Developers — https://www.zotero.org/support/dev/zotero_10_for_developers
+- **Verified (docs)**: stated in an official zotero.org developer page.
+- **Verified (source)**: read in the Zotero (or Mozilla ESR) source at the stated tag.
+- **Verified (runtime)**: the owner ran it in the Zotero dev profile (see "Runtime checks
+  for owner" below). Agents never assign this status.
 
-**Target: Zotero 10.0.x (ADR-0008).** Rows marked 7/8 were documented then; each must be
-re-confirmed on Zotero 10 in Feature 001 T1 (status → Verified (runtime) on 10.0.8).
-- Sample plugin — https://github.com/zotero/make-it-red
-- Zotero source — https://github.com/zotero/zotero
+Primary sources:
+- Zotero 7 for Developers: https://www.zotero.org/support/dev/zotero_7_for_developers
+- Zotero 8 for Developers: https://www.zotero.org/support/dev/zotero_8_for_developers
+- Zotero 10 for Developers: https://www.zotero.org/support/dev/zotero_10_for_developers
+- Zotero source at tag **`10.0.8`**: https://github.com/zotero/zotero/tree/10.0.8 (the tag
+  exists and was used for every "source" row below)
+- Mozilla platform source (Zotero 10 = Firefox 140 ESR): https://searchfox.org/mozilla-esr140/
+- Sample plugin: https://github.com/zotero/make-it-red. Read `main` @ `70f709d`
+  ("Update versions for 7.1", 2025-01-08), folder `src-2.0/`. Its manifest targets
+  **Zotero 7.0 – 7.1.\***, so it predates MenuManager and Zotero 10. It does **not** call
+  `registerChrome` and does **not** open a window. Use it only for the bootstrap shape,
+  `Zotero.debug`, and `insertFTLIfNeeded`.
+
+**Target: Zotero 10.0.x (ADR-0008).** All rows below were re-checked in Feature 001 T1
+against Zotero 10.0.8 docs/source. Line numbers marked `~` are approximate. Search the file
+for the quoted identifier.
+
+Abbreviations used in the Source column:
+`Z7`/`Z8`/`Z10` = the dev guides above; `src:` = `https://github.com/zotero/zotero/blob/10.0.8/`;
+`moz:` = `https://searchfox.org/mozilla-esr140/source/`.
 
 | API / mechanism | Purpose | Status | Versions | Source | Notes |
 |---|---|---|---|---|---|
-| `manifest.json` with `applications.zotero.{id, strict_min_version, strict_max_version, update_url}` | Plugin identity + compatibility | Verified (docs) | 7, 8 | Z7 dev guide | `applications.zotero` required for install |
-| `bootstrap.js` hooks `install/startup/shutdown/uninstall({id, version, rootURI}, reason)` | Lifecycle | Verified (docs) | 7, 8 | Z7 dev guide | `shutdown` must remove all functionality |
-| `onMainWindowLoad({window})` / `onMainWindowUnload({window})` | Per-window UI setup/teardown | Verified (docs) | 7, 8 | Z7 dev guide | Main window can reopen during a session |
-| `amIAddonManagerStartup.registerChrome(manifestURI, entries)` → handle; `handle.destruct()` in shutdown | `chrome://tabellify/…` URLs | Verified (docs) | 7, 8 | Z7 dev guide | Exact acquisition code: copy from make-it-red (T1) |
-| Fluent `.ftl` in `locale/<locale>/` (auto-registered); `<link rel="localization">`; `MozXULElement.insertFTLIfNeeded()` | Localization | Verified (docs) | 7, 8 | Z7 dev guide | Prefix IDs `tabellify-` |
-| `Zotero.MenuManager.registerMenu({menuID, pluginID, target, menus})` / `unregisterMenu()` | Menu items | Verified (docs) | 8+ | Z8 dev guide | Auto-removed on disable. **Exact `target` ID for Tools menu: UNVERIFIED** (T1) |
-| `Zotero.PreferencePanes.register({pluginID, src, scripts, stylesheets})` | Settings pane | Verified (docs) | 7, 8 | Z7 dev guide | Not used in F001 |
-| `Zotero.ItemPaneManager.registerSection({paneID, pluginID, header, sidenav, onRender…})` | Item pane section | Verified (docs) | 7, 8 | Z7 dev guide | Candidate for tag monitor (F004) |
-| Opening a chrome XHTML window (`window.openDialog` / `Services.ww.openWindow`) | Workspace window | **UNVERIFIED** | — | — | T1: confirm pattern used by Zotero code/plugins on Zotero 8/9 |
-| `Zotero.debug(msg)` | Debug logging | **UNVERIFIED** | — | — | Used by make-it-red; confirm in T1 |
-| `ZoteroPane.getSelectedCollections()` / `getSelectedLibraryIDs()` / `getCollectionTreeRows()` | Read current selection (F002) | Verified (docs) | 10 | Z10 dev guide | Singular getters (`getSelectedCollection()` etc.) **throw** in 10 |
-| `Zotero.ftl.addResourceIds()` | Register plugin Fluent strings | Verified (docs) | 10 | Z10 dev guide | Plugin strings consolidated in 10; T1 decides usage |
-| MenuManager in `main/library/collection` & `main/library/item` contexts: use `collectionTreeRows` | Context menus | Verified (docs) | 10 | Z10 dev guide | Reading `collectionTreeRow` throws; MenuManager removes menu DOM on shutdown |
-| Search conditions for annotation properties and tag counts | Tag monitor / annotation queries (F004–F005) | Verified (docs, existence only) | 10 | Z10 dev guide | Exact condition names UNVERIFIED |
+| `manifest.json` with `manifest_version: 2`, `applications.zotero.{id, strict_min_version, strict_max_version, update_url}` | Plugin identity + compatibility | Verified (docs) | 10.0.8 | Z7 guide ("manifest.json"); Z10 guide ("Updating plugin compatibility": set `strict_max_version` to `10.0.*`); make-it-red `src-2.0/manifest.json` (shape only) | `applications.zotero` required for install. Final proof is AC1 (owner installs the XPI) |
+| `bootstrap.js` hooks `install/startup/shutdown/uninstall(params, reason)`; `params = {id, version, rootURI}` (`rootURI` is a string ending in `/`) | Lifecycle | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/plugins.js` (`_callMethod`, `params = {id, version, rootURI: addon.getResourceURI().spec}`); Z7 guide "Plugin Lifecycle" | `shutdown` must remove all functionality. Reason constants (same file, `REASONS`, ~L41–52): `APP_STARTUP 1`, `APP_SHUTDOWN 2`, `ADDON_ENABLE 3`, `ADDON_DISABLE 4`, `ADDON_INSTALL 5`, `ADDON_UNINSTALL 6`, `ADDON_UPGRADE 7`, `ADDON_DOWNGRADE 8`, `MAIN_WINDOW_LOAD 9`, `MAIN_WINDOW_UNLOAD 10` |
+| `onMainWindowLoad({window})` / `onMainWindowUnload({window})` | Per-window UI setup/teardown | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/plugins.js` (window listener merges `{window: domWindow}` into params); Z7 guide "Window Hooks" | Main window can reopen during a session. Quirk: the unload hook currently receives reason `MAIN_WINDOW_LOAD` (9), not 10, so don't branch on the reason in the unload hook |
+| `Cc["@mozilla.org/addons/addon-manager-startup;1"].getService(Ci.amIAddonManagerStartup)`; `aomStartup.registerChrome(Services.io.newURI(rootURI + "manifest.json"), entries)` → handle; `handle.destruct()` in `shutdown` | `chrome://tabellify/…` URLs | Verified (docs + Mozilla source) | 10.0.8 | Z7 guide ("chrome.manifest → runtime chrome registration"); moz:`toolkit/mozapps/extensions/amIAddonManagerStartup.idl` (`nsIJSRAIIHelper registerChrome(in nsIURI manifestURI, in jsval entries)`); moz:`toolkit/mozapps/extensions/AddonManagerStartup.cpp` (`RegisterChrome` accepts `"override"`, `"content"`, `"locale"`) | Not in make-it-red (it uses `rootURI` paths). Entry for Tabellify: `["content", "tabellify", "content/"]` (relative to `manifest.json`, i.e. `src/content/`). The IDL comment lists only locale/override, but the C++ also accepts `"content"`. Zotero's Z7 example uses it. Call `destruct()` then set handle to `null` |
+| Plugin `.ftl` auto-registration from `[plugin root]/locale/<locale>/*.ftl` | Localization source | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/plugins.js` (`async function registerLocales(addon)`, JSDoc above it; `PLUGIN_L10N_SOURCE_NAME = "zotero-plugins"`, `PLUGIN_L10N_PRE_PATH = "zotero-plugins:{locale}/"`) | Registered on startup/install/enable; unregistered by Zotero on disable/uninstall (`unregisterLocales`), so the plugin does not clean this up itself. **All plugins share one source keyed by file name**, so the file name must be unique: use `tabellify.ftl`, never a generic name. Missing locales fall back (exact → same language → en-US → first) |
+| `<link rel="localization" href="tabellify.ftl"/>` (XUL docs: `<html:link …/>`) in a plugin's own XHTML window | Strings in the workspace window | Verified (source + docs) | 10.0.8 | src:`chrome/content/zotero/xpcom/plugins.js` JSDoc of `registerLocales`: "A Fluent file located at [plugin root]/locale/en-US/make-it-red.ftl could be included in an XHTML file as `<link rel="localization" href="make-it-red.ftl"/>`"; Zotero's own windows do the same, e.g. src:`chrome/content/zotero/preferences/preferences.xhtml` (`<html:link rel="localization" href="zotero.ftl"/>` in `<linkset>`); Z7 guide "Using a Fluent File in a Document" | **No `Zotero.ftl.addResourceIds()` needed for the window.** In window JS use `document.l10n` |
+| `window.MozXULElement.insertFTLIfNeeded("tabellify.ftl")` | Make menu-label strings available in the **main** window | Verified (docs + Mozilla source) | 10.0.8 | Z7 guide ("Using a Fluent File in a Document"); moz:`toolkit/content/customElements.js` (`static insertFTLIfNeeded(path)`: appends `<link rel="localization" href=path>` to `<head>`/`<linkset>`, skips if already present); make-it-red `src-2.0/make-it-red.js` (insert in add-to-window, `doc.querySelector('[href="make-it-red.ftl"]').remove()` on remove) | **Required for the menu label.** MenuManager only sets `data-l10n-id` on the menu item (src:`…/pluginAPI/menuManager.js`, `menuElem.dataset.l10nId = menuData.l10nID`). Its `l10nFiles` option is commented out. Zotero's main window (src:`chrome/content/zotero/zoteroPane.xhtml`) links only `browser/menubar.ftl`, `browser/browserSets.ftl`, `zotero.ftl`, `reader.ftl`. So call this in `onMainWindowLoad` and remove the `<link>` in `onMainWindowUnload` and for every open main window in `shutdown` (lifecycle symmetry). Use optional chaining on removal (`?.remove()`); make-it-red's version throws if the link is missing |
+| `Zotero.ftl` (a Mozilla `Localization`, created as `new Localization([...], true)`), `.addResourceIds([...])` / `.removeResourceIds([...])` | Plugin strings formatted from JS outside a document (e.g. undo labels, `Zotero.ftl.formatValueSync`) | Verified (source + docs) | 10.0.8 | src:`chrome/content/zotero/xpcom/intl.js` (`Zotero.ftl = ftl;` ~L94; comment "added later with Zotero.ftl.addResourceIds(['...'])" ~L91); Z10 guide "Undo/redo" | `addResourceIds`/`removeResourceIds` are standard methods of Mozilla's `Localization`, not defined by Zotero. **Not needed in F001.** If used later, `removeResourceIds` in `shutdown` |
+| `Zotero.MenuManager.registerMenu(options)` → `string \| false`; `Zotero.MenuManager.unregisterMenu(id)` → `boolean` | Menu items | Verified (source + docs) | 10.0.8 | src:[`…/pluginAPI/menuManager.js#L821`](https://github.com/zotero/zotero/blob/10.0.8/chrome/content/zotero/xpcom/pluginAPI/menuManager.js#L821) (`registerMenu(options)`), [`#L830`](https://github.com/zotero/zotero/blob/10.0.8/chrome/content/zotero/xpcom/pluginAPI/menuManager.js#L830) (`unregisterMenu(paneID)`, which actually takes the menu ID); top-level options [`#L189-L212`](https://github.com/zotero/zotero/blob/10.0.8/chrome/content/zotero/xpcom/pluginAPI/menuManager.js#L189-L212); Z8 guide "Zotero.MenuManager" | Options: `{menuID: string, pluginID: string, target: string (required, must be in VALID_TARGETS), menus: array (required)}`. **The returned ID is namespaced** (`CSS.escape(pluginID + "-" + menuID)`, src:`…/pluginAPI/pluginAPIBase.mjs` `_namespacedMainKey`). Store the return value and pass that to `unregisterMenu`, not the raw `menuID`. Auto-cleanup: `register()` adds a `Zotero.Plugins.addObserver({shutdown})` that calls `_unregisterByPluginID` (src:`…/pluginAPI/pluginAPIBase.mjs`). Since Zotero 10 this also removes the menu DOM (Z10 guide; `menuManager.js` `_unregisterByPluginID`). Calling `unregisterMenu` in `shutdown` anyway is harmless and keeps symmetry explicit |
+| MenuManager menu entry fields | Menu item shape | Verified (source) | 10.0.8 | src:`…/pluginAPI/menuManager.js` `_menusTypeDefinition` (~L95–180); Z8 guide | `menuType` (required: `"menuitem"` \| `"separator"` \| `"submenu"`), `l10nID`, `l10nArgs` (string; object form deprecated), `icon`, `darkIcon`, `enableForTabTypes` (string[]), `onShowing(event, context)`, `onShown`, `onHiding`, `onHidden`, `onCommand(event, context)`, `menus` (required for submenus). The FTL message must set **`.label`** (Z8 guide), e.g. `tabellify-menu-open =` / `    .label = Tabellify…`. `context` always has `menuElem`, `setL10nArgs()`, `setEnabled()`, `setVisible()`, `setIcon()` (src: `defaultContext`) |
+| MenuManager targets | Menu placement | Verified (source + docs) | 10.0.8 | src:[`…/pluginAPI/menuManager.js#L30-L60`](https://github.com/zotero/zotero/blob/10.0.8/chrome/content/zotero/xpcom/pluginAPI/menuManager.js#L30-L60) (`VALID_TARGETS`); Z8 guide "Targets" | Tools menu: **`"main/menubar/tools"`**. View menu: `"main/menubar/view"`. Collection context menu: `"main/library/collection"`. Others: `main/menubar/{file,edit,go,help}`, `main/library/{item,addAttachment,addNote}`, `main/tab`, `reader/menubar/{file,edit,view,go,window}`, `itemPane/info/row`, `notesPane/{addItemNote,addStandaloneNote}`, `sidenav/locate`. Wiring: src:`chrome/content/zotero/standalone/standalone.js` `onToolsMenuOpen` → `onUpdateCustomMenus(event, 'tools')` → `Zotero.MenuManager.updateMenuPopup(popup, \`main/menubar/${type}\`, …)` (~L567–599). `main/library/collection` and `main/library/item` are "grouped" targets (overflow moves into a submenu) |
+| MenuManager in `main/library/collection` & `main/library/item` contexts: use `collectionTreeRows` | Context menus | Verified (docs) | 10.0.8 | Z10 guide "Menu contexts" | Reading `collectionTreeRow` throws |
+| Open chrome window: `Zotero.getMainWindow().openDialog(url, name, features, ...args)`; fallback `Services.ww.openWindow(null, url, name, features, args)` | Workspace window | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/utilities_internal.js` `openPreferences` (~L1000–1050): uses `mainWindow.openDialog(...)` if a main window exists, else `Services.ww.openWindow(null, ...)`; features `'chrome,titlebar,centerscreen,resizable=yes'`; moz:`toolkit/components/windowwatcher/nsIWindowWatcher.idl` (`openWindow(aParent, aUrl, aName, aFeatures, aArguments)`) | Recommended for Tabellify: `win.openDialog("chrome://tabellify/content/workspace.xhtml", "tabellify-workspace", "chrome,titlebar,centerscreen,resizable=yes,dialog=no")`. **`dialog=no`** is an addition (standard Mozilla feature flag, so it gets a normal window with minimize/maximize, not a dialog). Exact window behaviour needs a runtime check (R3). In F001 the menu runs only from the main window, so the `Services.ww` fallback is optional. If used, `Services.ww` needs `wrappedJSObject` on the args object (as in `openPreferences`) |
+| Find/focus existing window: `windowtype` attribute on the root `<window>`; `Services.wm.getMostRecentWindow(type)` / `Services.wm.getEnumerator(type)`; `win.focus()` | Single workspace instance; reopen focuses | Verified (source) | 10.0.8 | src:`chrome/content/zotero/preferences/preferences.xhtml` (`<window … windowtype="zotero:pref">`); src:`…/utilities_internal.js` `openPreferences` (`wm.getEnumerator("zotero:pref")` → `win.focus()`); moz:`xpfe/appshell/nsIWindowMediator.idl` (`getEnumerator(in wstring aWindowType)`, `getMostRecentWindow(in wstring aWindowType)`: "type" is the `windowtype` attribute of the `<window>` element) | Use `windowtype="tabellify:workspace"`. Enumerated windows can already be `.closed`. Check `win && !win.closed` before `focus()` |
+| Close plugin windows on shutdown: iterate `Services.wm.getEnumerator("tabellify:workspace")` and call `win.close()` | AC5 cleanup | Verified (source, by composition) | 10.0.8 | moz:`xpfe/appshell/nsIWindowMediator.idl` (`getEnumerator`); `window.close()` is standard DOM | No Zotero example closes a plugin window on shutdown. The pattern combines verified pieces. Do this **before** `chromeHandle.destruct()` (the window's `chrome://` URL stops resolving after destruct). Confirm with R3 |
+| `Zotero.debug(message, level, maxDepth, stack)` | Debug logging | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/zotero.js` (`function debug(message, level, maxDepth, stack)` ~L575–590, exposed as `this.debug = debug`; forwards to `Zotero.Debug.log`); make-it-red `src-2.0/bootstrap.js` (`Zotero.debug("Make It Red: " + msg)`) | `level` defaults to 3. Prefix messages `"Tabellify: "`. For errors, `Zotero.logError(err)` (same file, ~L640) logs to the Error Console and the debug output |
+| `Zotero.getMainWindow()` / `Zotero.getMainWindows()` | Reach the main window(s) | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/zotero.js` (~L100–115; `getMostRecentWindow("navigator:browser")` / array from `getEnumerator("navigator:browser")`) | Used to insert/remove the FTL link on every open main window during `startup`/`shutdown` |
+| `Services.scriptloader.loadSubScript(rootURI + "tabellify.js")` | Load main script from bootstrap | Verified (source: sample) | 10.0.8 (pattern), sample targets 7.x | make-it-red `src-2.0/bootstrap.js`; Z7 guide | Mozilla API, unchanged on ESR 140 |
+| `Zotero.PreferencePanes.register({pluginID, src, id?, parent?, label?, image?, scripts?, stylesheets?, helpURL?})` (async); `unregister(id)` | Settings pane | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/preferencePanes.js` (`register: async function (options)` ~L132, `unregister: function (id)` ~L175); Z7 guide | Not used in F001 |
+| `Zotero.ItemPaneManager.registerSection({paneID, pluginID, header:{l10nID, icon}, sidenav:{l10nID, icon}, onRender, bodyXHTML?, onInit?, onDestroy?, onItemChange?, onAsyncRender?, onToggle?, sectionButtons?})`; `unregisterSection(paneID)` | Item pane section | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/pluginAPI/itemPaneManager.js` (option types ~L197–266; `registerSection` ~L575; `unregisterSection` ~L600); Z7 guide | Required: `paneID`, `pluginID`, `header`, `sidenav`, `onRender`. Candidate for tag monitor (F004) |
+| `ZoteroPane.getSelectedCollections()` / `getSelectedLibraryIDs()` / `getCollectionTreeRows()` / `getSelectedSavedSearches()` | Read current selection (F002) | Verified (docs) | 10.0.8 | Z10 guide "Multiple selection in the collections list" | Singular getters (`getSelectedCollection()` etc.) **throw** in 10. Collections and saved searches can be selected together. Not used in F001 |
+| Search conditions: annotation properties | Annotation queries (F004–F005) | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/data/searchConditions.js` (~L760–830) | `annotationText` (contains/doesNotContain), `annotationComment` (contains/doesNotContain), `annotationType` (is/isNot), `annotationColor` (is/isNot), `annotationAuthor` (is/isNot; group libraries only). All `level: 'annotation'`. There is **no** `annotationTag` condition; use `tag` with `resultLevel` `annotation` (needs a runtime check, R6) |
+| Search conditions: counts | Tag monitor (F004–F005) | Verified (source) | 10.0.8 | src:`…/data/searchConditions.js` (`numTags` ~L445, `numNotes` ~L466, `numAttachments` ~L489, `numAnnotations` ~L511) | All support `is`, `isNot`, `isLessThan`, `isGreaterThan`. `numTags` works at every level (item/attachment/note/annotation). `numAnnotations` at item/attachment. There is no "how many items use tag X" condition. `resultLevel` uses the level **as the operator** (`item` \| `attachment` \| `note` \| `annotation`, no value), and is placed inside a condition group like `joinMode`. Exact `addCondition` call for it is **UNVERIFIED** (see R6). Operators `isEmpty`/`isNotEmpty` exist (on creator/field-type conditions). `Zotero.SearchConditions.get(name)` / `.hasOperator(name, op)` are public. `Search#addCondition()` throws if the legacy `required` argument is truthy (Z10 guide) |
+
+## Runtime checks for owner
+
+Run these in the **dev profile only**: Tools → Developer → Run JavaScript. Tick "Run as
+async function" for snippets that use `await`. None of them write to the library. After a
+check passes, change the matching row's status to **Verified (runtime)** (owner only).
+
+**R1: Core APIs exist (run any time, before T2).** Expect `true` for each key.
+```js
+({
+  debug: typeof Zotero.debug === "function",
+  registerMenu: typeof Zotero.MenuManager?.registerMenu === "function",
+  unregisterMenu: typeof Zotero.MenuManager?.unregisterMenu === "function",
+  getMainWindow: typeof Zotero.getMainWindow === "function",
+  insertFTL: typeof Zotero.getMainWindow().MozXULElement?.insertFTLIfNeeded === "function",
+  aom: typeof Cc["@mozilla.org/addons/addon-manager-startup;1"]
+         .getService(Ci.amIAddonManagerStartup).registerChrome === "function",
+  version: Zotero.version,
+})
+```
+Also run `Zotero.debug("Tabellify probe")`, then Help → Debug Output Logging → View Output,
+and confirm the line appears.
+
+**R2: Fluent and menu label (after T3 is installed).** Expect a string, not `null`/`undefined`.
+Replace the message ID with the real one from `tabellify.ftl`.
+```js
+const l10n = new Localization(["tabellify.ftl"], true);
+[
+  l10n.formatValueSync("tabellify-workspace-title"),
+  !!Zotero.getMainWindow().document.querySelector('link[href="tabellify.ftl"]'),
+]
+```
+Then open the Tools menu and confirm "Tabellify…" shows a real label, not a blank or raw ID.
+
+**R3: Window open, focus, close (after T3).** Open the workspace from the menu twice: there
+must be only one window, and the second click must focus it. Then run:
+```js
+Services.wm.getMostRecentWindow("tabellify:workspace")?.location.href
+```
+Expect `chrome://tabellify/content/workspace.xhtml`. Then disable Tabellify (Tools →
+Plugins) and rerun. Expect `undefined`, the window closed, no Tabellify errors in
+Debug Output, and the menu item and the FTL `<link>` gone (rerun the second line of R2: `false`).
+
+**R4: Unload-hook reason (optional, after T2).** Temporarily log `reason` in
+`onMainWindowUnload`. Close and reopen the main window (macOS: close window, click Dock icon).
+Note whether it prints 9 or 10. Code must not depend on it.
+
+**R5: Search condition names (before F004).**
+```js
+["annotationText","annotationComment","annotationType","annotationColor",
+ "annotationAuthor","numTags","numAnnotations","numNotes","numAttachments","resultLevel"]
+  .map(n => [n, !!Zotero.SearchConditions.get(n)])
+```
+Expect `true` for all.
+
+**R6: Tag + annotation result level (before F004).** Read-only search in a test library.
+Replace `"SomeTag"`.
+```js
+const s = new Zotero.Search();
+s.libraryID = Zotero.Libraries.userLibraryID;
+s.addCondition("resultLevel", "annotation");   // the level is the OPERATOR (see searchConditions.js)
+s.addCondition("tag", "is", "SomeTag");
+(await s.search()).length
+```
+Expect the number of annotations carrying that tag. The search object is never saved, so
+nothing is written. **The call syntax is UNVERIFIED.** The source comment says the level
+"rides in the operator, as with 'joinMode'" and is meant to sit *inside a condition group*
+(`groupStart` … `groupEnd`). Whether a top-level `resultLevel` makes the whole search return
+annotations has not been confirmed. If the result looks wrong, read
+`Zotero.Search.prototype.addCondition` and the search SQL builder in
+`chrome/content/zotero/xpcom/data/search.js` at tag 10.0.8 before F004.
