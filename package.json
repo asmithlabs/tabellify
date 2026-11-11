@@ -1,0 +1,15 @@
+{
+  "name": "tabellify",
+  "version": "0.1.0",
+  "description": "Zotero plugin that turns curated tags into structured literature tables.",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=22.2"
+  },
+  "scripts": {
+    "build": "node scripts/build-xpi.mjs",
+    "test": "node --test"
+  }
+}
