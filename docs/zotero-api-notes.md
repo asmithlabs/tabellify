@@ -55,10 +55,10 @@ Abbreviations used in the Source column:
 | `Zotero.getMainWindow()` / `Zotero.getMainWindows()` | Reach the main window(s) | Verified (runtime) | 10.0.8 (source); 10.0.9 (runtime) | src:`chrome/content/zotero/xpcom/zotero.js` (~L100–115; `getMostRecentWindow("navigator:browser")` / array from `getEnumerator("navigator:browser")`) | R1 (owner, 10.0.9, 2026-11-11): exists as a function. F001 manual run (owner, 10.0.9, 2026-11-11, build `7361c3c`; spec AC2–AC5): used successfully. `getMainWindow()` supplied the parent for `openDialog` (the workspace window opened from Tools → Tabellify…), and the main-window FTL insert/remove log lines appeared on startup/disable/re-enable (the loops over `getMainWindows()` in `init`/`shutdown` ran without errors). The run did not record how many main windows were open, so iterating over more than one main window has not been specifically tested. Removal of the FTL `<link>` from the DOM is not yet independently confirmed (manual checklist step 16, pending). Used to insert/remove the FTL link on every open main window during `startup`/`shutdown` |
 | `Services.scriptloader.loadSubScript(rootURI + "tabellify.js")` | Load main script from bootstrap | Verified (source: sample) | 10.0.8 (pattern), sample targets 7.x | make-it-red `src-2.0/bootstrap.js`; Z7 guide | Mozilla API, unchanged on ESR 140 |
 | `Zotero.PreferencePanes.register({pluginID, src, id?, parent?, label?, image?, scripts?, stylesheets?, helpURL?})` (async); `unregister(id)` | Settings pane | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/preferencePanes.js` (`register: async function (options)` ~L132, `unregister: function (id)` ~L175); Z7 guide | Not used in F001 |
-| `Zotero.ItemPaneManager.registerSection({paneID, pluginID, header:{l10nID, icon}, sidenav:{l10nID, icon}, onRender, bodyXHTML?, onInit?, onDestroy?, onItemChange?, onAsyncRender?, onToggle?, sectionButtons?})`; `unregisterSection(paneID)` | Item pane section | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/pluginAPI/itemPaneManager.js` (option types ~L197–266; `registerSection` ~L575; `unregisterSection` ~L600); Z7 guide | Required: `paneID`, `pluginID`, `header`, `sidenav`, `onRender`. Candidate for tag monitor (F004) |
-| `ZoteroPane.getSelectedCollections()` / `getSelectedLibraryIDs()` / `getCollectionTreeRows()` / `getSelectedSavedSearches()` | Read current selection (F002) | Verified (docs) | 10.0.8 | Z10 guide "Multiple selection in the collections list" | Singular getters (`getSelectedCollection()` etc.) **throw** in 10. Collections and saved searches can be selected together. Not used in F001 |
-| Search conditions: annotation properties | Annotation queries (F004–F005) | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/data/searchConditions.js` (~L760–830) | `annotationText` (contains/doesNotContain), `annotationComment` (contains/doesNotContain), `annotationType` (is/isNot), `annotationColor` (is/isNot), `annotationAuthor` (is/isNot; group libraries only). All `level: 'annotation'`. There is **no** `annotationTag` condition; use `tag` with `resultLevel` `annotation` (needs a runtime check, R6) |
-| Search conditions: counts | Tag monitor (F004–F005) | Verified (source) | 10.0.8 | src:`…/data/searchConditions.js` (`numTags` ~L445, `numNotes` ~L466, `numAttachments` ~L489, `numAnnotations` ~L511) | All support `is`, `isNot`, `isLessThan`, `isGreaterThan`. `numTags` works at every level (item/attachment/note/annotation). `numAnnotations` at item/attachment. There is no "how many items use tag X" condition. `resultLevel` uses the level **as the operator** (`item` \| `attachment` \| `note` \| `annotation`, no value), and is placed inside a condition group like `joinMode`. Exact `addCondition` call for it is **UNVERIFIED** (see R6). Operators `isEmpty`/`isNotEmpty` exist (on creator/field-type conditions). `Zotero.SearchConditions.get(name)` / `.hasOperator(name, op)` are public. `Search#addCondition()` throws if the legacy `required` argument is truthy (Z10 guide) |
+| `Zotero.ItemPaneManager.registerSection({paneID, pluginID, header:{l10nID, icon}, sidenav:{l10nID, icon}, onRender, bodyXHTML?, onInit?, onDestroy?, onItemChange?, onAsyncRender?, onToggle?, sectionButtons?})`; `unregisterSection(paneID)` | Item pane section | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/pluginAPI/itemPaneManager.js` (option types ~L197–266; `registerSection` ~L575; `unregisterSection` ~L600); Z7 guide | Required: `paneID`, `pluginID`, `header`, `sidenav`, `onRender`. Candidate for tag monitor (F005) |
+| `ZoteroPane.getSelectedCollections()` / `getSelectedLibraryIDs()` / `getCollectionTreeRows()` / `getSelectedSavedSearches()` | Read current selection (F003) | Verified (docs) | 10.0.8 | Z10 guide "Multiple selection in the collections list" | Singular getters (`getSelectedCollection()` etc.) **throw** in 10. Collections and saved searches can be selected together. Not used in F001 |
+| Search conditions: annotation properties | Annotation queries (F005–F006) | Verified (source) | 10.0.8 | src:`chrome/content/zotero/xpcom/data/searchConditions.js` (~L760–830) | `annotationText` (contains/doesNotContain), `annotationComment` (contains/doesNotContain), `annotationType` (is/isNot), `annotationColor` (is/isNot), `annotationAuthor` (is/isNot; group libraries only). All `level: 'annotation'`. There is **no** `annotationTag` condition; use `tag` with `resultLevel` `annotation` (needs a runtime check, R6) |
+| Search conditions: counts | Tag monitor (F005–F006) | Verified (source) | 10.0.8 | src:`…/data/searchConditions.js` (`numTags` ~L445, `numNotes` ~L466, `numAttachments` ~L489, `numAnnotations` ~L511) | All support `is`, `isNot`, `isLessThan`, `isGreaterThan`. `numTags` works at every level (item/attachment/note/annotation). `numAnnotations` at item/attachment. There is no "how many items use tag X" condition. `resultLevel` uses the level **as the operator** (`item` \| `attachment` \| `note` \| `annotation`, no value), and is placed inside a condition group like `joinMode`. Exact `addCondition` call for it is **UNVERIFIED** (see R6). Operators `isEmpty`/`isNotEmpty` exist (on creator/field-type conditions). `Zotero.SearchConditions.get(name)` / `.hasOperator(name, op)` are public. `Search#addCondition()` throws if the legacy `required` argument is truthy (Z10 guide) |
 
 ## Runtime checks for owner
 
@@ -130,7 +130,7 @@ open.*
 `onMainWindowUnload`. Close and reopen the main window (macOS: close window, click Dock icon).
 Note whether it prints 9 or 10. Code must not depend on it.
 
-**R5: Search condition names (before F004).**
+**R5: Search condition names (before F005).**
 ```js
 ["annotationText","annotationComment","annotationType","annotationColor",
  "annotationAuthor","numTags","numAnnotations","numNotes","numAttachments","resultLevel"]
@@ -138,7 +138,7 @@ Note whether it prints 9 or 10. Code must not depend on it.
 ```
 Expect `true` for all.
 
-**R6: Tag + annotation result level (before F004).** Read-only search in a test library.
+**R6: Tag + annotation result level (before F005).** Read-only search in a test library.
 Replace `"SomeTag"`.
 ```js
 const s = new Zotero.Search();
@@ -153,4 +153,4 @@ nothing is written. **The call syntax is UNVERIFIED.** The source comment says t
 (`groupStart` … `groupEnd`). Whether a top-level `resultLevel` makes the whole search return
 annotations has not been confirmed. If the result looks wrong, read
 `Zotero.Search.prototype.addCondition` and the search SQL builder in
-`chrome/content/zotero/xpcom/data/search.js` at tag 10.0.8 before F004.
+`chrome/content/zotero/xpcom/data/search.js` at tag 10.0.8 before F005.

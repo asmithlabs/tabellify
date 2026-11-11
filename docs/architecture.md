@@ -41,7 +41,7 @@ src/
 ```
 
 Layering rule: `modules/` knows nothing about Zotero. A future thin **data-access layer**
-(F002) will be the only code that reads from `Zotero.*`; UI talks to it, and it hands plain
+(F003) will be the only code that reads from `Zotero.*`; UI talks to it, and it hands plain
 objects to `modules/`. This keeps most logic testable in Node and isolates Zotero API
 churn to one place.
 
@@ -52,13 +52,13 @@ churn to one place.
 | Menu item ("Tabellify…") | Open the workspace | `Zotero.MenuManager.registerMenu()` (Zotero 8+) | F001 |
 | Workspace window | Planner, builder, saved tables | chrome registration + XHTML window | F001 (placeholder) |
 | Settings pane | Possibly codebook management (sketch) | `Zotero.PreferencePanes.register()` | Pending Q3 |
-| Item pane / reader section | Tag monitor | `Zotero.ItemPaneManager.registerSection()` | F004, to verify |
+| Item pane / reader section | Tag monitor | `Zotero.ItemPaneManager.registerSection()` | F005, to verify |
 
 ## 5. Data
 
-- **Reads:** collections, items, tags (and possibly annotations) — read-only (F002+).
+- **Reads:** collections, items, tags (and possibly annotations) — read-only (F003+).
 - **Tabellify-owned data:** codebooks and table configurations. Storage format is an open
-  ADR for F003/F006 (candidates: JSON file in the Zotero data directory's plugin area,
+  ADR for F004/F007 (candidates: JSON file in the Zotero data directory's plugin area,
   Zotero prefs for small settings, a separate SQLite file). Never stored in item fields.
 - **Exports:** CSV written only to a user-chosen location (file picker).
 

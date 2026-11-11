@@ -44,15 +44,32 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 
 | # | Capability | Milestone |
 |---|---|---|
-| F001 | Plugin shell: installs, opens a workspace window with placeholder | **Now** |
-| F002 | Read-only data access: list collections, items, and tags of a chosen collection | Next |
-| F003 | Curated tag list (codebook) with super-tag groups, stored by Tabellify | |
-| F004 | Tag monitor: used / remaining curated tags for a collection | |
-| F005 | Table builder: rows = papers, columns = (super-)tags, preview grid | |
-| F006 | Save / list / edit / delete table configurations (persistent) | |
-| F007 | CSV export (then optional XLSX) | |
-| F008 | Column customization: user-created columns, drag-and-drop reorder, column types | |
-| F009+ | AI-assisted extraction and classification | Future |
+| F001 | Plugin shell: installs, opens a workspace window with placeholder (interim surface; proves install, startup, menu, cleanup) | **Now** |
+| F002 | Workspace as a main-window tab (replaces the F001 window; see requirement REQ-1 in §7) | **Next** (research first) |
+| F003 | Read-only data access: list collections, items, and tags of a chosen collection | |
+| F004 | Curated tag list (codebook) with super-tag groups, stored by Tabellify | |
+| F005 | Tag monitor: used / remaining curated tags for a collection | |
+| F006 | Table builder: rows = papers, columns = (super-)tags, preview grid | |
+| F007 | Save / list / edit / delete table configurations (persistent) | |
+| F008 | CSV export (then optional XLSX) | |
+| F009 | Column customization: user-created columns, drag-and-drop reorder, column types | |
+| F010+ | AI-assisted extraction and classification | Future |
+
+**Renumbering (2026-11-11).** The new F002 was inserted ahead of data access, so every later
+feature moved up by one. Accepted ADRs keep the old numbers as historical records; read them
+with this mapping:
+
+| Old | New | Capability |
+|---|---|---|
+| — | F002 | Workspace as a main-window tab (new) |
+| F002 | F003 | Read-only data access |
+| F003 | F004 | Curated tag list (codebook) |
+| F004 | F005 | Tag monitor |
+| F005 | F006 | Table builder |
+| F006 | F007 | Save / list / edit / delete tables |
+| F007 | F008 | CSV export |
+| F008 | F009 | Column customization |
+| F009+ | F010+ | AI-assisted extraction |
 
 ## 6. Principles
 
@@ -68,14 +85,23 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 
 - **Q1 — Cell content: DECIDED.** Default = text of highlights carrying that tag. The user
   can change it **per table in the Table Builder** ("Cell content": Highlights ·
-  Highlights + comments · ✓ presence). A per-column override may come later (F008).
+  Highlights + comments · ✓ presence). A per-column override may come later (F009).
 - **Q2 — Tag source: DECIDED.** Both item tags and annotation tags; the Table Builder lets
   the user choose the source(s) per table.
 - **Q3 — Planner location: DECIDED.** Inside the Tabellify workspace window (not Zotero
-  Settings). Consistent with ADR-0004.
+  Settings). Consistent with ADR-0004. *(From F002 the workspace becomes a main-window tab;
+  see REQ-1. The planner stays inside the workspace.)*
 - **Q4 — Super-tag groups: DECIDED (option A).** Groups are stored in
   Tabellify's own codebook; Zotero tags stay unchanged. Optional later: import groups from
   tag names that use a prefix convention (e.g. `Exposure: Heat index`).
+
+- **REQ-1 — Workspace inside the main Zotero window: REQUIRED (2026-11-11, high priority).**
+  The Tabellify workspace must open as a **tab inside the main Zotero window**, like Better
+  Notes' workspace tab, so it works when Zotero is maximized or full screen. A separate
+  window that gets left behind in full-screen mode is not acceptable for the real product.
+  F001's separate window is an interim surface that proves install, startup, menu and
+  cleanup; F002 delivers the tab. How (and which Zotero internals it relies on) is decided by
+  an ADR superseding ADR-0004, approved by the owner before implementation.
 
 ## 8. Open product questions
 - **Q5 — Rows.** One row per paper (item) always, or optionally one row per annotation?

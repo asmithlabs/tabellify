@@ -133,19 +133,19 @@ in order T2 → T3 → T4 → T5 → T6 → T7. No parallel worktrees for F001 (
   scope (`src/tabellify.js`). It does rely on T2's `bootstrap.js` forwarding
   `onMainWindowLoad/Unload` to `Tabellify`, which matches the Design ("forwards hooks").
 - ~~Menu placement~~ **Resolved (owner):** Tools menu (`main/menubar/tools`) for F001. A
-  collection right-click item (`main/library/collection`) is deferred to F002. Options considered:
+  collection right-click item (`main/library/collection`) is deferred to F003. Options considered:
 
   | Option | Target | Pros | Cons |
   |---|---|---|---|
-  | Tools menu | `main/menubar/tools` | Conventional place for plugin tools, next to Zotero's own "Plugins" item. Always visible, whatever is selected. Matches the current AC3 wording and ADR-0004 | One more item in an already busy menu. Not tied to a collection, so F002 must read the current selection separately |
+  | Tools menu | `main/menubar/tools` | Conventional place for plugin tools, next to Zotero's own "Plugins" item. Always visible, whatever is selected. Matches the current AC3 wording and ADR-0004 | One more item in an already busy menu. Not tied to a collection, so F003 must read the current selection separately |
   | View menu | `main/menubar/view` | make-it-red puts its item here. "View" fits "open a workspace" | Users usually look for plugin features in Tools. View holds display toggles, so a window launcher is less expected there |
-  | Collection context menu | `main/library/collection` | Natural for "build a table from *this* collection" (F002). `context.collectionTreeRows` gives the clicked collection(s) | Hidden until you right-click a collection. "Grouped" target, so Zotero may fold it into a submenu when several plugins add items. Not available for every selection (e.g. trash). Needs `collectionTreeRows` (singular throws in 10) |
+  | Collection context menu | `main/library/collection` | Natural for "build a table from *this* collection" (F003). `context.collectionTreeRows` gives the clicked collection(s) | Hidden until you right-click a collection. "Grouped" target, so Zotero may fold it into a submenu when several plugins add items. Not available for every selection (e.g. trash). Needs `collectionTreeRows` (singular throws in 10) |
 
   **Recommendation (for the owner to accept or change):** Tools menu for F001, because it's the
   simplest, always visible, and needs no context handling. Consider *adding* a collection
-  context item in F002, when Tabellify actually uses the selected collection. Registering a
+  context item in F003, when Tabellify actually uses the selected collection. Registering a
   second menu is one more `registerMenu` call, not a redesign.
 - ~~AC4 single-instance wording~~ **Resolved (owner):** accepted and applied to AC4.
 - ~~AC5 shutdown-order / FTL-link auto check~~ **Resolved (owner):** accepted and applied to AC5.
 - `resultLevel` call syntax and tag-at-annotation-level search are UNVERIFIED (api-notes R6).
-  They don't affect F001 and must be settled before F004.
+  They don't affect F001 and must be settled before F005.
