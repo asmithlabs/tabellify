@@ -27,6 +27,8 @@
       "Edit(~/Zotero/**)",
       "Read(~/Library/Application Support/Zotero/**)",
       "Edit(~/Library/Application Support/Zotero/**)",
+      "Read(~/Zotero tabellify-dev/**)",
+      "Edit(~/Zotero tabellify-dev/**)",
       "Bash(rm -rf *)",
       "Read(./.env)",
       "Read(./.env.*)"
