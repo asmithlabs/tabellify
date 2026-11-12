@@ -53,6 +53,19 @@ JavaScript and Zotero plugin development — explain non-obvious concepts briefl
 - `npm run build` — produce `build/tabellify-<version>.xpi`
 - Manual verification: `docs/testing/manual/<feature>.md`, performed by the owner in the Zotero dev profile
 
+## Prototype mode (active until the owner ends it)
+Decided by the owner during Feature 002; it overrides the full flow below while active.
+1. Developer builds the feature on a feature branch (`npm test` and `npm run build` must pass).
+2. The owner runs one smoke test in the dev profile (open Zotero, does the feature work,
+   yes or no), with Debug Output captured to `build/debug-N.txt`.
+3. If yes: push, open the PR, wait for CI `test-and-build`, merge.
+
+No tester, reviewer, security-auditor or docs-writer passes while prototype mode is active.
+**All non-negotiable rules above still apply**, including verified Zotero APIs only, no
+library writes, lifecycle symmetry, and owner approval for push and merge (the smoke-test
+"yes" is that approval for the feature's PR). Before the first public release, prototype
+mode ends with a full security audit (ADR-0011) and a docs pass (ADR-0010).
+
 ## Agent workflow
 - The main session runs as `orchestrator` (`claude --agent orchestrator`). Specialists:
   `architect`, `developer`, `tester`, `reviewer`, `security-auditor`, `docs-writer`
