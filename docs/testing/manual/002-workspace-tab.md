@@ -272,7 +272,7 @@ label and shortcut are **unconfirmed** for Zotero, see "Unconfirmed UI labels").
 happens; a working Tabellify tab (heading and sentence as in step 5) appears; a previously
 closed PDF tab reappears. If a Tabellify tab appears that is blank, shows raw IDs (text
 starting with `tabellify-`), or shows an error, mark Fail, copy any error text into Notes,
-close that tab with its ×, and continue. Write in Notes what Cmd-Shift-T did. If a tab
+close that tab with its ×, and continue. Write in Notes what Cmd-Shift-T did.
 If a Tabellify tab reappeared, close it with its × before step 13, so step 13 starts without
 a Tabellify tab. A reopened PDF tab can stay open.
 
@@ -389,8 +389,8 @@ Tabellify… opens a working Tabellify tab in the reopened dev Zotero window.
 ## Part H: AC6 (quit and restart) and RT3 (saved session)
 
 > **Stop rule for Parts H and I.** After any restart in these parts (steps 23, 26, 28, 31):
-> if a PDF tab that was open at quit is **not** restored, **or** the Terminal window or
-> Debug Output (Help → Debug Output Logging → View Output) shows
+> if a PDF tab that was open at quit is **not** restored, **or** Debug Output (Help → Debug
+> Output Logging → View Output) or the Error Console shows
 > `Cannot destructure property 'itemID'`, **stop the checklist there.** Mark that step Fail,
 > copy the error text and the tab bar contents into Notes, quit Zotero, and report to the
 > orchestrator. Do not continue with later steps: they would run on a damaged session.
