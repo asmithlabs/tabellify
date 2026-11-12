@@ -7,7 +7,10 @@
 //   - onMainWindowUnload removes the link; after shutdown nothing is left; re-enable works
 //   - app quit (reason 2) runs the same full cleanup; a failed tabellify.js load at startup
 //     still lets shutdown destruct the chrome registration exactly once
-//   - debug lines report real outcomes (FTL inserted/removed, menu unregistered: true/false)
+//   - debug lines report real outcomes (FTL inserted, FTL links removed: <count>,
+//     menu unregistered: true/false)
+//   - a duplicate FTL link (left by a remove-then-reinstall in one Zotero session) is
+//     removed too: every matching link goes, and the log reports the count
 //
 // The mocks model the APIs in docs/zotero-api-notes.md, not Zotero itself. A pass here
 // proves the plugin calls those APIs in the right order; the manual checklist
@@ -164,7 +167,7 @@ test("AC5: onMainWindowLoad/onMainWindowUnload add and remove the FTL link on a 
 
   h.removeMainWindow(w2);
   const log = h.takeLog();
-  assert.ok(log.includes(`${w2.name}.querySelector(link[href="tabellify.ftl"])`));
+  assert.ok(log.includes(`${w2.name}.querySelectorAll(link[href="tabellify.ftl"])`));
   assert.ok(log.includes(`${w2.name}.link(tabellify.ftl).remove`));
   assert.deepEqual(w2.links, []);
   assert.deepEqual(h.mainWindows[0].links.map((l) => l.href), ["tabellify.ftl"], "other window untouched");
@@ -307,13 +310,13 @@ test("AC2 (support): debug lines report real outcomes on load and unload", () =>
   w2.links[0].remove();
   h.debug.length = 0;
   h.removeMainWindow(w2);
-  assert.ok(h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: false"), h.debug.join("\n"));
-  assert.ok(!h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: true"));
+  assert.ok(h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: 0"), h.debug.join("\n"));
+  assert.ok(!h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: 1"));
 
   h.debug.length = 0;
   h.shutdown();
   assert.ok(h.debug.includes(`Tabellify: menu unregistered (${menuID}): true`), h.debug.join("\n"));
-  assert.ok(h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: true"), h.debug.join("\n"));
+  assert.ok(h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: 1"), h.debug.join("\n"));
   assert.deepEqual(w1.links, []);
   assert.deepEqual(h.errors, []);
 });
@@ -326,5 +329,37 @@ test("AC2 (support): 'menu unregistered' reports false when Zotero had no such m
   h.debug.length = 0;
   h.shutdown();
   assert.ok(h.debug.includes(`Tabellify: menu unregistered (${menuID}): false`), h.debug.join("\n"));
+  assert.deepEqual(h.errors, []);
+});
+
+test("AC5: a main window with TWO tabellify.ftl links (same-session reinstall duplicate) ends with none", () => {
+  // Removing and reinstalling Tabellify in one Zotero session can leave a second
+  // <link href="tabellify.ftl"> behind (docs/development.md). Unload must remove every one.
+  const h = createHarness();
+  h.startup();
+  const w2 = h.addMainWindow();
+  for (const w of h.mainWindows) w.injectLink("tabellify.ftl");
+  for (const w of h.mainWindows) {
+    assert.deepEqual(w.links.map((l) => l.href), ["tabellify.ftl", "tabellify.ftl"], `${w.name} setup`);
+  }
+
+  // Path 1: the main window closes (onMainWindowUnload).
+  h.debug.length = 0;
+  h.takeLog();
+  h.removeMainWindow(w2);
+  assert.deepEqual(w2.links, [], "no FTL link left in the closed main window");
+  assert.equal(h.takeLog().filter((l) => l === `${w2.name}.link(tabellify.ftl).remove`).length, 2);
+  assert.deepEqual(
+    h.debug.filter((l) => l.includes("removed FTL")),
+    ["Tabellify: onMainWindowUnload: removed FTL: 2"],
+  );
+
+  // Path 2: the plugin shuts down (shutdown → onMainWindowUnload for each open main window).
+  const [w1] = h.mainWindows;
+  h.debug.length = 0;
+  h.shutdown();
+  assert.deepEqual(w1.links, [], "no FTL link left after shutdown");
+  assert.ok(h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: 2"), h.debug.join("\n"));
+  assert.ok(!h.debug.some((l) => /removed FTL: [^2]/.test(l)), h.debug.join("\n"));
   assert.deepEqual(h.errors, []);
 });

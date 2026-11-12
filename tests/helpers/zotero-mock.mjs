@@ -52,34 +52,80 @@ export function createHarness({ mainWindowCount = 1, registerMenuResult = "ok", 
     const name = `main${++mainCounter}`;
     /** @type {Array<{ rel: string, href: string, remove(): void }>} */
     const links = [];
+
+    /** A fake <link rel="localization" href=path> element living in `links`. */
+    function makeLink(path) {
+      const link = {
+        rel: "localization",
+        href: path,
+        // Real Element.remove(): detach from the document; a no-op if already detached.
+        remove() {
+          const i = links.indexOf(link);
+          if (i >= 0) links.splice(i, 1);
+          log.push(`${name}.link(${path}).remove`);
+        },
+      };
+      return link;
+    }
+
+    /** Parse the only selector shape the plugin uses: link[href="…"]. Throw on anything else. */
+    function hrefFromSelector(method, selector) {
+      const m = /^link\[href="([^"]+)"\]$/.exec(selector);
+      if (!m) throw new Error(`mock ${method}: unsupported selector ${selector}`);
+      return m[1];
+    }
+
+    /**
+     * Model of a STATIC NodeList (what querySelectorAll returns): a snapshot taken at call
+     * time, so removing elements while looping over it does not skip any. Like a real
+     * NodeList it has length, item(), forEach() and is iterable, but it is NOT an Array:
+     * no map/filter/etc., so plugin code that relies on Array methods fails here too.
+     */
+    function makeStaticNodeList(elements) {
+      const snapshot = [...elements];
+      const list = {
+        length: snapshot.length,
+        item(i) { return snapshot[i] ?? null; },
+        forEach(callback, thisArg) {
+          for (let i = 0; i < snapshot.length; i++) callback.call(thisArg, snapshot[i], i, list);
+        },
+        [Symbol.iterator]() { return snapshot[Symbol.iterator](); },
+      };
+      snapshot.forEach((el, i) => { list[i] = el; });
+      return Object.freeze(list);
+    }
+
     const win = {
       name,
       links,
+      /**
+       * Test-only: append a link WITHOUT the insertFTLIfNeeded duplicate check. Simulates the
+       * duplicate <link> a remove-then-reinstall in one Zotero session can leave behind.
+       */
+      injectLink(path) {
+        log.push(`${name}.injectLink(${path})`);
+        links.push(makeLink(path));
+      },
       MozXULElement: {
         // Real behaviour (moz: toolkit/content/customElements.js): append
         // <link rel="localization" href=path>, skip if one is already present.
         insertFTLIfNeeded(path) {
           log.push(`${name}.insertFTLIfNeeded(${path})`);
           if (links.some((l) => l.href === path)) return;
-          const link = {
-            rel: "localization",
-            href: path,
-            remove() {
-              const i = links.indexOf(link);
-              if (i >= 0) links.splice(i, 1);
-              log.push(`${name}.link(${path}).remove`);
-            },
-          };
-          links.push(link);
+          links.push(makeLink(path));
         },
       },
       document: {
-        // Supports only the selector shape the plugin uses: link[href="…"].
+        // Both support only the selector shape the plugin uses: link[href="…"].
         querySelector(selector) {
           log.push(`${name}.querySelector(${selector})`);
-          const m = /^link\[href="([^"]+)"\]$/.exec(selector);
-          if (!m) throw new Error(`mock querySelector: unsupported selector ${selector}`);
-          return links.find((l) => l.href === m[1]) ?? null;
+          const href = hrefFromSelector("querySelector", selector);
+          return links.find((l) => l.href === href) ?? null;
+        },
+        querySelectorAll(selector) {
+          log.push(`${name}.querySelectorAll(${selector})`);
+          const href = hrefFromSelector("querySelectorAll", selector);
+          return makeStaticNodeList(links.filter((l) => l.href === href));
         },
       },
       openDialog(url, dialogName, features) {
