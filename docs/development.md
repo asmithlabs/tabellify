@@ -49,7 +49,13 @@ Output Logging misses the startup lines.
 
 - `npm test` before every commit; `npm run build` produces `build/tabellify-<version>.xpi`.
 - Install the build in the dev Zotero window: Tools → Plugins → Install Plugin From File…,
-  then pick the `.xpi` from `build/`.
+  then pick the `.xpi` from `build/`. Installing over an enabled Tabellify is fine.
+- **After Remove, quit and restart Zotero before installing again.** Zotero 10.0.9 finishes a
+  pending removal later by plugin ID only (`onUninstalled` in
+  [`plugins.js` L933–937](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/plugins.js#L933-L937) unloads the scope without calling `shutdown`), so an
+  install in the same session can leave a second Tabellify copy running: Debug Output shows
+  `MenuAPI: 'menuID' must be unique` and `Tabellify: menu registration failed`. This is a
+  Zotero bug, not a Tabellify one.
 - Check logging in the dev Zotero window: Help → Debug Output Logging → View Output.
 - Manual checklists: `docs/testing/manual/`.
 

@@ -104,6 +104,12 @@ Zotero).
 
 ## Part B: AC1 — Install the XPI
 
+> **Do not Remove and then reinstall Tabellify in the same Zotero session.** If you removed
+> Tabellify, quit and restart Zotero before installing (Zotero 10.0.9 bug: a pending removal
+> completes later without `shutdown`, see [`plugins.js` L933–937](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/plugins.js#L933-L937); symptom in
+> Debug Output: `MenuAPI: 'menuID' must be unique`). Installing over an enabled Tabellify
+> is fine.
+
 ### Step 4: Install the XPI
 **Where:** the dev Zotero window.
 **Do:** choose Tools → Plugins. In the Plugins window, choose **Install Plugin From File…**
