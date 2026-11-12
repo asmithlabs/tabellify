@@ -243,8 +243,10 @@ F001 build installed and enabled** (it provides `chrome://tabellify/` and `tabel
    await new Promise(r => setTimeout(r, 200));
    out.elementGoneAfterClose = !win.document.getElementById(id);
    out.openTabTypesAfter = T.getState().map(t => t.type);
-   out
+   return out;
    ```
+   (With "Run as async function" ticked, the code runs inside a function, so it must
+   `return` its result; a bare `out` on the last line shows `undefined`.)
 4. **Expected:** `title` and `h1` are the real localized workspace title (not `null`/empty);
    `containerTag` `"tab-content"`; `parentId` `"tabs-deck"`; `infoType` `"tabellifyprobe"`;
    `iframeURL` `"chrome://tabellify/content/workspace.xhtml"`; `systemPrincipal` `true`;
