@@ -90,7 +90,25 @@ const PAIRS = [
   // closed during shutdown, before chromeHandle.destruct) is in
   // tests/behavior/lifecycle.test.mjs.
   [/\.openDialog\(|\.openWindow\(/, /\.close\(\)/, "open window → close()"],
+  // F002: a Zotero_Tabs tab we add must be closed by id somewhere (behaviour tests prove
+  // when: on unload, at quit, and in shutdown).
+  [/\btabs\.add\(\s*\{|Zotero_Tabs\.add\(\s*\{/, /\b(?:tabs|Zotero_Tabs)\.close\(\s*[\w$]+\s*\)/,
+    "Zotero_Tabs.add({…}) → Zotero_Tabs.close(id)"],
 ];
+
+/**
+ * F002: every `Services.obs.addObserver(x, "topic")` needs a
+ * `Services.obs.removeObserver(y, "topic")` for the SAME topic string.
+ * @param {string} code
+ * @returns {string[]} topics added but never removed
+ */
+function unremovedObserverTopics(code) {
+  const topics = (verb) =>
+    new Set([...code.matchAll(new RegExp(`\\.${verb}\\(\\s*[^,]+,\\s*["'\`]([^"'\`]+)["'\`]`, "g"))].map((m) => m[1]));
+  const added = topics("addObserver");
+  const removed = topics("removeObserver");
+  return [...added].filter((t) => !removed.has(t));
+}
 
 test("AC5: every add/register call in src/ has a matching remove/unregister call", () => {
   const missing = [];
@@ -98,6 +116,20 @@ test("AC5: every add/register call in src/ has a matching remove/unregister call
     if (add.test(allCode) && !remove.test(allCode)) missing.push(label);
   }
   assert.deepEqual(missing, [], `cleanup missing for: ${missing.join("; ")}`);
+});
+
+test("F002 AC5/AC6: every observer topic added in src/ is removed for the same topic", () => {
+  assert.match(allCode, /Services\.obs\.addObserver\([^,]+,\s*"quit-application-granted"/,
+    "quit observer not found in src/ (check is vacuous)");
+  assert.deepEqual(unremovedObserverTopics(allCode), []);
+  // Self-test of the helper.
+  assert.deepEqual(unremovedObserverTopics('obs.addObserver(o, "a"); obs.removeObserver(o, "b");'), ["a"]);
+  assert.deepEqual(unremovedObserverTopics('obs.addObserver(o, "a"); obs.removeObserver(this.o, "a");'), []);
+});
+
+test("F002 AC5: the tab add/close pair is found in src/ (not vacuous)", () => {
+  assert.match(allCode, /\btabs\.add\(\s*\{/, "Zotero_Tabs add call not found");
+  assert.match(allCode, /\btabs\.close\(\s*id\s*\)/, "Zotero_Tabs close(id) call not found");
 });
 
 test("AC5: every Zotero.<X>.register<Y>(…) has a Zotero.<X>.unregister<Y>(…)", () => {
