@@ -26,7 +26,8 @@ example your Downloads folder).
 
 1. Open Zotero.
 2. In the menu bar, choose **Tools → Plugins**. The Plugins window opens.
-3. Click the gear icon and choose **Install Plugin From File…**.
+3. In the Manage Your Plugins window, click the gear icon (⚙) in the top-right corner and choose
+   **Install Plugin From File…**.
 4. Pick the Tabellify `.xpi` file you downloaded and confirm.
 
 You can also drag the `.xpi` file from Finder onto the Plugins window.
@@ -63,9 +64,10 @@ the older version.
 
 ## Removing Tabellify
 
-Remove Tabellify from the Plugins window (**Tools → Plugins**, then **Remove** on the
-Tabellify entry; where the Remove command sits in the Plugins window is
-(label not yet verified)).
+Choose **Tools → Plugins**. Click the ⋯ menu next to Tabellify, then click Remove.
+
+To turn Tabellify off without uninstalling it, use the toggle switch on the Tabellify row
+instead; when it is off, the row reads "Tabellify (disabled)".
 
 > **Restart Zotero after removing Tabellify, before installing it again.** Because of a bug
 > in Zotero 10, removing and reinstalling in the same session can leave a second copy of

@@ -23,8 +23,8 @@ versions.
    [GitHub Releases](https://github.com/asmithlabs/tabellify/releases). No release has been
    published yet; releases will appear there.
 2. In Zotero, choose **Tools → Plugins**.
-3. Click the gear icon and choose **Install Plugin From File…**, then pick the `.xpi` file you
-   downloaded.
+3. In the Manage Your Plugins window, click the gear icon (⚙) in the top-right corner and choose
+   **Install Plugin From File…**, then pick the `.xpi` file you downloaded.
 4. Tabellify appears in the Plugins window, enabled. In the main Zotero window, choose
    **Tools → Tabellify…** to open the workspace.
 
