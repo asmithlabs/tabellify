@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
+<!-- Why global.css: it gives the root <window> its background (the system colour
+     -moz-Dialog) and the native window look. Without it the root has no background and
+     Gecko makes the native window transparent (the see-through window seen on macOS).
+     System colours follow Zotero's light/dark setting, so workspace.css sets no
+     background-color. Stylesheet processing instructions must come before <window>. -->
 <!-- Tabellify workspace window (Feature 001: placeholder content only).
 
      Opened by Tabellify.openWorkspace() as chrome://tabellify/content/workspace.xhtml.
