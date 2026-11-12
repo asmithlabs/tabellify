@@ -21,14 +21,20 @@ Never run these steps in your normal Zotero profile.
 
 ## Before you start
 
-**Not yet verified:** AC1 (install) and AC2 (startup messages) are open. An earlier
-"verified" note was withdrawn: builds before the `update_url` fix were rejected by Zotero
-10.0.9 ("could not be installed. It may be incompatible with this version of Zotero.").
+**Status:** AC1–AC5 were verified by the owner on 2026-11-11 in Zotero 10.0.9 (see the
+spec, `docs/features/001-plugin-shell.md`), except steps 7 (R2), 12 (R3) and 16 (FTL link
+removed after disable), whose results are not yet recorded. They are pending the owner's
+next combined run. The expected log lines below were updated after that run to the
+outcome-reporting wording (`present now: true`, `removed FTL: true`, `…: true`).
 
 **Known Zotero errors to ignore.** These come from Zotero itself, appeared before Tabellify
 was ever installed (runtime check R1), and are not Tabellify failures:
 - `browser-custom-element.mjs:932` — a `TypeError` about `getTabForBrowser`
 - `basicViewer.xhtml:1` — a focus `TypeError` (may appear twice)
+- A failed fetch (HTTP 404) of
+  `https://raw.githubusercontent.com/asmithlabs/tabellify/main/updates.json` — Zotero's
+  background update check asks for Tabellify's update file, which does not exist yet. This
+  is not a Tabellify error.
 
 **What counts as a Tabellify error:** an error or exception line that mentions
 `tabellify` (for example `tabellify.js`, `bootstrap.js` from the Tabellify plugin, or a
@@ -124,7 +130,7 @@ supports search; otherwise scroll).
 - `Tabellify: init (version 0.1.0)`
 - `Tabellify: menu registered (…open-workspace)` — the part in brackets is Zotero's ID
   for the menu item and contains `open-workspace`
-- `Tabellify: onMainWindowLoad: inserted FTL`
+- `Tabellify: onMainWindowLoad: inserted FTL (already present: false, present now: true)`
 
 and no Tabellify errors (see "What counts as a Tabellify error" above). Ignore the known
 Zotero errors listed in "Before you start".
@@ -151,7 +157,8 @@ grep -n "Tabellify" build/debug-1.txt
 ```
 **Expected:** the Debug Output window shows `Tabellify: startup (version 0.1.0, reason 1)`
 (reason 1 means "Zotero is starting up"), followed later by
-`Tabellify: onMainWindowLoad (reason 9)` and `Tabellify: onMainWindowLoad: inserted FTL`.
+`Tabellify: onMainWindowLoad (reason 9)` and
+`Tabellify: onMainWindowLoad: inserted FTL (already present: false, present now: true)`.
 No Tabellify errors.
 
 > Logging switched on from the Help menu starts only after launch, so it misses the startup
@@ -278,8 +285,10 @@ lines.
 1. `Tabellify: shutdown (version 0.1.0, reason 4)` (reason 4 means "plugin disabled")
 2. `Tabellify: shutdown`
 3. `Tabellify: closing workspace window`
-4. `Tabellify: menu unregistered (…open-workspace)`
-5. `Tabellify: onMainWindowUnload: removed FTL`
+4. `Tabellify: menu unregistered (…open-workspace): true` — `true` means Zotero found and
+   removed the menu item; `false` is a failure
+5. `Tabellify: onMainWindowUnload: removed FTL: true` — `true` means the FTL link was
+   there and was removed; `false` is a failure
 
 No Tabellify errors.
 
@@ -321,7 +330,8 @@ the unlabeled toggle switch on the right of the Tabellify row (the row title los
 (Help → Debug Output Logging → View Output) shows a new
 `Tabellify: startup (version 0.1.0, reason 3)` (reason 3 means "plugin enabled"),
 `Tabellify: menu registered (…open-workspace)`, and
-`Tabellify: onMainWindowLoad: inserted FTL`. No Tabellify errors.
+`Tabellify: onMainWindowLoad: inserted FTL (already present: false, present now: true)`.
+No Tabellify errors.
 
 - [ ] Pass  [ ] Fail
 - Notes:
@@ -347,8 +357,9 @@ in front). Optionally quit the dev Zotero window (Zotero → Quit Zotero).
 > second disable, which explains the missing line in `build/debug-1.txt`.) Tabellify's
 > `shutdown` has no early return for app quit, so quitting while Tabellify is **enabled**
 > should log `Tabellify: shutdown (version 0.1.0, reason 2)` (reason 2 = app shutdown).
-> This has not been observed yet; it is checked in F002, whose design depends on quit-time
-> cleanup.
+> This has not been observed in Zotero yet; it is checked in F002, whose design depends on
+> quit-time cleanup. The plugin side (reason 2 runs the full cleanup) is covered by an
+> automated test in `tests/behavior/lifecycle.test.mjs`.
 
 - [ ] Pass  [ ] Fail
 - Notes:
