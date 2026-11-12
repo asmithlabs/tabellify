@@ -14,7 +14,9 @@ labels: bug
 
 **Environment**
 - Tabellify version:
-- Zotero version (Help → About Zotero):
+- Zotero version (macOS: Zotero → About Zotero; Windows/Linux: Help → About Zotero):
 - OS:
 
-**Debug output** (Help → Debug Output Logging → Enable, reproduce, then View Output; paste relevant lines)
+**Debug output** (how to collect it: [Troubleshooting](https://github.com/asmithlabs/tabellify/wiki/Troubleshooting) and
+<https://www.zotero.org/support/debug_output>; in short: Help → Debug Output Logging → Enable,
+reproduce the problem, then View Output; paste the relevant lines)
