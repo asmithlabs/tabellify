@@ -29,3 +29,17 @@ tabellify-workspace-description = Your literature tables will appear here.
 ## result to Zotero_Tabs.add() as the tab title, so it is a plain value (no attributes).
 
 tabellify-tab-title = Tabellify
+
+## Workspace: read-only collection browser (Feature 003, prototype).
+## Elements in workspace.xhtml point at these with data-l10n-id. `tabellify-untitled` is
+## read from JavaScript with document.l10n.formatValue() and used as plain text.
+
+tabellify-collection-label = Collection
+tabellify-collection-placeholder = Choose a collection
+tabellify-no-collections = My Library has no collections yet.
+tabellify-loading-items = Loading items…
+tabellify-no-items = No items in this collection.
+tabellify-load-error = Could not load this collection. See Help → Debug Output Logging for details.
+tabellify-column-title = Title
+tabellify-column-tags = Tags
+tabellify-untitled = (untitled)

@@ -10,3 +10,48 @@
 #tabellify-workspace-main {
   padding: 24px;
 }
+
+/* Feature 003: collection dropdown, status messages and the items table.
+   No colours or backgrounds: global.css system colours follow light/dark mode. */
+
+/* Let the content area fill the tab/window and scroll when the list is long. */
+#tabellify-workspace-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Make sure the `hidden` attribute hides our HTML elements inside the XUL document. */
+#tabellify-workspace-main [hidden] {
+  display: none !important;
+}
+
+#tabellify-collection-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 16px;
+}
+
+#tabellify-collection-select {
+  min-width: 240px;
+  max-width: 100%;
+}
+
+#tabellify-items-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+#tabellify-items-table th,
+#tabellify-items-table td {
+  text-align: start;
+  vertical-align: top;
+  padding: 4px 8px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.tabellify-untitled {
+  font-style: italic;
+  opacity: 0.7;
+}
