@@ -199,6 +199,10 @@ var Tabellify = {
       // `await` gave other code a chance to run. Re-check: the plugin may have been shut
       // down, or a second menu click may already have opened the tab while we waited.
       if (!this.initialized) return;
+      if (win.closed) {
+        this.log("main window closed while opening workspace; not opening a tab");
+        return;
+      }
       if (this.selectExistingTab(win, tabs)) return;
 
       let added;
@@ -218,6 +222,8 @@ var Tabellify = {
       }
       catch (err) {
         // AC9: `add` threw (a Zotero change?). Keep the workspace usable as a window.
+        // Residual risk: Zotero might have pushed a tab into its list before throwing. We
+        // have no id for it, so we cannot close it here (ADR-0009 §4 session concern).
         Zotero.logError(err);
         this.log("Zotero_Tabs.add failed; opening workspace window instead");
         this.openWorkspaceWindow(win);
@@ -226,6 +232,18 @@ var Tabellify = {
 
       const { id, container } = added ?? {};
       if (!id || !container) {
+        // If Zotero did register a tab of our type, close it now: we won't store its id,
+        // so nothing else would ever close it, and Zotero could save it in session.json
+        // (the failure ADR-0009 §4 prevents).
+        try {
+          if (this.isOurTab(tabs, id)) {
+            tabs.close(id);
+            this.log(`closed incomplete workspace tab (${id})`);
+          }
+        }
+        catch (err) {
+          Zotero.logError(err);
+        }
         this.log("Zotero_Tabs.add returned no tab; opening workspace window instead");
         this.openWorkspaceWindow(win);
         return;
