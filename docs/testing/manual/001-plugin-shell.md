@@ -343,8 +343,9 @@ lines.
    removed the menu item; `false` is a failure
 5. `Tabellify: onMainWindowUnload: removed FTL: 1` — the number is how many FTL links
    Tabellify found and removed in the dev Zotero window. `1` is correct; `0` is a failure.
-   A number above 1 means a duplicate FTL link was present (it can happen after removing
-   and reinstalling Tabellify in one Zotero session); Tabellify removed all of them, but
+   A number above 1 means a duplicate FTL link was present (not observed so far; removal of
+   every match is defensive, in case a same-session remove→reinstall left one); Tabellify
+   removed all of them, but
    write the number in Notes
 
 No Tabellify errors.

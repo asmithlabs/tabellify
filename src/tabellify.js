@@ -201,10 +201,12 @@ var Tabellify = {
    */
   onMainWindowUnload({ window }) {
     try {
-      // Remove ALL matching links, not just the first: removing and reinstalling the
-      // plugin in one Zotero session can leave a duplicate link behind (a Zotero bug,
-      // see docs/development.md). querySelectorAll returns a static list, so removing
-      // elements while looping over it is safe.
+      // Remove ALL matching links, not just the first. Defensive: a duplicate has not been
+      // observed (insertFTLIfNeeded skips an existing link), but a stray copy left by a
+      // same-session remove→reinstall (Zotero bug, see docs/development.md) should not
+      // survive. This also removes a link a second running copy might use; acceptable,
+      // since that state is already broken. querySelectorAll returns a static list, so
+      // removing elements while looping over it is safe.
       const links = window.document.querySelectorAll(`link[href="${this.FTL_FILE}"]`);
       links.forEach((link) => link.remove());
       // Log how many we removed: 1 normally, 0 if none was present.
