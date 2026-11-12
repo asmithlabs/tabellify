@@ -367,6 +367,9 @@ export function createHarness({
     const win = strict({
       name,
       links,
+      // Standard DOM `Window.closed`: false while the window is open. Tests set it to true
+      // to model the main window closing while the plugin awaits (e.g. the tab title).
+      closed: false,
       /** Test-side view of this window's tab manager, or null if it has no Zotero_Tabs. */
       tabState: tabsFake?.state ?? null,
       // What the plugin sees. `undefined` models a window without the Zotero_Tabs global.

@@ -399,6 +399,52 @@ for (const mode of ["noTab", "noContainer"]) {
   });
 }
 
+test("F002 AC9: add returns an id with no container → that incomplete tab is closed, then the F001 window opens", async () => {
+  // The fake registers a "tabellify" tab before returning {id} only. If the plugin left it
+  // open, Zotero could save it in session.json (ADR-0009 §4).
+  const h = started({ tabs: { add: "noContainer" } });
+  const [w] = h.mainWindows;
+  h.takeLog();
+  await h.clickMenu();
+  const log = h.takeLog();
+  assert.equal(w.tabState.addCalls.length, 1, "add called once");
+  const id = "main1-tab1"; // the fake's id for the first tab added in main1
+  assert.equal(w.tabState.byType("tabellify").length, 0, "incomplete tab closed");
+  assert.deepEqual(w.tabState.types(), ["library"]);
+  const close = indexOf(log, `main1.Zotero_Tabs.close(${id})`);
+  assert.ok(close >= 0, "close called with the returned id");
+  assert.ok(close < log.findIndex(isOpenDialog), "closed before the F001 window opens");
+  assert.equal(h.debug.filter((l) => l === `Tabellify: closed incomplete workspace tab (${id})`).length, 1);
+  assert.equal(log.filter(isOpenDialog).length, 1, "F001 window opened");
+  assert.equal(h.openWorkspaceWindows().length, 1);
+  assert.equal(h.evaluate("Tabellify").tabIDs.size, 0, "no id stored");
+  assert.deepEqual(h.errors, []);
+});
+
+test("F002: main window closes while the title resolves → no add, no F001 window", async () => {
+  const h = started();
+  const [w] = h.mainWindows;
+  // Close the window during the title await: formatValue marks it closed, then resolves.
+  const realFormatValue = w.document.l10n.formatValue;
+  w.document.l10n.formatValue = (id) => {
+    w.closed = true;
+    return realFormatValue(id);
+  };
+  h.takeLog();
+  await h.clickMenu();
+  const log = h.takeLog();
+  assert.ok(log.includes("main1.l10n.formatValue(tabellify-tab-title)"), "title was awaited");
+  assert.equal(log.filter(isAdd).length, 0, "no tab added");
+  assert.equal(log.filter(isOpenDialog).length, 0, "no F001 window fallback");
+  assert.equal(
+    h.debug.filter((l) => l === "Tabellify: main window closed while opening workspace; not opening a tab").length,
+    1,
+  );
+  assert.equal(h.openWorkspaceWindows().length, 0);
+  assert.equal(h.evaluate("Tabellify").tabIDs.size, 0, "no id stored");
+  assert.deepEqual(h.errors, []);
+});
+
 // ------------------------------------------------------------------------------- RT4 log line
 
 test("F002 RT4: 'menu command window is main: true' and the tab opens in the event's window", async () => {
