@@ -36,17 +36,40 @@ const sources = listJs(srcDir).map((file) => ({
 const allCode = sources.map((s) => s.code).join("\n");
 
 /**
+ * The cleanup for `insertFTLIfNeeded`: find our `<link href="…">` and call `.remove()` on it.
+ * Accepted in two shapes:
+ *   1. one-liner:  document.querySelector(`link[href="${x}"]`)?.remove()
+ *   2. split:      const link = document.querySelector(`link[href="${x}"]`);
+ *                  link?.remove();            (or link.remove())
+ * In shape 2 the `.remove()` must be called on the SAME identifier the querySelector result
+ * was assigned to (the `\k<ident>` back-reference), so deleting the remove call, or
+ * calling remove on something else, still fails the check.
+ */
+const LINK_SELECTOR =
+  /querySelector\(\s*(?:`link\[href="\$\{[^}]+\}"\]`|['"]link\[href="[^"]+"\]['"])\s*\)/.source;
+const FTL_LINK_REMOVAL = new RegExp(
+  `${LINK_SELECTOR}\\s*\\?\\.remove\\(\\)` +
+  "|" +
+  `\\b(?:const|let|var)\\s+(?<ident>[A-Za-z_$][\\w$]*)\\s*=\\s*[\\w$.?]*${LINK_SELECTOR}\\s*;` +
+  `[\\s\\S]*?(?<![\\w$.])\\k<ident>\\s*\\??\\.remove\\(\\)`,
+);
+
+/**
  * Fixed pairs: [what adds, what removes, description].
  * Each `add` pattern found anywhere in src/ requires the `remove` pattern somewhere in src/.
  * @type {Array<[RegExp, RegExp, string]>}
  */
 const PAIRS = [
   [/\.registerChrome\(/, /\.destruct\(\)/, "registerChrome → chromeHandle.destruct()"],
-  [/\.insertFTLIfNeeded\(/, /querySelector\(\s*`link\[href="\$\{[^}]+\}"\]`\s*\)\?\.remove\(\)|querySelector\(\s*['"]link\[href="[^"]+"\]['"]\s*\)\?\.remove\(\)/,
-    "insertFTLIfNeeded → querySelector(link[href=…])?.remove()"],
+  [/\.insertFTLIfNeeded\(/, FTL_LINK_REMOVAL,
+    "insertFTLIfNeeded → querySelector(link[href=…]) + .remove()"],
   [/\.addObserver\(/, /\.removeObserver\(/, "addObserver → removeObserver"],
   [/\.addEventListener\(/, /\.removeEventListener\(/, "addEventListener → removeEventListener"],
   [/\.addResourceIds\(/, /\.removeResourceIds\(/, "addResourceIds → removeResourceIds"],
+  // Weak on purpose: this only checks that SOME `.close()` call exists in src/, not that it
+  // closes the window we opened or runs at shutdown. The real proof (workspace windows are
+  // closed during shutdown, before chromeHandle.destruct) is in
+  // tests/behavior/lifecycle.test.mjs.
   [/\.openDialog\(|\.openWindow\(/, /\.close\(\)/, "open window → close()"],
 ];
 
@@ -94,4 +117,24 @@ test("AC5: shutdown calls Tabellify.shutdown() before chromeHandle.destruct() (s
   const b = shutdownBody.indexOf("chromeHandle?.destruct()");
   assert.ok(a >= 0 && b >= 0, "both calls must be in shutdown()");
   assert.ok(a < b, "Tabellify.shutdown() must come before chromeHandle.destruct()");
+});
+
+test("AC5: FTL-link cleanup check accepts both shapes and rejects a missing remove()", () => {
+  const accepted = [
+    "window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`)?.remove();",
+    "const link = window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`);\nlink?.remove();",
+    "let el = document.querySelector('link[href=\"tabellify.ftl\"]');\nif (el) el.remove();",
+  ];
+  const rejected = [
+    // remove call deleted
+    "const link = window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`);\nthis.log(!!link);",
+    // remove called on a different identifier
+    "const link = window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`);\nother.remove();",
+    // remove on an identifier that merely ends with the same name
+    "const link = window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`);\nmylink.remove();",
+    // query for a different element
+    "document.querySelector('div')?.remove();",
+  ];
+  for (const code of accepted) assert.match(code, FTL_LINK_REMOVAL, `should accept: ${code}`);
+  for (const code of rejected) assert.doesNotMatch(code, FTL_LINK_REMOVAL, `should reject: ${code}`);
 });
