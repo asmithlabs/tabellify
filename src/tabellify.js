@@ -110,8 +110,10 @@ var Tabellify = {
   unregisterMenu() {
     if (!this.menuID) return;
     try {
-      Zotero.MenuManager.unregisterMenu(this.menuID);
-      this.log(`menu unregistered (${this.menuID})`);
+      // unregisterMenu returns true if it removed the menu, false if nothing matched the
+      // id. Logging the result means the debug output shows what really happened.
+      const removed = Zotero.MenuManager.unregisterMenu(this.menuID);
+      this.log(`menu unregistered (${this.menuID}): ${removed}`);
     }
     catch (err) {
       Zotero.logError(err);
@@ -178,9 +180,14 @@ var Tabellify = {
    */
   onMainWindowLoad({ window }) {
     try {
+      // Check for our <link> before and after, so the log reports what actually happened
+      // rather than assuming success. "already present: true" means the call was a no-op.
+      const selector = `link[href="${this.FTL_FILE}"]`;
+      const wasPresent = !!window.document.querySelector(selector);
       // @ts-ignore MozXULElement exists on Zotero's chrome windows, not on plain DOM Window.
       window.MozXULElement.insertFTLIfNeeded(this.FTL_FILE);
-      this.log("onMainWindowLoad: inserted FTL");
+      const isPresent = !!window.document.querySelector(selector);
+      this.log(`onMainWindowLoad: inserted FTL (already present: ${wasPresent}, present now: ${isPresent})`);
     }
     catch (err) {
       Zotero.logError(err);
@@ -194,8 +201,10 @@ var Tabellify = {
    */
   onMainWindowUnload({ window }) {
     try {
-      window.document.querySelector(`link[href="${this.FTL_FILE}"]`)?.remove();
-      this.log("onMainWindowUnload: removed FTL");
+      const link = window.document.querySelector(`link[href="${this.FTL_FILE}"]`);
+      link?.remove();
+      // `!!link` turns the element (or null) into true/false: did we actually remove one?
+      this.log(`onMainWindowUnload: removed FTL: ${!!link}`);
     }
     catch (err) {
       Zotero.logError(err);
