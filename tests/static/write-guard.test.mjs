@@ -13,8 +13,10 @@
 //   cheap to fix, a missed write is not.
 // Independent code review (AC6 "+ review") remains the second line of defence.
 //
-// Allowlist: Feature 001 authorizes NO library writes, so ALLOWLIST is empty. A future spec
-// that authorizes a write adds a narrow entry here, citing the spec.
+// Allowlist: a spec that authorizes a write adds a narrow entry here, citing the spec.
+// Feature 001–003 authorize none. Feature 004 (docs/features/004-codebook.md, AC11;
+// ADR-0012) authorizes exactly one: IOUtils writes in src/content/codebook-store.js, which
+// saves Tabellify's own codebooks.json in <data dir>/tabellify/ (never the Zotero library).
 //
 // Pattern sources: Zotero's data-object API names (Zotero.DataObject save/erase family,
 // Zotero.Item tag/field/collection/relation setters, Zotero.Collection item membership,
@@ -43,8 +45,9 @@ export const DENYLIST = [
   // executeTransaction, …). Many are reads, but every direct DB call needs review.
   { name: "Zotero.DB.*(", re: /\bZotero\.DB\.\w+\s*\(/ },
   // File system writes (attachment files, the data directory). Reads (IOUtils.read*,
-  // Zotero.File.getContents*) are not matched.
-  { name: "IOUtils write", re: /\bIOUtils\.(?:write|remove|move|copy|setPermissions)\w*\s*\(/ },
+  // Zotero.File.getContents*) are not matched. makeDirectory creates folders on disk, so it
+  // counts as a write too (added in Feature 004).
+  { name: "IOUtils write", re: /\bIOUtils\.(?:write|remove|move|copy|setPermissions|makeDirectory)\w*\s*\(/ },
   {
     name: "Zotero.File write",
     re: /\bZotero\.File\.(?:putContents|putContentsAsync|removeIfExists|createDirectoryIfMissing|copyToUnique|rename)\w*\s*\(/,
@@ -82,10 +85,12 @@ export const DENYLIST = [
 
 /**
  * Spec-authorized exceptions: { file: "relative/path", pattern: DENYLIST name, spec: "docs/features/…" }.
- * Feature 001 authorizes none.
  * @type {Array<{ file: string, pattern: string, spec: string }>}
  */
-const ALLOWLIST = [];
+const ALLOWLIST = [
+  // F004: the codebook store writes codebooks.json (+ .tmp/.bak) and creates its folder.
+  { file: "content/codebook-store.js", pattern: "IOUtils write", spec: "docs/features/004-codebook.md" },
+];
 
 /**
  * Find denylisted write calls in a piece of text.
@@ -122,6 +127,20 @@ test("AC6: src/ contains no Zotero library-write calls (heuristic denylist)", ()
     }
   }
   assert.deepEqual(violations, [], `library-write calls found:\n${violations.join("\n")}`);
+});
+
+test("F004 AC11: the allow-list has exactly the one F004 entry, and it is really needed", () => {
+  assert.deepEqual(ALLOWLIST, [
+    { file: "content/codebook-store.js", pattern: "IOUtils write", spec: "docs/features/004-codebook.md" },
+  ]);
+  // A stale entry (file no longer writes) would silently allow a future write: fail instead.
+  for (const a of ALLOWLIST) {
+    const hits = findWrites(readFileSync(join(srcDir, a.file), "utf8")).filter((h) => h.pattern === a.pattern);
+    assert.ok(hits.length > 0, `allow-list entry ${a.file} [${a.pattern}] matches nothing`);
+  }
+  // Only the authorized pattern is allowed there: no other write kind in the store.
+  const store = findWrites(readFileSync(join(srcDir, "content/codebook-store.js"), "utf8"));
+  assert.deepEqual(store.filter((h) => h.pattern !== "IOUtils write"), []);
 });
 
 test("AC6: guard self-test — every denylist pattern catches a known write call", () => {
@@ -187,6 +206,7 @@ test("AC6: guard self-test — every denylist pattern catches a known write call
     "await IOUtils.move(a, b);",
     "await IOUtils.copy(a, b);",
     "await IOUtils.setPermissions(path, 0o644);",
+    "await IOUtils.makeDirectory(dir);",
     'Zotero.File.putContents(file, "x");',
     "await Zotero.File.removeIfExists(path);",
     "await Zotero.File.createDirectoryIfMissing(path);",
