@@ -5,6 +5,8 @@
 //   - the menu message has a `.label` attribute (MenuManager needs it)
 //   - the workspace window's `windowtype` matches what tabellify.js looks for
 //   - the chrome:// URL that tabellify.js opens maps to a real file in src/content/
+//   - workspace.xhtml loads chrome://global/skin/global.css before <window> (opaque window
+//     background), and workspace.css sets no background of its own (docs/zotero-api-notes.md)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,6 +20,7 @@ const read = (p) => readFileSync(join(srcDir, p), "utf8");
 const ftl = read("locale/en-US/tabellify.ftl");
 const tabellifyJs = read("tabellify.js");
 const workspace = read("content/workspace.xhtml");
+const workspaceCss = read("content/workspace.css");
 
 /** Map of Fluent message ID → { value: boolean, attributes: string[] }. */
 function parseFtl(text) {
@@ -79,4 +82,24 @@ test("AC4 (static): no hard-coded user-visible text in workspace.xhtml elements"
   const body = workspace.replace(/<!--[\s\S]*?-->/g, "").replace(/<\?xml[^>]*\?>/, "");
   const textNodes = [...body.matchAll(/>([^<]+)</g)].map((m) => m[1].trim()).filter(Boolean);
   assert.deepEqual(textNodes, []);
+});
+
+test("AC4 (static): workspace.xhtml loads global.css via <?xml-stylesheet?> before <window>", () => {
+  // Without global.css the root <window> has no background and Gecko makes the native
+  // window transparent (docs/zotero-api-notes.md, global.css row). A stylesheet processing
+  // instruction only applies if it comes before the root element. Comments are stripped
+  // first so a commented-out instruction does not count.
+  const code = workspace.replace(/<!--[\s\S]*?-->/g, "");
+  const pi = code.search(/<\?xml-stylesheet\s+href="chrome:\/\/global\/skin\/global\.css"(?:\s+type="text\/css")?\s*\?>/);
+  const root = code.search(/<window[\s>]/);
+  assert.ok(pi >= 0, "missing <?xml-stylesheet href=\"chrome://global/skin/global.css\" …?>");
+  assert.ok(root >= 0, "no <window> root element found");
+  assert.ok(pi < root, "the global.css processing instruction must come before <window>");
+});
+
+test("AC4 (static): workspace.css sets no background or background-color", () => {
+  // Owner-approved design: the background comes from global.css system colours, which
+  // follow Zotero's light/dark setting. A hard-coded background would break dark mode.
+  const css = workspaceCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(css, /(^|[;{\s])background(-color)?\s*:/i);
 });
