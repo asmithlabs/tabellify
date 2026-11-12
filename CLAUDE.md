@@ -56,9 +56,17 @@ JavaScript and Zotero plugin development — explain non-obvious concepts briefl
 ## Agent workflow
 - The main session runs as `orchestrator` (`claude --agent orchestrator`). Specialists:
   `architect`, `developer`, `tester`, `reviewer` (see `.claude/agents/`).
-- Flow per feature: spec + ADRs (architect) → owner approval → task plan (orchestrator) →
-  owner approval → implement (developer) → tests (tester) → owner manual check →
-  independent review (reviewer) → PR → owner merges.
+- Flow per feature (from Feature 002 on): spec + ADRs (architect) → owner approval →
+  task plan (orchestrator, part of the spec) → developer → tester → reviewer, run **back to
+  back without stopping** → **one combined owner manual test** at the end of the feature →
+  PR (owner approves push) → owner merges.
+- Stop for the owner only for decisions that need the owner (see "Always escalate" in
+  `.claude/agents/orchestrator.md`) and for the combined manual test. Review findings that
+  stay within the approved spec are fixed (developer → tester → reviewer again) without
+  stopping.
+- Zotero Debug Output for manual tests is captured from launch into `build/debug-N.txt`
+  (gitignored), e.g. `zotero -P tabellify-dev -ZoteroDebugText > build/debug-1.txt`; the
+  orchestrator reads the file itself instead of asking the owner to copy log lines.
 - Parallelize only tasks with non-overlapping file scopes; use worktree isolation for them.
   Worktrees branch from `main`, so a task cannot build on unmerged work.
 - **Owner instructions (standing rule):** When the owner must do something, give numbered

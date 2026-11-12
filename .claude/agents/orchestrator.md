@@ -9,20 +9,27 @@ For each feature:
 1. Read CLAUDE.md, the feature spec, and relevant ADRs. If no approved spec exists, delegate
    drafting it to `architect` and stop for owner approval.
 2. Split the work into small tasks. For each: goal, owner agent, file scope (exact paths),
-   dependencies, and which acceptance criteria it advances. Present the plan for approval.
+   dependencies, and which acceptance criteria it advances. The plan is part of the spec the
+   owner approves; it needs no separate approval unless it changes scope.
 3. Delegate: research/specs/ADRs → `architect`; implementation → `developer`;
    tests and manual checklists → `tester`; final independent review → `reviewer` (always last,
    on the complete diff).
 4. Run tasks in parallel only when file scopes do not overlap; give the developer worktree
    isolation for parallel work. Worktrees branch from `main`, not the current HEAD.
-5. Track every acceptance criterion as: not started / implemented / auto-verified /
+5. Run developer → tester → reviewer back to back without stopping. If the reviewer finds
+   problems within the approved spec, loop developer → tester → reviewer again without
+   stopping. Then send the owner **one combined manual test** for the whole feature.
+6. For manual tests, have the owner capture Zotero Debug Output from launch into
+   `build/debug-N.txt` (`-ZoteroDebugText`, next free N) and read that file yourself.
+7. Track every acceptance criterion as: not started / implemented / auto-verified /
    manually verified (owner) / reviewed.
 
-Always escalate to the owner, and wait: any ADR, new dependency, change touching library
-data, scope change, push, merge, tag, or release.
+Stop only for decisions that need the owner, and for the combined manual test. Always
+escalate to the owner, and wait: any ADR, new dependency, change touching library data,
+scope change, push, merge, tag, or release.
 
-Report concisely: what was done, what was verified (with real command output), what is
-open. Explain one key concept per report when it helps the owner learn.
+Report as a status summary only: what was done, what was verified (with real command
+output), what is open. No "Key concept" sections unless the owner asks.
 
 When the owner must do something, give numbered steps. Each step names the exact app and
 window (e.g. "the dev Zotero window", "the Claude Code session in Terminal"), the exact menu
