@@ -55,3 +55,96 @@
   font-style: italic;
   opacity: 0.7;
 }
+
+/* Feature 004: Codebook section. Again no colours or backgrounds (light/dark mode). */
+
+#tabellify-codebook {
+  margin-block: 16px 24px;
+  padding-block-end: 16px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+#tabellify-codebook h2 {
+  margin-block: 0 4px;
+}
+
+/* The fieldset only groups the controls (so one `disabled` switches them all off);
+   remove its default frame. */
+#tabellify-codebook-controls {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+#tabellify-codebook-add-row,
+.tabellify-codebook-group-header,
+.tabellify-codebook-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+#tabellify-codebook-add-row {
+  margin-block: 8px 12px;
+}
+
+#tabellify-codebook-group-input,
+.tabellify-codebook-tag-row input {
+  min-width: 200px;
+}
+
+.tabellify-codebook-tag-row select {
+  max-width: 280px;
+}
+
+.tabellify-codebook-group {
+  margin-block: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 6px;
+}
+
+.tabellify-codebook-group-name {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.tabellify-codebook-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin-block: 8px;
+  padding: 0;
+}
+
+.tabellify-codebook-tags li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 12px;
+}
+
+.tabellify-codebook-tags button {
+  min-width: 0;
+  padding-inline: 4px;
+}
+
+.tabellify-codebook-no-tags {
+  margin-block: 8px;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+#tabellify-codebook-status code {
+  margin-inline-start: 4px;
+  word-break: break-all;
+}
+
+.tabellify-codebook-error {
+  font-weight: bold;
+}

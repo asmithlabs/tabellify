@@ -5,7 +5,8 @@
      Gecko makes the native window transparent (the see-through window seen on macOS).
      System colours follow Zotero's light/dark setting, so workspace.css sets no
      background-color. Stylesheet processing instructions must come before <window>. -->
-<!-- Tabellify workspace (Feature 001 window / Feature 002 tab / Feature 003 data browser).
+<!-- Tabellify workspace (Feature 001 window / Feature 002 tab / Feature 003 data browser /
+     Feature 004 codebook).
 
      Opened by Tabellify.openWorkspace() as chrome://tabellify/content/workspace.xhtml,
      either inside an <iframe> in a main-window tab or, as a fallback, as its own window.
@@ -20,7 +21,10 @@
        each `data-l10n-id` names the message to show. No user-visible text is hard-coded.
      - Feature 003: the elements below the description start empty (or `hidden`);
        workspace.js fills the dropdown and the table from the library (read-only) and
-       shows exactly one of the status messages at a time. -->
+       shows exactly one of the status messages at a time.
+     - Feature 004: the "Codebook" section above the collection row. workspace.js builds the
+       groups and tags inside it from codebooks.json (Tabellify's own file, not the
+       library). -->
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         id="tabellify-workspace"
@@ -34,14 +38,41 @@
   <!-- Scripts run in order. include.js (Zotero's own file) defines the global `Zotero`
        object in THIS document, the same shared object the main window uses
        (docs/zotero-api-notes.md, include.js row). It works the same in the tab iframe and
-       in the fallback window. workspace.js only waits for "load" here, so the elements
-       further down exist when it starts. -->
+       in the fallback window. codebook-model.js (pure rules) and codebook-store.js (file
+       load/save, uses the model) each define one global that workspace.js uses, so they
+       come before it. workspace.js only waits for "load" here, so the elements further
+       down exist when it starts. -->
   <script src="chrome://zotero/content/include.js"/>
+  <script src="chrome://tabellify/content/codebook-model.js"/>
+  <script src="chrome://tabellify/content/codebook-store.js"/>
   <script src="chrome://tabellify/content/workspace.js"/>
 
   <html:main id="tabellify-workspace-main">
     <html:h1 data-l10n-id="tabellify-workspace-title"></html:h1>
     <html:p data-l10n-id="tabellify-workspace-description"></html:p>
+
+    <!-- Feature 004: Codebook. One status line (filled by workspace.js with plain text);
+         the <fieldset> holds every editing control, so setting its `disabled` turns them
+         all off at once (while saving, or when the file could not be loaded). -->
+    <html:section id="tabellify-codebook">
+      <html:h2 data-l10n-id="tabellify-codebook-heading"></html:h2>
+      <html:p data-l10n-id="tabellify-codebook-intro"></html:p>
+      <html:p id="tabellify-codebook-status" role="status" hidden="hidden">
+        <html:span id="tabellify-codebook-status-text"></html:span>
+        <html:code id="tabellify-codebook-status-path" hidden="hidden"></html:code>
+      </html:p>
+      <html:fieldset id="tabellify-codebook-controls" disabled="disabled">
+        <html:div id="tabellify-codebook-add-row">
+          <html:input id="tabellify-codebook-group-input" type="text"
+                      data-action="add-group-input"/>
+          <html:button id="tabellify-codebook-add-group" data-action="add-group"
+                       data-l10n-id="tabellify-codebook-add-group"></html:button>
+        </html:div>
+        <html:p id="tabellify-codebook-empty" hidden="hidden"
+                data-l10n-id="tabellify-codebook-empty"></html:p>
+        <html:div id="tabellify-codebook-groups"></html:div>
+      </html:fieldset>
+    </html:section>
 
     <html:div id="tabellify-collection-row">
       <html:label for="tabellify-collection-select"
