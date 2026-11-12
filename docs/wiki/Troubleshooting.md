@@ -20,6 +20,13 @@ Common causes and fixes:
 If neither helps, [collect Debug Output](#collecting-debug-output) while you try to install,
 and [report a bug](#reporting-a-bug).
 
+## Choosing Tools → Tabellify… does nothing visible
+
+If a **Tabellify** tab is already open, **Tools → Tabellify…** switches to it rather than
+opening a new one. Look for the **Tabellify** tab in the tab bar of the main Zotero window.
+If you have several main Zotero windows, the tab opens in the window whose Tools menu you
+used.
+
 ## The Tabellify… menu item is missing
 
 1. Choose **Tools → Plugins** and check that Tabellify is listed and enabled (the row title
@@ -40,6 +47,49 @@ fully shutting the old copy down, so a reinstall in the same session can start a
 Remove and Install**. Installing a new version over an enabled Tabellify (without removing
 it first) is fine.
 
+## PDF or note tabs not restored after a restart
+
+**Symptom:** you start Zotero and some of the PDF or note tabs that were open before are
+missing. Debug Output may show an error containing
+`Cannot destructure property 'itemID'`.
+
+**Why it can happen:** Zotero saves your open tabs (when you quit, and also automatically
+every few minutes) and reopens them at the next start. If a saved list contains a
+**Tabellify** tab, Zotero does not know how to reopen it, stops there, and the tabs after it
+are not reopened. Tabellify closes its tab just before Zotero saves at quit, so this should
+not happen in normal use. It can still happen in rare cases, for example if **Zotero
+crashes** (or is forced to quit) while the Tabellify tab is open. This is a known, accepted
+risk of Feature 002.
+
+**Your library is not affected.** Only the list of open tabs is lost. Your items, PDFs,
+notes, annotations and tags are unchanged.
+
+**What to do:**
+
+1. Reopen the PDFs or notes you need from the library, as usual.
+2. When you are done, quit Zotero normally (**Zotero → Quit Zotero** on macOS). Zotero then
+   saves your current tabs again, without a Tabellify tab, so the next start should restore
+   them normally.
+3. If tabs go missing again after a normal quit, that is a Tabellify bug. Please
+   [report it](#reporting-a-bug): start Zotero with
+   [Debug Output](#collecting-debug-output) enabled (**Restart with Logging Enabled…**),
+   and include the lines that start with `Tabellify:` and any line containing
+   `Cannot destructure property 'itemID'`. Say whether Zotero crashed or quit normally
+   before the problem.
+
+## The workspace opens as a separate window
+
+**Symptom:** **Tools → Tabellify…** opens a separate window titled **Tabellify Workspace**
+instead of a **Tabellify** tab.
+
+**Why:** Tabellify opens its tab through a part of Zotero that is not officially documented
+for plugins. If it is missing or does not work (for example after a Zotero update),
+Tabellify falls back to a separate window so you can still use it. Debug Output then shows a
+line such as `Tabellify: Zotero_Tabs unavailable; opening workspace window instead`.
+
+**What to do:** check your Zotero version (it should be 10.0.x) and
+[report it](#reporting-a-bug) with the Debug Output lines that start with `Tabellify:`.
+
 ## Errors you can ignore
 
 Debug Output may show these messages. They come from Zotero itself, not from Tabellify:
@@ -51,7 +101,9 @@ Debug Output may show these messages. They come from Zotero itself, not from Tab
 - A focus `TypeError` in `basicViewer.xhtml`.
 
 A Tabellify problem is an error line that mentions `tabellify` (for example `tabellify.js`,
-`bootstrap.js` from Tabellify, or a `chrome://tabellify/` address).
+`bootstrap.js` from Tabellify, or a `chrome://tabellify/` address). An error containing
+`Cannot destructure property 'itemID'` is **not** ignorable; see
+[PDF or note tabs not restored after a restart](#pdf-or-note-tabs-not-restored-after-a-restart).
 
 ## Collecting Debug Output
 

@@ -1,6 +1,6 @@
 # ADR-0004: Workspace as a separate window opened from a menu
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0009 (2026-11-11)
 - **Date:** 2026-11-11
 - **Deciders:** Antonio Smith (owner), Claude (drafted)
 

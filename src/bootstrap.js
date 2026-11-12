@@ -126,8 +126,8 @@ function onMainWindowUnload({ window }, reason) {
 /**
  * Called when the plugin is disabled, uninstalled, or upgraded, and when Zotero quits.
  *
- * Order matters (AC5): `Tabellify.shutdown()` closes the workspace window(s) and removes
- * per-window UI FIRST, while `chrome://tabellify/` URLs still resolve. Only then is the
+ * Order matters (AC5): `Tabellify.shutdown()` closes Tabellify's workspace tab(s) and any
+ * fallback window(s) and removes per-window UI FIRST, while `chrome://tabellify/` URLs still resolve. Only then is the
  * chrome registration destroyed. Doing it the other way round would leave an open window
  * whose own URL no longer exists.
  * @param {BootstrapParams} data

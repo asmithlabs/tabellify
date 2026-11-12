@@ -43,10 +43,15 @@ of Zotero.", see [Troubleshooting](Troubleshooting#could-not-be-installed).
 1. Go back to the main Zotero window.
 2. In the menu bar, choose **Tools → Tabellify…**.
 
-**What you should see:** a new window titled **Tabellify Workspace** opens. It shows the
-heading **Tabellify Workspace** and the sentence **Your literature tables will appear here.**
+**What you should see:** a new tab titled **Tabellify** appears in the tab bar of the main
+Zotero window, next to your library tab, and is selected. It shows the heading **Tabellify
+Workspace** and the sentence **Your literature tables will appear here.**
 
-See [Workspace](Workspace) for more about this window.
+Choosing **Tools → Tabellify…** again switches to that tab instead of opening a second one.
+Close it with the **×** on the tab. It is not reopened after you restart Zotero; open it
+again from the Tools menu.
+
+See [Workspace](Workspace) for more about the Tabellify tab.
 
 ## Turning Tabellify off and on
 
@@ -54,7 +59,7 @@ See [Workspace](Workspace) for more about this window.
 2. Find the Tabellify row and click the toggle switch on the right of that row.
 
 When Tabellify is off, the row title reads **Tabellify (disabled)**, the **Tabellify…** item
-disappears from the Tools menu, and an open Tabellify Workspace window closes by itself.
+disappears from the Tools menu, and an open Tabellify tab closes by itself.
 Click the toggle again to turn Tabellify back on. You do not need to restart Zotero.
 
 ## Updating to a new version
