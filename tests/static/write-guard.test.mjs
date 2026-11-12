@@ -1,7 +1,8 @@
 // AC6 [auto]: library-write guard (CLAUDE.md rule 8, ADR-0005).
 //
 // Fails if any file under src/ contains a call that could create, change, or delete Zotero
-// library data (items, collections, attachments, annotations, tags, relations, DB rows).
+// library data (items, collections, attachments, annotations, tags, relations, DB rows), or
+// write to disk (attachment files, the data directory) through IOUtils / Zotero.File.
 //
 // IMPORTANT: this is a HEURISTIC DENYLIST, NOT A PROOF.
 // - It matches text patterns. It cannot see calls built dynamically (obj[name]()), calls
@@ -17,7 +18,8 @@
 //
 // Pattern sources: Zotero's data-object API names (Zotero.DataObject save/erase family,
 // Zotero.Item tag/field/collection/relation setters, Zotero.Collection item membership,
-// Zotero.Items/Tags/Collections/Attachments/Annotations/Relations write helpers, Zotero.DB).
+// Zotero.Items/Tags/Collections/Attachments/Annotations/Relations write helpers, Zotero.DB,
+// Gecko IOUtils file writes, Zotero.File write helpers).
 // Where a whole family is matched by prefix (e.g. `Zotero.Tags.remove…`), that is
 // deliberate, so the guard does not depend on exact method names.
 
@@ -37,9 +39,16 @@ export const DENYLIST = [
   { name: ".erase(", re: /\.erase\s*\(/ },
   { name: ".eraseTx(", re: /\.eraseTx\s*\(/ },
   { name: ".deleted = (trash flag)", re: /\.deleted\s*=(?!=)/ },
-  // Direct database access (reads are possible too, but any DB query needs review)
-  { name: "Zotero.DB.query*", re: /Zotero\.DB\.query\w*\s*\(/ },
-  { name: "Zotero.DB.executeTransaction", re: /Zotero\.DB\.executeTransaction\s*\(/ },
+  // Direct database access: ANY Zotero.DB method call (query, valueQueryAsync,
+  // executeTransaction, …). Many are reads, but every direct DB call needs review.
+  { name: "Zotero.DB.*(", re: /\bZotero\.DB\.\w+\s*\(/ },
+  // File system writes (attachment files, the data directory). Reads (IOUtils.read*,
+  // Zotero.File.getContents*) are not matched.
+  { name: "IOUtils write", re: /\bIOUtils\.(?:write|remove|move|copy|setPermissions)\w*\s*\(/ },
+  {
+    name: "Zotero.File write",
+    re: /\bZotero\.File\.(?:putContents|putContentsAsync|removeIfExists|createDirectoryIfMissing|copyToUnique|rename)\w*\s*\(/,
+  },
   // Tags on an item
   { name: ".addTag(", re: /\.addTag\s*\(/ },
   { name: ".removeTag(", re: /\.removeTag\s*\(/ },
@@ -123,8 +132,9 @@ test("AC6: guard self-test — every denylist pattern catches a known write call
     ".erase(": "await collection.erase();",
     ".eraseTx(": "await item.eraseTx();",
     ".deleted = (trash flag)": "item.deleted = true;",
-    "Zotero.DB.query*": 'await Zotero.DB.queryAsync("DELETE FROM items");',
-    "Zotero.DB.executeTransaction": "await Zotero.DB.executeTransaction(async () => {});",
+    "Zotero.DB.*(": 'await Zotero.DB.queryAsync("DELETE FROM items");',
+    "IOUtils write": 'await IOUtils.writeUTF8(path, "x");',
+    "Zotero.File write": 'await Zotero.File.putContentsAsync(path, "x");',
     ".addTag(": 'item.addTag("Methods");',
     ".removeTag(": 'item.removeTag("Methods");',
     ".setTags(": "item.setTags([]);",
@@ -165,6 +175,23 @@ test("AC6: guard self-test — every denylist pattern catches a known write call
     "Zotero.Items.trashTx([1]);",
     "Zotero.Items.erase([1]);",
     'Zotero.DB.query("UPDATE items SET x=1");',
+    // Any direct DB call, including reads, is flagged for review.
+    "await Zotero.DB.executeTransaction(async () => {});",
+    'await Zotero.DB.valueQueryAsync("SELECT 1");',
+    'await Zotero.DB.rowQueryAsync("SELECT 1");',
+    'await Zotero.DB.columnQueryAsync("SELECT 1");',
+    // File writes: every IOUtils / Zotero.File family member named in the denylist.
+    "await IOUtils.write(path, bytes);",
+    'await IOUtils.writeJSON(path, {});',
+    "await IOUtils.remove(path);",
+    "await IOUtils.move(a, b);",
+    "await IOUtils.copy(a, b);",
+    "await IOUtils.setPermissions(path, 0o644);",
+    'Zotero.File.putContents(file, "x");',
+    "await Zotero.File.removeIfExists(path);",
+    "await Zotero.File.createDirectoryIfMissing(path);",
+    "await Zotero.File.copyToUnique(a, b);",
+    'await Zotero.File.rename(path, "new.pdf");',
   ]) {
     assert.ok(findWrites(code).length > 0, `not caught: ${code}`);
   }
@@ -198,6 +225,12 @@ test("AC6: guard self-test — read-only and look-alike code is not flagged", ()
     "const tags = item.getTags();",
     "Zotero.MenuManager.registerMenu({});",
     "window.document.querySelector('link')?.remove();",
+    // File reads and look-alike names are not writes.
+    "const text = await IOUtils.readUTF8(path);",
+    "const exists = await IOUtils.exists(path);",
+    "const text = await Zotero.File.getContentsAsync(path);",
+    "const db = Zotero.DBConnection;",
+    "myIOUtils.writeLog(x);",
   ]) {
     assert.deepEqual(findWrites(code), [], `false positive on: ${code}`);
   }
