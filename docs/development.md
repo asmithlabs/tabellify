@@ -36,6 +36,15 @@ In Terminal, run:
 /Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev
 ```
 
+To capture Debug Output from launch (needed for startup log lines), run this from the
+repository folder instead, using the next free number N (`build/` is gitignored):
+```bash
+/Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev -ZoteroDebugText > build/debug-N.txt
+```
+`-ZoteroDebugText` is documented at https://www.zotero.org/support/debug_output (the page
+says Zotero 11+ renames it `-debug-text`). Logging switched on later from Help → Debug
+Output Logging misses the startup lines.
+
 ## Everyday loop
 
 - `npm test` before every commit; `npm run build` produces `build/tabellify-<version>.xpi`.
