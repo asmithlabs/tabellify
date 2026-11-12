@@ -1,6 +1,6 @@
 # Feature 001: Plugin Shell
 
-- **Status:** Implemented — reviewed (T7: approve with non-blocking comments, 2026-11-11); review fixes in progress; owner's final combined manual run pending
+- **Status:** Implemented — reviewed (T7: approve with non-blocking comments, 2026-11-11); review fixes done and re-reviewed (approve); owner's final combined manual run pending on the current build — the outcome-reporting log lines from `1f3dafc` (`present now: …`, `removed FTL: …`, `menu unregistered (…): …`) have not yet been observed in real Zotero
 - **Branch:** `feat/001-plugin-shell`
 - **Related ADRs:** 0002, 0003, 0004, 0005, 0008
 

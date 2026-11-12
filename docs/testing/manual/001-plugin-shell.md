@@ -21,9 +21,9 @@ Never run these steps in your normal Zotero profile.
 
 ## Before you start
 
-**Status:** AC1–AC5 were verified by the owner on 2026-11-11 in Zotero 10.0.9 (see the
-spec, `docs/features/001-plugin-shell.md`), except steps 7 (R2), 12 (R3) and 16 (FTL link
-removed after disable), whose results are not yet recorded. They are pending the owner's
+**Status:** AC1–AC4 were verified by the owner on 2026-11-11 in Zotero 10.0.9 (see the
+spec, `docs/features/001-plugin-shell.md`). AC5 is verified except step 16 (FTL link removed
+after disable). Steps 7 (R2), 12 (R3) and 16 have no recorded results yet. They are pending the owner's
 next combined run. The expected log lines below were updated after that run to the
 outcome-reporting wording (`present now: true`, `removed FTL: true`, `…: true`).
 
@@ -155,7 +155,7 @@ Leave Zotero running for the remaining steps; when you finish, quit it and run:
 ```bash
 grep -n "Tabellify" build/debug-1.txt
 ```
-**Expected:** the Debug Output window shows `Tabellify: startup (version 0.1.0, reason 1)`
+**Expected:** the `grep` output from `build/debug-1.txt` shows `Tabellify: startup (version 0.1.0, reason 1)`
 (reason 1 means "Zotero is starting up"), followed later by
 `Tabellify: onMainWindowLoad (reason 9)` and
 `Tabellify: onMainWindowLoad: inserted FTL (already present: false, present now: true)`.
