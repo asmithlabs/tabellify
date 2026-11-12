@@ -265,11 +265,14 @@ F001 build installed and enabled** (it provides `chrome://tabellify/` and `tabel
 3. **Expected:** after a restart (AC6), the `pane` entry has no `"tabellify"` tab. This shows
    what Zotero loaded at startup from `session.json`, not the current tabs.
 
-**RT4: Which window a menu command runs in (UI only). Run during T2 manual testing.** T2 adds a
-temporary debug line in `onCommand` logging `event.target.ownerGlobal === Zotero.getMainWindow()`.
+**RT4: Which window a menu command runs in (UI only). Part of the end-of-feature manual test.**
+`src/tabellify.js` logs `Tabellify: menu command window is main: <true|false>` on every menu
+command: `true` when `event.target.ownerGlobal` is one of `Zotero.getMainWindows()`. This is a
+permanent log line (owner-approved change from the original "temporary" line, so RT4 can be
+read after review).
 1. In the dev Zotero window, choose **Tools → Tabellify…**.
-2. Choose **Help → Debug Output Logging → View Output**.
-3. **Expected:** a `Tabellify:` line showing `true`. The debug line is removed before review.
+2. **Expected:** `build/debug-N.txt` (read by the orchestrator) contains
+   `Tabellify: menu command window is main: true`.
 
 ## Data safety
 - **Reads:** nothing from the library. It reads only Zotero's in-memory tab list for our own
