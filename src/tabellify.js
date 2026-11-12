@@ -195,16 +195,20 @@ var Tabellify = {
   },
 
   /**
-   * Remove everything `onMainWindowLoad` added to one main window: the
-   * `link[href="tabellify.ftl"]` element. `?.` makes it a no-op if the link is missing.
+   * Remove everything `onMainWindowLoad` added to one main window: every
+   * `link[href="tabellify.ftl"]` element. If there are none, nothing happens.
    * @param {{ window: Window }} params
    */
   onMainWindowUnload({ window }) {
     try {
-      const link = window.document.querySelector(`link[href="${this.FTL_FILE}"]`);
-      link?.remove();
-      // `!!link` turns the element (or null) into true/false: did we actually remove one?
-      this.log(`onMainWindowUnload: removed FTL: ${!!link}`);
+      // Remove ALL matching links, not just the first: removing and reinstalling the
+      // plugin in one Zotero session can leave a duplicate link behind (a Zotero bug,
+      // see docs/development.md). querySelectorAll returns a static list, so removing
+      // elements while looping over it is safe.
+      const links = window.document.querySelectorAll(`link[href="${this.FTL_FILE}"]`);
+      links.forEach((link) => link.remove());
+      // Log how many we removed: 1 normally, 0 if none was present.
+      this.log(`onMainWindowUnload: removed FTL: ${links.length}`);
     }
     catch (err) {
       Zotero.logError(err);
