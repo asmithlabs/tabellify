@@ -44,8 +44,8 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 
 | # | Capability | Milestone |
 |---|---|---|
-| F001 | Plugin shell: installs, opens a workspace window with placeholder (interim surface; proves install, startup, menu, cleanup) | **Now** |
-| F002 | Workspace as a main-window tab (replaces the F001 window; see requirement REQ-1 in §7) | **Next** (research first) |
+| F001 | Plugin shell: installs, opens a workspace window with placeholder (interim surface; proves install, startup, menu, cleanup) | Done (PR #1) |
+| F002 | Workspace as a main-window tab (replaces the F001 window; see requirement REQ-1 in §7) | **Now** |
 | F003 | Read-only data access: list collections, items, and tags of a chosen collection | |
 | F004 | Curated tag list (codebook) with super-tag groups, stored by Tabellify | |
 | F005 | Tag monitor: used / remaining curated tags for a collection | |

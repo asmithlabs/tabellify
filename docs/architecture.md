@@ -34,7 +34,7 @@ static test and by review (CLAUDE.md rule 9).
 src/
 ├── manifest.json          identity + compatibility
 ├── bootstrap.js           thin: forwards lifecycle hooks to Tabellify object
-├── tabellify.js           plugin object: init/shutdown, menu registration, window opening
+├── tabellify.js           plugin object: init/shutdown, menu registration, workspace tab (window fallback), quit cleanup
 ├── modules/               PURE logic (no Zotero globals) — table model, CSV, codebook
 ├── content/               workspace page: workspace.xhtml / .css (shown in the main-window tab; F001 window as fallback)
 └── locale/en-US/          Fluent strings (tabellify.ftl)

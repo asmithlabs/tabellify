@@ -129,8 +129,9 @@ shutdown()               ──▶ closeAllTabs(); closeWorkspaceWindows(); remo
   resolves, then the rest. Bootstrap destructs chrome last (unchanged from F001).
 
 ### Files touched (proposed)
-- `src/tabellify.js`: `openWorkspace` becomes tab-first with window fallback; new
-  `openWorkspaceTab`, `closeWorkspaceTab(win)`, `closeAllWorkspaceTabs()`, quit observer;
+- `src/tabellify.js`: `openWorkspace` becomes tab-first with window fallback (the old window
+  code is kept as `openWorkspaceWindow`); new `closeWorkspaceTab(win)`,
+  `closeAllWorkspaceTabs()`, quit observer;
   `onMainWindowUnload` and `shutdown` extended. **`bootstrap.js` unchanged.**
 - `src/content/workspace.xhtml` / `.css`: only if RT2 shows the document needs adjusting to
   sit inside an iframe (e.g. `<window>` root sizing). Keep it working as a window for the
@@ -315,8 +316,11 @@ The fake `Zotero_Tabs` models only source-verified behaviour: `add` returns `{id
 | T2 | Tab open/select/close, quit observer, unload/shutdown cleanup, window fallback; adjust workspace document for iframe use only if RT2 requires | developer | T1 | `src/tabellify.js`, `src/content/` (only if needed), `src/locale/en-US/tabellify.ftl` (add `tabellify-tab-title`) |
 | T3 | Extend mock with fake `Zotero_Tabs` and `Services.obs`; behaviour + static tests for AC1, 2, 4–6, 9–11 | tester | T1 (can start in parallel with T2 on the same branch, sequentially) | `tests/` |
 | T4 | Manual checklist for AC1–AC8 with RT3/RT4 | tester | T1 | `docs/testing/manual/002-workspace-tab.md` |
-| T5 | Run `npm test`; owner runs manual checklist on 10.0.9 | tester + owner | T2, T3, T4 | — |
-| T6 | Independent review (internal-API allow-list, lifecycle symmetry, shutdown order) | reviewer | T5 | read-only |
+| T5 | Independent review (internal-API allow-list, lifecycle symmetry, shutdown order); fixes loop developer → tester → reviewer | reviewer | T2, T3, T4 | read-only |
+| T6 | Owner runs the combined manual checklist on 10.0.9 (orchestrator reads `build/debug-N.txt`) | owner | T5 | — |
+
+Order follows the workflow in CLAUDE.md (from F002): developer → tester → reviewer back to
+back, then one combined owner manual test.
 
 Run sequentially on `feat/002-workspace-tab` (same reason as F001: worktrees branch from
 `main`, and T2–T4 build on each other).
