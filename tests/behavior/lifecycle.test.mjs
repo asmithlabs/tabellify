@@ -7,6 +7,7 @@
 //   - onMainWindowUnload removes the link; after shutdown nothing is left; re-enable works
 //   - app quit (reason 2) runs the same full cleanup; a failed tabellify.js load at startup
 //     still lets shutdown destruct the chrome registration exactly once
+//   - debug lines report real outcomes (FTL inserted/removed, menu unregistered: true/false)
 //
 // The mocks model the APIs in docs/zotero-api-notes.md, not Zotero itself. A pass here
 // proves the plugin calls those APIs in the right order; the manual checklist
@@ -289,4 +290,41 @@ test("AC5: tabellify.js failing to load at startup — shutdown still destructs 
   assert.equal(h.chromeRegistrations, 0);
   assert.deepEqual(h.errors, [loadError], "no further errors logged during shutdown");
   assert.ok(h.debug.includes("Tabellify: shutdown (version 0.1.0, reason 4)"));
+});
+
+test("AC2 (support): debug lines report real outcomes on load and unload", () => {
+  const h = createHarness({ mainWindowCount: 2 });
+  h.startup();
+  const menuID = [...h.menus.keys()][0];
+  assert.equal(
+    h.debug.filter((l) => l === "Tabellify: onMainWindowLoad: inserted FTL (already present: false, present now: true)").length,
+    2,
+    "one 'inserted FTL' line per main window",
+  );
+
+  // A window whose link is already gone: unload must say it removed nothing.
+  const [w1, w2] = h.mainWindows;
+  w2.links[0].remove();
+  h.debug.length = 0;
+  h.removeMainWindow(w2);
+  assert.ok(h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: false"), h.debug.join("\n"));
+  assert.ok(!h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: true"));
+
+  h.debug.length = 0;
+  h.shutdown();
+  assert.ok(h.debug.includes(`Tabellify: menu unregistered (${menuID}): true`), h.debug.join("\n"));
+  assert.ok(h.debug.includes("Tabellify: onMainWindowUnload: removed FTL: true"), h.debug.join("\n"));
+  assert.deepEqual(w1.links, []);
+  assert.deepEqual(h.errors, []);
+});
+
+test("AC2 (support): 'menu unregistered' reports false when Zotero had no such menu", () => {
+  const h = createHarness();
+  h.startup();
+  const menuID = [...h.menus.keys()][0];
+  h.menus.delete(menuID); // simulate Zotero having already dropped the menu
+  h.debug.length = 0;
+  h.shutdown();
+  assert.ok(h.debug.includes(`Tabellify: menu unregistered (${menuID}): false`), h.debug.join("\n"));
+  assert.deepEqual(h.errors, []);
 });
