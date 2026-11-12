@@ -5,9 +5,10 @@
      Gecko makes the native window transparent (the see-through window seen on macOS).
      System colours follow Zotero's light/dark setting, so workspace.css sets no
      background-color. Stylesheet processing instructions must come before <window>. -->
-<!-- Tabellify workspace window (Feature 001: placeholder content only).
+<!-- Tabellify workspace (Feature 001 window / Feature 002 tab / Feature 003 data browser).
 
-     Opened by Tabellify.openWorkspace() as chrome://tabellify/content/workspace.xhtml.
+     Opened by Tabellify.openWorkspace() as chrome://tabellify/content/workspace.xhtml,
+     either inside an <iframe> in a main-window tab or, as a fallback, as its own window.
      The chrome:// URL works because bootstrap.js registers src/content/ as the
      "tabellify" content package.
 
@@ -16,7 +17,10 @@
      - `windowtype="tabellify:workspace"` is the label Services.wm uses to find this window
        (single-instance check in openWorkspace, closing it in shutdown).
      - Text comes from Fluent: the <html:link rel="localization"> loads tabellify.ftl, and
-       each `data-l10n-id` names the message to show. No user-visible text is hard-coded. -->
+       each `data-l10n-id` names the message to show. No user-visible text is hard-coded.
+     - Feature 003: the elements below the description start empty (or `hidden`);
+       workspace.js fills the dropdown and the table from the library (read-only) and
+       shows exactly one of the status messages at a time. -->
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         id="tabellify-workspace"
@@ -27,8 +31,46 @@
     <html:link rel="stylesheet" href="chrome://tabellify/content/workspace.css"/>
   </linkset>
 
+  <!-- Scripts run in order. include.js (Zotero's own file) defines the global `Zotero`
+       object in THIS document, the same shared object the main window uses
+       (docs/zotero-api-notes.md, include.js row). It works the same in the tab iframe and
+       in the fallback window. workspace.js only waits for "load" here, so the elements
+       further down exist when it starts. -->
+  <script src="chrome://zotero/content/include.js"/>
+  <script src="chrome://tabellify/content/workspace.js"/>
+
   <html:main id="tabellify-workspace-main">
     <html:h1 data-l10n-id="tabellify-workspace-title"></html:h1>
     <html:p data-l10n-id="tabellify-workspace-description"></html:p>
+
+    <html:div id="tabellify-collection-row">
+      <html:label for="tabellify-collection-select"
+                  data-l10n-id="tabellify-collection-label"></html:label>
+      <!-- Starts disabled; workspace.js enables it once the collections are listed.
+           The first option is the placeholder and is never removed. -->
+      <html:select id="tabellify-collection-select" disabled="disabled">
+        <html:option value="" data-l10n-id="tabellify-collection-placeholder"></html:option>
+      </html:select>
+    </html:div>
+
+    <!-- Status messages: workspace.js removes `hidden` from at most one of them. -->
+    <html:p id="tabellify-no-collections" class="tabellify-status" hidden="hidden"
+            data-l10n-id="tabellify-no-collections"></html:p>
+    <html:p id="tabellify-loading-items" class="tabellify-status" hidden="hidden"
+            data-l10n-id="tabellify-loading-items"></html:p>
+    <html:p id="tabellify-no-items" class="tabellify-status" hidden="hidden"
+            data-l10n-id="tabellify-no-items"></html:p>
+    <html:p id="tabellify-load-error" class="tabellify-status" hidden="hidden"
+            data-l10n-id="tabellify-load-error"></html:p>
+
+    <html:table id="tabellify-items-table" hidden="hidden">
+      <html:thead>
+        <html:tr>
+          <html:th scope="col" data-l10n-id="tabellify-column-title"></html:th>
+          <html:th scope="col" data-l10n-id="tabellify-column-tags"></html:th>
+        </html:tr>
+      </html:thead>
+      <html:tbody id="tabellify-items-body"></html:tbody>
+    </html:table>
   </html:main>
 </window>
