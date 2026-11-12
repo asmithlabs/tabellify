@@ -15,17 +15,17 @@ supersedes them (ADR-0001).
 | [0006](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0006-agent-architecture.md) | Claude Code agent architecture | Accepted |
 | [0007](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0007-license-and-governance.md) | License and community governance | Accepted |
 | [0008](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0008-target-zotero-10.md) | Target Zotero 10.0 (supersedes ADR-0002's version range) | Accepted |
-| 0009 | Workspace as a tab in the main Zotero window | Accepted (on branch `feat/002-workspace-tab` until Feature 002 merges) |
+| [0009](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0009-workspace-as-main-window-tab.md) | Workspace as a tab in the main Zotero window (supersedes ADR-0004) | Accepted |
 | [0010](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0010-documentation-structure.md) | Documentation structure (README, wiki source, docs-writer) | Accepted |
 | [0011](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0011-security-review-process.md) | Security review process (security-auditor, SECURITY.md) | Accepted |
 
 ## Notes
 
-- **ADR-0004 → ADR-0009.** Feature 001 shipped the workspace as a separate window
-  (ADR-0004). ADR-0009 replaces it with a tab in the main Zotero window, using Zotero's
-  internal `Zotero_Tabs` with strict guards and a fallback to the window. The supersession
-  takes effect on `main` when Feature 002 merges; until then the file on `main` still reads
-  "Accepted".
+- **ADR-0004 → ADR-0009.** Feature 001 built the workspace as a separate window
+  (ADR-0004). ADR-0009 replaces it with a tab in the main Zotero window, implemented in
+  Feature 002, using only four methods of Zotero's internal `Zotero_Tabs` with strict guards.
+  The F001 window stays only as an automatic fallback. ADR-0004 is marked "Superseded by
+  ADR-0009"; the ADR-0009 link above works once Feature 002 is merged to `main`.
 - **Roadmap renumbering.** When Feature 002 (workspace tab) was inserted, later features
   moved up by one (old F002 data access is now F003, and so on). Accepted ADRs keep the old
   numbers as historical records. Mapping: old F002→F003 data access, F003→F004 codebook,

@@ -3,17 +3,17 @@
 Tabellify is a Zotero plugin that turns curated tags into structured literature tables
 (synthesis matrices), so you can organize, compare and export research findings.
 
-> **Status: early development.** Version 0.1.0 (Feature 001, the plugin shell) installs in
-> Zotero 10.0.x and opens a placeholder workspace window from **Tools → Tabellify…**. It
-> does not read your library or build tables yet. Pages marked **Planned** describe features
-> that are not available.
+> **Status: early development.** Version 0.1.0 (Features 001 and 002) installs in Zotero
+> 10.0.x and opens a placeholder workspace as a **Tabellify** tab in the main Zotero window
+> from **Tools → Tabellify…**. It does not read your library or build tables yet. Pages
+> marked **Planned** describe features that are not available.
 
 ## What is available today
 
 | Feature | Status |
 |---|---|
-| F001 Plugin shell: install, Tools → Tabellify…, placeholder workspace window | Available (unreleased; no GitHub Release yet) |
-| F002 Workspace as a tab in the main Zotero window | **Planned** (approved, in development) |
+| F001 Plugin shell: install, Tools → Tabellify…, placeholder workspace | Implemented (unreleased; no GitHub Release yet) |
+| F002 Workspace as a tab in the main Zotero window (separate window only as automatic fallback) | Implemented (unreleased; no GitHub Release yet) |
 | F003 Read-only data access (collections, items, tags) | **Planned** |
 | F004 Codebook (curated tag list with super-tag groups) | **Planned** |
 | F005 Tag monitor | **Planned** |
@@ -25,7 +25,7 @@ Tabellify is a Zotero plugin that turns curated tags into structured literature 
 
 Feature numbers follow the roadmap in
 [docs/product-requirements.md](https://github.com/asmithlabs/tabellify/blob/main/docs/product-requirements.md)
-as renumbered for Feature 002 (see [Decision Log](Decision-Log)).
+(see [Decision Log](Decision-Log) for the renumbering when Feature 002 was added).
 
 ## For researchers
 

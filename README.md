@@ -7,9 +7,9 @@ with a planned list of tags (a codebook), see which tags you have covered, build
 table with grouped columns, and export it to CSV.
 
 > **Status: early development.** Version 0.1.0 is a plugin shell: it installs, adds
-> **Tabellify…** to Zotero's Tools menu, and opens a placeholder workspace window. It does not
-> read your library or build tables yet. Everything else is planned; see the
-> [roadmap](docs/product-requirements.md).
+> **Tabellify…** to Zotero's Tools menu, and opens a placeholder workspace as a tab in the
+> main Zotero window. It does not read your library or build tables yet. Everything else is
+> planned; see the [roadmap](docs/product-requirements.md).
 
 ## Compatibility
 
@@ -26,7 +26,7 @@ versions.
 3. In the Manage Your Plugins window, click the gear icon (⚙) in the top-right corner and choose
    **Install Plugin From File…**, then pick the `.xpi` file you downloaded.
 4. Tabellify appears in the Plugins window, enabled. In the main Zotero window, choose
-   **Tools → Tabellify…** to open the workspace.
+   **Tools → Tabellify…** to open the workspace in a **Tabellify** tab.
 
 If Zotero says the plugin "could not be installed", see
 [Troubleshooting](https://github.com/asmithlabs/tabellify/wiki/Troubleshooting).
