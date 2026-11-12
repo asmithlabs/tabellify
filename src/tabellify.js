@@ -1,4 +1,4 @@
-/* Tabellify — main plugin object (Feature 001: menu item, workspace window, cleanup).
+/* Tabellify — main plugin object (F001: menu item, cleanup; F002: workspace tab).
  *
  * `bootstrap.js` loads this file with `Services.scriptloader.loadSubScript`, which runs it
  * in the bootstrap's own global scope. That's why `Tabellify` is declared with `var` at the
@@ -31,6 +31,13 @@ var Tabellify = {
   WORKSPACE_WINDOWTYPE: "tabellify:workspace",
   /** Our Fluent file in `locale/en-US/`. Zotero registers it automatically. */
   FTL_FILE: "tabellify.ftl",
+  /**
+   * Tab type passed to `Zotero_Tabs.add` (F002 AC11). Must not contain "-": Zotero splits
+   * tab types on hyphens ("reader-unloaded" → "reader" + state "unloaded").
+   */
+  TAB_TYPE: "tabellify",
+  /** Used if Fluent cannot format `tabellify-tab-title`. */
+  FALLBACK_TAB_TITLE: "Tabellify",
 
   /** @type {string | null} */
   id: null,
@@ -45,6 +52,13 @@ var Tabellify = {
    * @type {string | null}
    */
   menuID: null,
+  /**
+   * Open Tabellify tab id per main window. A `Map` keyed by the window object (each main
+   * window has its own `Zotero_Tabs` and its own tab ids). Entries are removed by the tab's
+   * `onClose`, so the Map never keeps a closed window alive for long.
+   * @type {Map<any, string>}
+   */
+  tabIDs: new Map(),
 
   /**
    * Plugin-wide setup, called once per `startup`: register the menu, then do the per-window
@@ -89,7 +103,9 @@ var Tabellify = {
             // tabellify.ftl, which onMainWindowLoad inserts into each main window.
             l10nID: "tabellify-menu-open",
             // Arrow function, so `this` still means the Tabellify object when clicked.
-            onCommand: () => this.openWorkspace(),
+            // MenuManager passes (event, context); the event tells us which main window's
+            // menu was used, so the tab opens in that window.
+            onCommand: (event) => this.openWorkspace(this.windowFromCommandEvent(event)),
           },
         ],
       });
@@ -123,13 +139,187 @@ var Tabellify = {
   },
 
   /**
-   * Open the workspace window, or bring it to the front if it's already open.
+   * Pick the main window a menu command came from.
+   *
+   * MenuManager calls `onCommand(event, context)` with the DOM event of the clicked menu item.
+   * `event.target` is that <menuitem>, and `ownerGlobal` (a Mozilla chrome-only DOM
+   * property) is the window it lives in. That property is UNVERIFIED for MenuManager items
+   * (api-notes, runtime check RT4), so we only trust it if it really is one of Zotero's main
+   * windows, and otherwise use `Zotero.getMainWindow()`.
+   * @param {any} event  The command event from MenuManager (may lack `target` in tests)
+   * @returns {any} A main window, or null if none is open
+   */
+  windowFromCommandEvent(event) {
+    const candidate = event?.target?.ownerGlobal ?? null;
+    const isMain = !!candidate && Zotero.getMainWindows().includes(candidate);
+    // Kept on purpose (not temporary): the owner reads this line for runtime check RT4.
+    this.log(`menu command window is main: ${isMain}`);
+    return isMain ? candidate : Zotero.getMainWindow();
+  },
+
+  /**
+   * Open the workspace as a tab in `win` (Feature 002), or select it if that window already
+   * has one. Falls back to the F001 separate window if Zotero's tab manager is unusable.
+   *
+   * `async` because the tab title comes from Fluent, and `formatValue` returns a Promise.
+   * Callers don't need to wait for it: all errors are caught and logged in here.
+   * @param {any} [win]  Main window to open the tab in; defaults to `Zotero.getMainWindow()`
+   * @returns {Promise<void>}
+   */
+  async openWorkspace(win) {
+    try {
+      win = win ?? Zotero.getMainWindow();
+      if (!win) {
+        this.log("no main window; cannot open workspace");
+        return;
+      }
+
+      // AC9: feature-detect before touching Zotero internals (ADR-0009 §5).
+      const tabs = this.getTabsAPI(win);
+      if (!tabs) {
+        this.log("Zotero_Tabs unavailable; opening workspace window instead");
+        this.openWorkspaceWindow(win);
+        return;
+      }
+
+      // AC2: single instance per main window.
+      if (this.selectExistingTab(win, tabs)) return;
+
+      const title = await this.getTabTitle(win);
+
+      // `await` gave other code a chance to run. Re-check: the plugin may have been shut
+      // down, or a second menu click may already have opened the tab while we waited.
+      if (!this.initialized) return;
+      if (this.selectExistingTab(win, tabs)) return;
+
+      let added;
+      try {
+        // Zotero_Tabs is an internal, undocumented API (ADR-0009): use only add, select,
+        // close and getTabInfo. AC11: the type has no hyphen (Zotero splits types on "-"),
+        // and `data` must be an object (Zotero reads `tab.data.icon` for every tab).
+        added = tabs.add({
+          type: this.TAB_TYPE,
+          title,
+          data: {},
+          select: true,
+          // AC4: Zotero calls this for every close path (× button, Cmd-W, context menu, and
+          // our own `close` calls), so the stored id never points at a closed tab.
+          onClose: () => this.forgetTab(win, added?.id),
+        });
+      }
+      catch (err) {
+        // AC9: `add` threw (a Zotero change?). Keep the workspace usable as a window.
+        Zotero.logError(err);
+        this.log("Zotero_Tabs.add failed; opening workspace window instead");
+        this.openWorkspaceWindow(win);
+        return;
+      }
+
+      const { id, container } = added ?? {};
+      if (!id || !container) {
+        this.log("Zotero_Tabs.add returned no tab; opening workspace window instead");
+        this.openWorkspaceWindow(win);
+        return;
+      }
+      this.tabIDs.set(win, id);
+
+      // Our content is our own chrome document in an <iframe>, so its HTML, CSS and Fluent
+      // strings stay separate from Zotero's main window and leave with the tab. A chrome://
+      // URL loaded from chrome code gets full (system) privileges; RT2 confirmed this.
+      const iframe = win.document.createElementNS("http://www.w3.org/1999/xhtml", "iframe");
+      iframe.setAttribute("style", "flex: 1; border: 0; width: 100%; height: 100%;");
+      iframe.setAttribute("src", this.WORKSPACE_URL);
+      container.append(iframe);
+      this.log(`workspace tab opened (${id})`);
+    }
+    catch (err) {
+      Zotero.logError(err);
+    }
+  },
+
+  /**
+   * Return `win.Zotero_Tabs` if it has every method Tabellify uses, else null (AC9).
+   * @param {any} win  A main window
+   * @returns {any} The tab manager, or null
+   */
+  getTabsAPI(win) {
+    const tabs = win?.Zotero_Tabs;
+    if (!tabs) return null;
+    for (const method of ["add", "select", "close", "getTabInfo"]) {
+      if (typeof tabs[method] !== "function") return null;
+    }
+    return tabs;
+  },
+
+  /**
+   * True if `id` is still an open Tabellify tab in this tab manager. For an unknown id,
+   * `getTabInfo` returns `{}` on Zotero 10.0.9 (RT1), so `.type` is then undefined.
+   * @param {any} tabs  A window's `Zotero_Tabs`
+   * @param {string | undefined} id
+   * @returns {boolean}
+   */
+  isOurTab(tabs, id) {
+    if (!id) return false;
+    return tabs.getTabInfo(id)?.type === this.TAB_TYPE;
+  },
+
+  /**
+   * If this window already has our tab, select it and return true (AC2).
+   * @param {any} win
+   * @param {any} tabs  `win.Zotero_Tabs`
+   * @returns {boolean}
+   */
+  selectExistingTab(win, tabs) {
+    const id = this.tabIDs.get(win);
+    if (!this.isOurTab(tabs, id)) {
+      // Stale id (tab gone without onClose): drop it so the caller opens a new tab.
+      if (id) this.tabIDs.delete(win);
+      return false;
+    }
+    tabs.select(id);
+    this.log(`workspace tab already open; selected it (${id})`);
+    return true;
+  },
+
+  /**
+   * Localized tab title from the main window's Fluent (`tabellify.ftl` is linked there by
+   * `onMainWindowLoad`). Falls back to "Tabellify" if formatting fails or returns nothing.
+   * @param {any} win
+   * @returns {Promise<string>}
+   */
+  async getTabTitle(win) {
+    try {
+      const title = await win.document.l10n.formatValue("tabellify-tab-title");
+      if (title) return title;
+      this.log("tab title not found in Fluent; using fallback");
+    }
+    catch (err) {
+      Zotero.logError(err);
+    }
+    return this.FALLBACK_TAB_TITLE;
+  },
+
+  /**
+   * Forget the stored tab id for `win`, but only if it is still the one that closed (a newer
+   * tab may already have replaced it).
+   * @param {any} win
+   * @param {string | undefined} id
+   */
+  forgetTab(win, id) {
+    if (this.tabIDs.get(win) === id) this.tabIDs.delete(win);
+    this.log(`workspace tab closed (${id})`);
+  },
+
+  /**
+   * F001 behaviour, kept as the fallback (AC9, owner decision Q4): open the workspace as a
+   * separate window, or bring it to the front if it's already open.
    *
    * Single instance: Services.wm keeps track of open windows by their `windowtype`. If one
    * of ours exists (and isn't in the middle of closing), focus it instead of opening a
    * second copy.
+   * @param {any} [mainWindow]  Parent main window; defaults to `Zotero.getMainWindow()`
    */
-  openWorkspace() {
+  openWorkspaceWindow(mainWindow) {
     try {
       const existing = Services.wm.getMostRecentWindow(this.WORKSPACE_WINDOWTYPE);
       if (existing && !existing.closed) {
@@ -138,7 +328,7 @@ var Tabellify = {
         return;
       }
 
-      const mainWindow = Zotero.getMainWindow();
+      mainWindow = mainWindow ?? Zotero.getMainWindow();
       if (!mainWindow) {
         this.log("no main window; cannot open workspace");
         return;
