@@ -7,9 +7,11 @@
  *
  * The method names and call order are fixed by bootstrap.js:
  *
- *   startup  → Tabellify.init(...)               → onMainWindowLoad for each open main window
+ *   startup  → Tabellify.init(...)               → register menu + quit observer, then
+ *                                                  onMainWindowLoad for each open main window
  *   window   → Tabellify.onMainWindowLoad/Unload  (forwarded from bootstrap)
- *   shutdown → Tabellify.shutdown()              → close workspace windows, unregister menu,
+ *   shutdown → Tabellify.shutdown()              → close workspace tabs and windows, remove
+ *                                                  quit observer, unregister menu,
  *                                                  onMainWindowUnload for each open main window,
  *                                                  then (in bootstrap) chromeHandle.destruct()
  *
@@ -59,6 +61,12 @@ var Tabellify = {
    * @type {Map<any, string>}
    */
   tabIDs: new Map(),
+  /**
+   * Observer for "quit-application-granted", registered in `init`, removed in `shutdown`.
+   * Kept here because `removeObserver` needs the very same object `addObserver` got.
+   * @type {{ observe(subject: any, topic: string, data: any): void } | null}
+   */
+  quitObserver: null,
 
   /**
    * Plugin-wide setup, called once per `startup`: register the menu, then do the per-window
@@ -77,6 +85,7 @@ var Tabellify = {
     this.log(`init (version ${version})`);
 
     this.registerMenu();
+    this.addQuitObserver();
 
     for (const window of Zotero.getMainWindows()) {
       this.onMainWindowLoad({ window });
@@ -346,6 +355,83 @@ var Tabellify = {
     }
   },
 
+  /**
+   * Close our tab in one main window, if it has one (AC8, and part of AC5/AC6). Only ever
+   * closes the tab id Tabellify stored itself, after `getTabInfo` confirms it is still a
+   * Tabellify tab, so Zotero's own tabs are never touched.
+   * @param {any} win
+   */
+  closeWorkspaceTab(win) {
+    const id = this.tabIDs.get(win);
+    if (!id) return;
+    try {
+      const tabs = this.getTabsAPI(win);
+      if (tabs && this.isOurTab(tabs, id)) {
+        // `close` removes the tab from Zotero's tab list at once and calls our `onClose`;
+        // the tab's content element (with our iframe) is removed a moment later.
+        this.log(`closing workspace tab (${id})`);
+        tabs.close(id);
+      }
+    }
+    catch (err) {
+      Zotero.logError(err);
+    }
+    // Forget it even if closing failed, so a re-enable starts clean.
+    this.tabIDs.delete(win);
+  },
+
+  /** Close our tab in every main window we opened one in (AC5, AC6). */
+  closeAllWorkspaceTabs() {
+    // Copy the windows first: closing a tab runs `onClose`, which edits `tabIDs`.
+    for (const win of [...this.tabIDs.keys()]) {
+      this.closeWorkspaceTab(win);
+    }
+    this.tabIDs.clear();
+  },
+
+  /**
+   * Close our tabs when the app quits, BEFORE Zotero saves its session (AC6, ADR-0009 §4).
+   *
+   * Why: at quit Zotero writes every open tab to `session.json` on this same
+   * "quit-application-granted" notification. Since Zotero 8, restoring a saved tab of an
+   * unknown type throws, and every tab saved after it (PDFs, notes) is then not restored.
+   * Plugin `shutdown()` runs much later in the quit sequence, too late to help. Mozilla
+   * currently notifies the newest observer first, and ours is added after Zotero's, so it
+   * should run first; that order is UNVERIFIED at runtime until the owner's AC6 check.
+   */
+  addQuitObserver() {
+    if (this.quitObserver) return;
+    try {
+      // Any JS object with an `observe(subject, topic, data)` method works as an observer.
+      const observer = {
+        observe: (_subject, topic) => {
+          if (topic !== "quit-application-granted") return;
+          this.log("quit-application-granted: closing workspace tabs");
+          this.closeAllWorkspaceTabs();
+        },
+      };
+      Services.obs.addObserver(observer, "quit-application-granted");
+      this.quitObserver = observer;
+      this.log("quit observer added");
+    }
+    catch (err) {
+      Zotero.logError(err);
+    }
+  },
+
+  /** Remove the observer added by `addQuitObserver`. Safe to call when none is registered. */
+  removeQuitObserver() {
+    if (!this.quitObserver) return;
+    try {
+      Services.obs.removeObserver(this.quitObserver, "quit-application-granted");
+      this.log("quit observer removed");
+    }
+    catch (err) {
+      Zotero.logError(err);
+    }
+    this.quitObserver = null;
+  },
+
   /** Close every open workspace window. */
   closeWorkspaceWindows() {
     try {
@@ -385,11 +471,13 @@ var Tabellify = {
   },
 
   /**
-   * Remove everything `onMainWindowLoad` added to one main window: every
+   * Remove everything Tabellify added to one main window: our workspace tab (AC8, so it is
+   * not saved as part of the closing window's state), then every
    * `link[href="tabellify.ftl"]` element. If there are none, nothing happens.
    * @param {{ window: Window }} params
    */
   onMainWindowUnload({ window }) {
+    this.closeWorkspaceTab(window);
     try {
       // Remove ALL matching links, not just the first. Defensive: a duplicate has not been
       // observed (insertFTLIfNeeded skips an existing link), but a stray copy left by a
@@ -409,18 +497,22 @@ var Tabellify = {
 
   /**
    * Undo everything `init` did. Order matters:
-   *   1. Close workspace windows. Bootstrap destroys the chrome registration right after
-   *      this returns; a window left open would point at a chrome:// URL that no longer
-   *      exists.
-   *   2. Unregister the menu, so no menu item is left calling into this unloaded code.
-   *   3. Remove the FTL link from every main window (the menu that needed it is gone).
+   *   1. Close workspace tabs and fallback windows (AC5). Bootstrap destroys the chrome
+   *      registration right after this returns; a tab or window left open would point at a
+   *      chrome:// URL that no longer exists, and a leftover "tabellify" tab could be saved
+   *      in Zotero's session and break tab restore after a restart.
+   *   2. Remove the quit observer (mirror of `init`).
+   *   3. Unregister the menu, so no menu item is left calling into this unloaded code.
+   *   4. Remove the FTL link from every main window (the menu that needed it is gone).
    * Each step catches its own errors, so one failure doesn't skip the rest.
    */
   shutdown() {
     if (!this.initialized) return;
     this.log("shutdown");
 
+    this.closeAllWorkspaceTabs();
     this.closeWorkspaceWindows();
+    this.removeQuitObserver();
     this.unregisterMenu();
 
     // Mirror of the loop in `init`: undo per-window UI on every main window still open.
