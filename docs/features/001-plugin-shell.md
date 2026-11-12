@@ -1,6 +1,6 @@
 # Feature 001: Plugin Shell
 
-- **Status:** Approved (plan) — implementation starts after T1 verification
+- **Status:** Implemented — reviewed (T7: approve with non-blocking comments, 2026-11-11); review fixes in progress; owner's final combined manual run pending
 - **Branch:** `feat/001-plugin-shell`
 - **Related ADRs:** 0002, 0003, 0004, 0005, 0008
 
@@ -18,21 +18,21 @@ item, a placeholder workspace window, build script, static tests, CI, manual che
 - As a researcher, I can disable or remove Tabellify without errors or side effects.
 
 ## Acceptance criteria
-- [ ] AC1 `[manual]` + `[auto]` The built `.xpi` installs via Tools → Plugins (drag-and-drop or "Install Plugin From File"). Auto: XPI contains `manifest.json`, `bootstrap.js` at root; manifest fields valid.
+- [x] AC1 `[manual]` + `[auto]` The built `.xpi` installs via Tools → Plugins (drag-and-drop or "Install Plugin From File"). Auto: XPI contains `manifest.json`, `bootstrap.js` at root; manifest fields valid.
   — *Manually verified (owner), 2026-11-11, Zotero 10.0.9, build from `7361c3c`: Debug Output
   header lists "extensions => Tabellify (0.1.0, extension)". (The earlier build from `94df0a1`
   was rejected because `applications.zotero.update_url` was missing.) Auto: `tests/static/xpi.test.mjs`.*
-- [ ] AC2 `[manual]` After install and after restart, Debug Output shows Tabellify startup messages and no Tabellify errors.
+- [x] AC2 `[manual]` After install and after restart, Debug Output shows Tabellify startup messages and no Tabellify errors.
   — *Manually verified (owner), 2026-11-11, Zotero 10.0.9, build from `7361c3c`, Debug Output
   captured from launch with `-ZoteroDebugText`: "startup (version 0.1.0, reason 1)", "init",
   "menu registered", "onMainWindowLoad: inserted FTL"; no Tabellify errors. Two Terminal
   (stderr) messages not naming Tabellify (`uncaught exception: undefined`, `No such
   JSProcessActor 'BrowserToolboxDevToolsProcess'`) are non-blocking; reviewer to assess.*
-- [ ] AC3 `[manual]` A "Tabellify…" menu item opens the workspace window.
+- [x] AC3 `[manual]` A "Tabellify…" menu item opens the workspace window.
   — *Manually verified (owner), 2026-11-11, Zotero 10.0.9, build from `7361c3c`: Tools →
   Tabellify… opened a window titled "Tabellify Workspace" with the heading "Tabellify
   Workspace" and the sentence "Your literature tables will appear here."*
-- [ ] AC4 `[manual]` The window shows localized placeholder content (title + short description). The window is single-instance: choosing the menu item while it is open focuses the existing window instead of opening a second one, without errors.
+- [x] AC4 `[manual]` The window shows localized placeholder content (title + short description). The window is single-instance: choosing the menu item while it is open focuses the existing window instead of opening a second one, without errors.
   — *Manually verified (owner), 2026-11-11, Zotero 10.0.9: second Tools → Tabellify… logged
   "workspace already open; focusing it" and brought the same window to the front; no second
   window.*
@@ -41,13 +41,16 @@ item, a placeholder workspace window, build script, static tests, CI, manual che
   (reason 4)", "closing workspace window", "menu unregistered", "onMainWindowUnload: removed
   FTL"; window closed and menu item disappeared. Re-enable logged "startup (reason 3)",
   "init", "menu registered", "inserted FTL"; Tools → Tabellify… opened the window again.*
-- [ ] AC6 `[auto]` + review: `src/` contains no library-write calls (write guard passes).
+  — *Still open: removal of the main-window FTL `<link>` after disable (checklist step 16) is
+  not yet recorded; box stays unticked until the owner's final combined run.*
+- [x] AC6 `[auto]` + review: `src/` contains no library-write calls (write guard passes).
+  — *Auto: `tests/static/write-guard.test.mjs`. Review (T7, 2026-11-11): every file in `src/` read; no library access of any kind.*
 
 ## Design
 - `src/manifest.json` — ID `tabellify@asmithlabs.com`, version `0.1.0`, min 10.0 / max 10.0.* (ADR-0008).
 - `src/bootstrap.js` — lifecycle hooks; registers chrome; loads `tabellify.js`; forwards hooks.
 - `src/tabellify.js` — `Tabellify` object: `init`, `registerMenu`, `openWorkspace`, `shutdown`.
-- `src/content/workspace.xhtml|.js|.css` — placeholder window.
+- `src/content/workspace.xhtml|.css` — placeholder window (no `workspace.js`: the placeholder needs no script; see commit 81456f7).
 - `src/locale/en-US/tabellify.ftl` — strings.
 - `scripts/build-xpi.mjs`, `package.json` (scripts only).
 
