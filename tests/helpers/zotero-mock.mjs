@@ -22,13 +22,15 @@ export const ROOT_URI = pathToFileURL(SRC_DIR).href + "/";
 export const PARAMS = { id: "tabellify@asmithlabs.com", version: "0.1.0", rootURI: ROOT_URI };
 
 // Zotero's bootstrap reason codes (docs/zotero-api-notes.md, bootstrap hooks row).
-export const REASON = { APP_STARTUP: 1, ADDON_ENABLE: 3, ADDON_DISABLE: 4, MAIN_WINDOW_LOAD: 9 };
+export const REASON = { APP_STARTUP: 1, APP_SHUTDOWN: 2, ADDON_ENABLE: 3, ADDON_DISABLE: 4, MAIN_WINDOW_LOAD: 9 };
 
 /**
  * Build a fresh fake Zotero with the real plugin loaded (but not started).
- * @param {{ mainWindowCount?: number, registerMenuResult?: "ok" | false }} [options]
+ * @param {{ mainWindowCount?: number, registerMenuResult?: "ok" | false, loadSubScriptError?: Error }} [options]
+ *   loadSubScriptError: if set, loadSubScript throws this instead of running the file
+ *   (simulates tabellify.js failing to load, e.g. a syntax error).
  */
-export function createHarness({ mainWindowCount = 1, registerMenuResult = "ok" } = {}) {
+export function createHarness({ mainWindowCount = 1, registerMenuResult = "ok", loadSubScriptError } = {}) {
   /** @type {string[]} Ordered call log. */
   const log = [];
   /** @type {unknown[]} Everything passed to Zotero.logError. */
@@ -135,6 +137,7 @@ export function createHarness({ mainWindowCount = 1, registerMenuResult = "ok" }
       scriptloader: {
         loadSubScript(url) {
           log.push(`loadSubScript(${url})`);
+          if (loadSubScriptError) throw loadSubScriptError;
           if (!url.startsWith(ROOT_URI)) throw new Error(`unexpected subscript URL ${url}`);
           const file = join(SRC_DIR, ...url.slice(ROOT_URI.length).split("/"));
           vm.runInContext(readFileSync(file, "utf8"), context, { filename: file });

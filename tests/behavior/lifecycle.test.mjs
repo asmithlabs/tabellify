@@ -5,6 +5,8 @@
 //   - shutdown order: workspace windows closed → menu unregistered (with the RETURNED id)
 //     → FTL link removed from every main window → chromeHandle.destruct (last)
 //   - onMainWindowUnload removes the link; after shutdown nothing is left; re-enable works
+//   - app quit (reason 2) runs the same full cleanup; a failed tabellify.js load at startup
+//     still lets shutdown destruct the chrome registration exactly once
 //
 // The mocks model the APIs in docs/zotero-api-notes.md, not Zotero itself. A pass here
 // proves the plugin calls those APIs in the right order; the manual checklist
@@ -12,7 +14,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHarness, ROOT_URI } from "../helpers/zotero-mock.mjs";
+import { createHarness, ROOT_URI, REASON } from "../helpers/zotero-mock.mjs";
 
 const WORKSPACE_URL = "chrome://tabellify/content/workspace.xhtml";
 const OPEN_DIALOG =
@@ -237,4 +239,54 @@ test("AC2 (support): startup and shutdown write 'Tabellify:' debug lines", () =>
   }
   assert.ok(h.debug.every((l) => l.startsWith("Tabellify: ")), "all debug lines are prefixed");
   assert.deepEqual(h.errors, []);
+});
+
+test("AC5: app quit (shutdown reason 2, APP_SHUTDOWN) while enabled logs the reason and cleans up in order", () => {
+  const h = createHarness({ mainWindowCount: 2 });
+  h.startup(REASON.APP_STARTUP);
+  const menuID = [...h.menus.keys()][0];
+  h.clickMenu();
+  h.takeLog();
+  h.debug.length = 0;
+
+  h.shutdown(REASON.APP_SHUTDOWN);
+  const log = h.takeLog();
+  assert.deepEqual(h.errors, [], "no Zotero.logError calls");
+  assert.equal(h.debug[0], "Tabellify: shutdown (version 0.1.0, reason 2)");
+
+  const closeIdx = indexOf(log, "workspace.close");
+  const unregisterIdx = indexOf(log, `MenuManager.unregisterMenu(${menuID})`);
+  const linkRemoves = log
+    .map((l, i) => (/^main\d+\.link\(tabellify\.ftl\)\.remove$/.test(l) ? i : -1))
+    .filter((i) => i >= 0);
+  const destructIdx = indexOf(log, "chromeHandle.destruct");
+
+  assert.ok(closeIdx >= 0, "workspace window closed");
+  assert.ok(unregisterIdx >= 0, `unregisterMenu called with the returned id ${menuID}`);
+  assert.equal(linkRemoves.length, 2, "FTL link removed from every main window");
+  assert.ok(closeIdx < unregisterIdx, "windows closed before menu unregistered");
+  assert.ok(unregisterIdx < Math.min(...linkRemoves), "menu unregistered before FTL links removed");
+  assert.ok(Math.max(...linkRemoves) < destructIdx, "FTL links removed before chrome destruct");
+  assert.equal(destructIdx, log.length - 1, "chromeHandle.destruct is the last call");
+  assert.equal(log.filter((l) => l === "chromeHandle.destruct").length, 1);
+  assert.equal(h.menus.size, 0);
+  assert.equal(h.chromeRegistrations, 0);
+});
+
+test("AC5: tabellify.js failing to load at startup — shutdown still destructs chrome exactly once", () => {
+  const loadError = new Error("simulated tabellify.js load failure");
+  const h = createHarness({ loadSubScriptError: loadError });
+  h.startup();
+  assert.deepEqual(h.errors, [loadError], "the failed load is reported once via Zotero.logError");
+  assert.equal(h.evaluate("typeof Tabellify"), "undefined", "Tabellify was never defined");
+  assert.equal(h.menus.size, 0, "no menu registered");
+  assert.equal(h.chromeRegistrations, 1, "chrome was registered before the failed load");
+  h.takeLog();
+
+  assert.doesNotThrow(() => h.shutdown(), "shutdown must not throw");
+  const log = h.takeLog();
+  assert.deepEqual(log, ["chromeHandle.destruct"], "only the chrome registration is undone");
+  assert.equal(h.chromeRegistrations, 0);
+  assert.deepEqual(h.errors, [loadError], "no further errors logged during shutdown");
+  assert.ok(h.debug.includes("Tabellify: shutdown (version 0.1.0, reason 4)"));
 });
