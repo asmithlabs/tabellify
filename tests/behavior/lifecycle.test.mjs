@@ -15,6 +15,13 @@
 // The mocks model the APIs in docs/zotero-api-notes.md, not Zotero itself. A pass here
 // proves the plugin calls those APIs in the right order; the manual checklist
 // (docs/testing/manual/001-plugin-shell.md) proves Zotero reacts as documented.
+//
+// Feature 002: these F001 tests run with main windows that have NO `Zotero_Tabs` (the
+// harness default), so the menu command takes the F001 separate-window path. That is
+// exactly F002's AC9 fallback, so these tests also keep the fallback window covered. Since
+// F002, startup also adds a "quit-application-granted" observer and shutdown removes it
+// (between closing workspace windows and unregistering the menu); the order assertions
+// below include those calls. Tab behaviour is in tests/behavior/workspace-tab.test.mjs.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -67,6 +74,16 @@ test("AC5: startup registers chrome, loads tabellify.js, one Tools menu, FTL in 
     assert.deepEqual(w.links.map((l) => l.href), ["tabellify.ftl"]);
   }
   assert.equal(h.chromeRegistrations, 1);
+
+  // F002: exactly one quit observer, added after the menu and before per-window setup.
+  assert.deepEqual(
+    log.filter((l) => l.startsWith("Services.obs.")),
+    ["Services.obs.addObserver(quit-application-granted)"],
+  );
+  assert.equal(h.pluginObservers("quit-application-granted").length, 1);
+  const observerIdx = indexOf(log, "Services.obs.addObserver(quit-application-granted)");
+  assert.ok(indexOf(log, "MenuManager.registerMenu(main/menubar/tools)") < observerIdx);
+  assert.ok(observerIdx < indexOf(log, /^main\d+\.insertFTLIfNeeded/));
 });
 
 test("AC5/AC4: menu command opens one workspace window, second command focuses it", () => {
@@ -82,6 +99,13 @@ test("AC5/AC4: menu command opens one workspace window, second command focuses i
 
   assert.equal(h.openWorkspaceWindows().length, 1, "single instance");
   assert.deepEqual(h.errors, []);
+  // F002: these windows have no Zotero_Tabs, so this is the AC9 fallback path.
+  assert.equal(h.mainWindows[0].Zotero_Tabs, undefined);
+  assert.equal(
+    h.debug.filter((l) => l === "Tabellify: Zotero_Tabs unavailable; opening workspace window instead").length,
+    2,
+    "one fallback line per command",
+  );
 });
 
 test("AC5/AC4: after the workspace window is closed, the menu command opens a new one", () => {
@@ -127,6 +151,12 @@ test("AC5: shutdown order — windows closed, menu unregistered (returned id), F
   assert.ok(unregisterIdx < firstLinkRemoveIdx, "menu unregistered before FTL links removed");
   assert.ok(lastLinkRemoveIdx < destructIdx, "FTL links removed before chrome destruct");
   assert.equal(destructIdx, log.length - 1, "chromeHandle.destruct is the last call");
+
+  // F002: the quit observer is removed after the windows close and before the menu goes.
+  const removeObsIdx = indexOf(log, "Services.obs.removeObserver(quit-application-granted)");
+  assert.ok(closeIdx < removeObsIdx && removeObsIdx < unregisterIdx, "observer removed in order");
+  assert.equal(log.filter((l) => l.startsWith("Services.obs.removeObserver(")).length, 1);
+  assert.deepEqual(h.pluginObservers(), [], "no plugin observer left");
 });
 
 test("AC5: shutdown closes ALL open workspace windows before chromeHandle.destruct", () => {
@@ -155,6 +185,7 @@ test("AC5: after shutdown no menus, FTL links, workspace windows, chrome registr
   assert.equal(h.openWorkspaceWindows().length, 0, "workspace windows");
   assert.equal(h.chromeRegistrations, 0, "chrome registrations");
   assert.equal(h.evaluate("typeof Tabellify"), "undefined", "Tabellify reference dropped");
+  assert.deepEqual(h.pluginObservers(), [], "observers");
   assert.deepEqual(h.errors, []);
 });
 
@@ -195,6 +226,7 @@ test("AC5: re-enable (startup after shutdown) restores everything, and a second 
 
   h.startup();
   assert.equal(h.menus.size, 1, "menu re-registered");
+  assert.equal(h.pluginObservers("quit-application-granted").length, 1, "one quit observer after re-enable");
   const secondID = [...h.menus.keys()][0];
   assert.notEqual(secondID, firstID);
   assert.equal(h.evaluate("Tabellify.menuID"), secondID);
@@ -275,6 +307,9 @@ test("AC5: app quit (shutdown reason 2, APP_SHUTDOWN) while enabled logs the rea
   assert.equal(log.filter((l) => l === "chromeHandle.destruct").length, 1);
   assert.equal(h.menus.size, 0);
   assert.equal(h.chromeRegistrations, 0);
+  const removeObsIdx = indexOf(log, "Services.obs.removeObserver(quit-application-granted)");
+  assert.ok(closeIdx < removeObsIdx && removeObsIdx < unregisterIdx, "observer removed in order");
+  assert.deepEqual(h.pluginObservers(), []);
 });
 
 test("AC5: tabellify.js failing to load at startup — shutdown still destructs chrome exactly once", () => {
