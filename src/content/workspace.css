@@ -1,0 +1,12 @@
+/* Tabellify workspace window — minimal placeholder styling (Feature 001). */
+
+/* The window is opened without a fixed size, so it sizes to its content; these minimums
+   keep the placeholder from opening as a tiny box. */
+:root {
+  min-width: 480px;
+  min-height: 240px;
+}
+
+#tabellify-workspace-main {
+  padding: 24px;
+}

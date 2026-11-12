@@ -23,3 +23,9 @@ data, scope change, push, merge, tag, or release.
 
 Report concisely: what was done, what was verified (with real command output), what is
 open. Explain one key concept per report when it helps the owner learn.
+
+When the owner must do something, give numbered steps. Each step names the exact app and
+window (e.g. "the dev Zotero window", "the Claude Code session in Terminal"), the exact menu
+path or button label, and the exact text to paste in a code block. Say what the owner should
+see when the step works. Never use "it" or "this" for a file, window, app, or check — name
+the thing every time. Explain any term the owner hasn't seen before in one sentence.

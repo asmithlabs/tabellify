@@ -1,0 +1,67 @@
+# Tabellify CI: runs unit + static tests (ADR-0005 layers 1-2) and builds the XPI.
+#
+# Dependency justification (CLAUDE.md rule 3; approved by the owner for F001 T5):
+#   What:  actions/checkout and actions/setup-node (the only third-party actions used).
+#   Why:   checkout copies the repository onto the runner; setup-node installs a known
+#          Node version. The repo needs Node >=22.2 (package.json "engines").
+#   Size:  not bundled; both are JavaScript actions GitHub downloads onto the runner at
+#          run time and they are never shipped in the XPI. (For reference, their source
+#          repositories incl. git history are ~6.7 MB and ~40 MB per the GitHub API.)
+#   License: MIT (both). Maintained by GitHub.
+#   Alternatives considered: none practical for checkout (a manual `git clone` would need
+#          token handling we'd rather not write). For Node, relying on the Node that comes
+#          preinstalled on the runner image is not guaranteed to be >=22.2.
+#   Pinning: major version tags (@v7), the owner's choice. A major tag gets bug and
+#          security fixes automatically but no breaking changes. (Pinning to a commit SHA
+#          is stricter but needs manual updates.)
+#
+# Concepts for newcomers:
+#   - A *workflow* is this YAML file: GitHub runs it when one of its triggers (`on:`) fires.
+#   - A *job* is a group of steps that runs on one fresh virtual machine ("runner").
+#   - A *step* is either a shell command (`run:`) or a reusable action (`uses:`).
+
+name: CI
+
+# Triggers: every pull request (any target branch), plus pushes to main.
+# We don't trigger on pushes to every branch because a branch with an open PR would
+# then run CI twice for the same commit (once for the push, once for the PR).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the workflow's automatic GITHUB_TOKEN can only read the repo.
+# If an action were ever compromised, it couldn't push code or change settings.
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    # Fail fast if something hangs, instead of burning the default 6-hour limit.
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          # Don't leave the GITHUB_TOKEN in .git/config; later steps never need git auth.
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          # "22" means the latest 22.x release, which satisfies engines ">=22.2".
+          # No `cache:` option: npm caching needs a lockfile, and we have no dependencies.
+          node-version: "22"
+
+      # No `npm install` / `npm ci` step: package.json has no dependencies, so there
+      # is nothing to install. The tests and build use only Node built-ins.
+
+      - name: Run unit and static tests
+        run: npm test
+
+      - name: Build XPI
+        run: npm run build
+
+      - name: List XPI contents (for the log)
+        run: unzip -l build/*.xpi

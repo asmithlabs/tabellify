@@ -38,7 +38,7 @@ JavaScript and Zotero plugin development — explain non-obvious concepts briefl
 
 ## Technical baseline (see ADRs 0002–0004, 0008)
 - Zotero compatibility: `strict_min_version` 10.0, `strict_max_version` 10.0.* (raised per release after testing).
-  Owner runs Zotero 10.0.8. Use Zotero 10 APIs (e.g. plural selection getters
+  Owner runs Zotero 10.0.9. Use Zotero 10 APIs (e.g. plural selection getters
   `getSelectedCollections()`); older-version examples online may be wrong for 10.
 - Plugin ID: `tabellify@asmithlabs.com` (permanent). Preference prefix: `extensions.tabellify.`
 - Plain modern JavaScript (ES2022+), strict mode, no bundler. JSDoc for types.
@@ -61,3 +61,9 @@ JavaScript and Zotero plugin development — explain non-obvious concepts briefl
   independent review (reviewer) → PR → owner merges.
 - Parallelize only tasks with non-overlapping file scopes; use worktree isolation for them.
   Worktrees branch from `main`, so a task cannot build on unmerged work.
+- **Owner instructions (standing rule):** When the owner must do something, give numbered
+  steps. Each step names the exact app and window (e.g. "the dev Zotero window", "the Claude
+  Code session in Terminal"), the exact menu path or button label, and the exact text to
+  paste in a code block. Say what the owner should see when the step works. Never use "it"
+  or "this" for a file, window, app, or check — name the thing every time. Explain any term
+  the owner hasn't seen before in one sentence.

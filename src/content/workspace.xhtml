@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/global.css" type="text/css"?>
+<!-- Why global.css: it gives the root <window> its background (the system colour
+     -moz-Dialog) and the native window look. Without it the root has no background and
+     Gecko makes the native window transparent (the see-through window seen on macOS).
+     System colours follow Zotero's light/dark setting, so workspace.css sets no
+     background-color. Stylesheet processing instructions must come before <window>. -->
+<!-- Tabellify workspace window (Feature 001: placeholder content only).
+
+     Opened by Tabellify.openWorkspace() as chrome://tabellify/content/workspace.xhtml.
+     The chrome:// URL works because bootstrap.js registers src/content/ as the
+     "tabellify" content package.
+
+     - The default namespace is XUL (Mozilla's desktop UI markup); `html:` elements are
+       ordinary HTML elements mixed in.
+     - `windowtype="tabellify:workspace"` is the label Services.wm uses to find this window
+       (single-instance check in openWorkspace, closing it in shutdown).
+     - Text comes from Fluent: the <html:link rel="localization"> loads tabellify.ftl, and
+       each `data-l10n-id` names the message to show. No user-visible text is hard-coded. -->
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        id="tabellify-workspace"
+        windowtype="tabellify:workspace"
+        data-l10n-id="tabellify-workspace-window">
+  <linkset>
+    <html:link rel="localization" href="tabellify.ftl"/>
+    <html:link rel="stylesheet" href="chrome://tabellify/content/workspace.css"/>
+  </linkset>
+
+  <html:main id="tabellify-workspace-main">
+    <html:h1 data-l10n-id="tabellify-workspace-title"></html:h1>
+    <html:p data-l10n-id="tabellify-workspace-description"></html:p>
+  </html:main>
+</window>
