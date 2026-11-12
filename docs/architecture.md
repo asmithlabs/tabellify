@@ -1,6 +1,6 @@
 # Tabellify — Architecture
 
-Status: v0.1 (2026-11-11). Covers decisions through ADR-0007. Updated by the architect when
+Status: v0.1 (2026-11-11). Covers decisions through ADR-0009. Updated by the architect when
 ADRs are accepted.
 
 ## 1. Platform
@@ -36,7 +36,7 @@ src/
 ├── bootstrap.js           thin: forwards lifecycle hooks to Tabellify object
 ├── tabellify.js           plugin object: init/shutdown, menu registration, window opening
 ├── modules/               PURE logic (no Zotero globals) — table model, CSV, codebook
-├── content/               workspace window: workspace.xhtml / .js / .css
+├── content/               workspace page: workspace.xhtml / .css (shown in the main-window tab; F001 window as fallback)
 └── locale/en-US/          Fluent strings (tabellify.ftl)
 ```
 
@@ -50,9 +50,16 @@ churn to one place.
 | Surface | Use | API basis | Status |
 |---|---|---|---|
 | Menu item ("Tabellify…") | Open the workspace | `Zotero.MenuManager.registerMenu()` (Zotero 8+) | F001 |
-| Workspace window | Planner, builder, saved tables | chrome registration + XHTML window | F001 (placeholder) |
+| Workspace tab (main window) | Planner, builder, saved tables | chrome registration + internal `Zotero_Tabs` (`add`/`select`/`close`/`getTabInfo` only) + `<iframe>` loading `workspace.xhtml` (ADR-0009) | F002 (placeholder) |
+| Workspace window (fallback) | Same document, used automatically if `Zotero_Tabs` is missing or `add` throws | chrome registration + XHTML window (ADR-0004, superseded) | F001; kept as fallback (F002 AC9) |
 | Settings pane | Possibly codebook management (sketch) | `Zotero.PreferencePanes.register()` | Pending Q3 |
 | Item pane / reader section | Tag monitor | `Zotero.ItemPaneManager.registerSection()` | F005, to verify |
+
+**Tab risk and cleanup (ADR-0009).** Zotero 8+ throws on restore when its saved session
+contains a tab type it doesn't know, and then skips every later tab, so a Tabellify tab must
+never be saved. Tabellify closes its tabs on `quit-application-granted` (before Zotero saves
+the session; ordering UNVERIFIED until F002 AC6), in `onMainWindowUnload`, and in `shutdown()`
+before `chromeHandle.destruct()`. The tab is not restored after a restart.
 
 ## 5. Data
 
