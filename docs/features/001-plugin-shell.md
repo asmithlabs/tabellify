@@ -1,6 +1,6 @@
 # Feature 001: Plugin Shell
 
-- **Status:** Implemented — reviewed (T7: approve with non-blocking comments, 2026-11-11); review fixes done and re-reviewed (approve); owner's final combined manual run pending on the current build — the outcome-reporting log lines from `1f3dafc` (`present now: …`, `removed FTL: …`, `menu unregistered (…): …`) have not yet been observed in real Zotero
+- **Status:** Implemented, reviewed and owner-verified (final combined run 2026-11-11, Zotero 10.0.9, build `3e89269`, log `build/debug-3.txt`). Ready for PR.
 - **Branch:** `feat/001-plugin-shell`
 - **Related ADRs:** 0002, 0003, 0004, 0005, 0008
 
@@ -36,13 +36,20 @@ item, a placeholder workspace window, build script, static tests, CI, manual che
   — *Manually verified (owner), 2026-11-11, Zotero 10.0.9: second Tools → Tabellify… logged
   "workspace already open; focusing it" and brought the same window to the front; no second
   window.*
-- [ ] AC5 `[manual]` + `[auto]` Disabling removes the menu item and closes/cleans up the window with no errors; re-enabling restores it. Auto: register/unregister symmetry check, plus `shutdown` closes all `tabellify:workspace` windows **before** `chromeHandle.destruct()`, and removes the main-window `tabellify.ftl` `<link>` (in `shutdown` and `onMainWindowUnload`).
+  — *Window background (owner, 2026-11-11, build `3e89269`): after loading `global.css`, R7
+  returned a solid `rgb(236, 236, 236)` background with `appearance: auto` (the earlier
+  build's window was see-through).*
+- [x] AC5 `[manual]` + `[auto]` Disabling removes the menu item and closes/cleans up the window with no errors; re-enabling restores it. Auto: register/unregister symmetry check, plus `shutdown` closes all `tabellify:workspace` windows **before** `chromeHandle.destruct()`, and removes the main-window `tabellify.ftl` `<link>` (in `shutdown` and `onMainWindowUnload`).
   — *Manually verified (owner), 2026-11-11, Zotero 10.0.9, twice: disable logged "shutdown
   (reason 4)", "closing workspace window", "menu unregistered", "onMainWindowUnload: removed
   FTL"; window closed and menu item disappeared. Re-enable logged "startup (reason 3)",
   "init", "menu registered", "inserted FTL"; Tools → Tabellify… opened the window again.*
-  — *Still open: removal of the main-window FTL `<link>` after disable (checklist step 16) is
-  not yet recorded; box stays unticked until the owner's final combined run.*
+  — *Final run (owner, 2026-11-11, build `3e89269`): after disable, Run JavaScript returned
+  `[0, "none", "no window", …]` (0 FTL links, no workspace window); log shows
+  `shutdown (… reason 4)`, `closing workspace window`, `menu unregistered (…): true`,
+  `removed FTL: 1`. Re-enable logged `startup (… reason 3)` … `inserted FTL (already present:
+  false, present now: true)`. Quit with Tabellify enabled logged `shutdown (… reason 2)` and
+  `menu unregistered (…): true`. No Tabellify errors.*
 - [x] AC6 `[auto]` + review: `src/` contains no library-write calls (write guard passes).
   — *Auto: `tests/static/write-guard.test.mjs`. Review (T7, 2026-11-11): every file in `src/` read; no library access of any kind.*
 
