@@ -1,7 +1,7 @@
 # Feature 002: Workspace as a main-window tab
 
-- **Status:** Draft — owner decisions Q1–Q8 recorded 2026-11-11; spec approval pending
-- **Branch:** `feat/002-workspace-tab` (proposed)
+- **Status:** Approved (owner, 2026-11-11). RT1/RT2 run by the owner before T2.
+- **Branch:** `feat/002-workspace-tab`
 - **Related ADRs:** 0009 (Accepted, supersedes 0004), 0002, 0003, 0005, 0008
 
 ## Problem / objective
