@@ -22,8 +22,9 @@ Never run these steps in your normal Zotero profile.
 ## Before you start
 
 **You do not need to copy log lines.** Zotero writes its Debug Output to files in the
-project's `build/` folder (`build/debug-6.txt`, and after the restarts in Part H
-`build/debug-7.txt` and `build/debug-8.txt`). The orchestrator reads those files after your
+project's `build/` folder (`build/debug-6.txt`, after the restarts in Part H
+`build/debug-7.txt` and `build/debug-8.txt`, and after the restarts in Part I
+`build/debug-9.txt` and `build/debug-10.txt`). The orchestrator reads those files after your
 run. The expected lines are listed in "Expected Debug Output" at the end of this checklist.
 Each restart needs a **new** file name, because `>` empties the file it writes to: reusing
 `build/debug-6.txt` after a restart would erase the lines from before the restart.
@@ -263,6 +264,21 @@ selected. No error dialog appears.
 - [ ] Pass  [ ] Fail
 - Notes:
 
+### Step 12a (optional): Reopen closed tab does not bring back a broken Tabellify tab
+**Where:** the dev Zotero window.
+**Do:** right after step 12, press Cmd-Shift-T (the usual "reopen closed tab" shortcut; this
+label and shortcut are **unconfirmed** for Zotero, see "Unconfirmed UI labels").
+**Expected:** **no** broken or blank Tabellify tab appears. Any of these is a pass: nothing
+happens; a working Tabellify tab (heading and sentence as in step 5) appears; a previously
+closed PDF tab reappears. If a Tabellify tab appears that is blank, shows raw IDs (text
+starting with `tabellify-`), or shows an error, mark Fail, copy any error text into Notes,
+close that tab with its ×, and continue. Write in Notes what Cmd-Shift-T did. If a tab
+If a Tabellify tab reappeared, close it with its × before step 13, so step 13 starts without
+a Tabellify tab. A reopened PDF tab can stay open.
+
+- [ ] Pass  [ ] Fail  [ ] Skipped
+- Notes:
+
 ### Step 13: Tab check after closing, then reopen
 **Where:** the Run JavaScript window, then the dev Zotero window.
 **Do:** in the Run JavaScript window click **Run** with the tab check:
@@ -372,6 +388,13 @@ Tabellify… opens a working Tabellify tab in the reopened dev Zotero window.
 
 ## Part H: AC6 (quit and restart) and RT3 (saved session)
 
+> **Stop rule for Parts H and I.** After any restart in these parts (steps 23, 26, 28, 31):
+> if a PDF tab that was open at quit is **not** restored, **or** the Terminal window or
+> Debug Output (Help → Debug Output Logging → View Output) shows
+> `Cannot destructure property 'itemID'`, **stop the checklist there.** Mark that step Fail,
+> copy the error text and the tab bar contents into Notes, quit Zotero, and report to the
+> orchestrator. Do not continue with later steps: they would run on a damaged session.
+
 ### Step 21: Arrange PDF tab, Tabellify tab, second PDF tab
 **Where:** the dev Zotero window.
 **Do:** close every PDF tab and the Tabellify tab (× on each tab), so only the library tab
@@ -403,7 +426,8 @@ input again (Zotero has fully quit).
 cd ~/Documents/projects/Active/zotero_plugins/tabellify && /Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev -ZoteroDebugText > build/debug-7.txt
 ```
 **Expected:** the dev Zotero window opens. **Both PDF tabs from step 21 are back** in the tab
-bar. **No Tabellify tab is back.** No error dialog appears.
+bar. **No Tabellify tab is back.** No error dialog appears. If either PDF tab is missing, or
+`Cannot destructure property 'itemID'` appears, apply the stop rule at the top of Part H.
 
 - [ ] Pass  [ ] Fail
 - Notes:
@@ -451,7 +475,9 @@ Run JavaScript, "Run as async function" unticked, **Run**):
 Zotero.Session.state.windows.map(w => ({ type: w.type, tabs: (w.tabs || []).map(t => t.type) }))
 ```
 **Expected:** the dev Zotero window opens with both PDF tabs back and no Tabellify tab. The
-RT3 result has `"reader"` twice and no `"tabellify"`. Copy the result into Notes.
+RT3 result has `"reader"` twice and no `"tabellify"`. Copy the result into Notes. If either
+PDF tab is missing, or `Cannot destructure property 'itemID'` appears, apply the stop rule at
+the top of Part H.
 
 - [ ] Pass  [ ] Fail
 - Notes:
@@ -463,9 +489,96 @@ on the right of the Tabellify row. Close the Plugins window. Choose Tools → Ta
 to confirm the Tabellify tab opens, then close the Tabellify tab with its ×. Quit Zotero
 (Zotero → Quit Zotero).
 **Expected:** Tabellify is enabled, the Tabellify tab opens and closes without errors, and
-Zotero quits normally. Then tell the orchestrator (the Claude Code session in Terminal) that
-the run is done, so it can read `build/debug-6.txt`, `build/debug-7.txt` and
-`build/debug-8.txt`.
+Zotero quits normally. Wait until the Terminal window is ready for input again, then go on
+to Part I.
+
+- [ ] Pass  [ ] Fail
+- Notes:
+
+---
+
+## Part I: AC6 and RT3 in normal use (quit observer registered at app startup)
+
+In Part H, Tabellify's quit observer was always registered in the middle of a session (by
+the install in step 4, or by switching Tabellify on in step 18). In normal use it is
+registered while Zotero starts up. Zotero notifies quit observers newest first, so the order
+can differ between these two cases. This part checks the normal case. **Do not open
+Tools → Plugins anywhere in Part I.** The stop rule at the top of Part H applies here too.
+
+### Step 28: Start the dev Zotero with Debug Output going to `build/debug-9.txt`
+**Where:** Terminal (the same Terminal window as step 3).
+**Do:** paste the following line and press Return:
+```bash
+cd ~/Documents/projects/Active/zotero_plugins/tabellify && /Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev -ZoteroDebugText > build/debug-9.txt
+```
+Do nothing in Tools → Plugins.
+**Expected:** the dev Zotero window opens. The two PDF tabs that were open when Zotero quit
+in step 27 are back. No Tabellify tab is back. No error dialog appears. The Tools menu shows
+**Tabellify…** (look, then close the menu without choosing anything).
+
+- [ ] Pass  [ ] Fail
+- Notes:
+
+### Step 29: Arrange PDF tab, Tabellify tab, second PDF tab
+**Where:** the dev Zotero window.
+**Do:** close every PDF tab (× on each tab), so only the library tab is left. Then, in this
+order:
+1. Open a PDF from the dev library (double-click an item with a PDF). A first PDF tab opens.
+2. Select the library tab and choose Tools → Tabellify…. The Tabellify tab opens.
+3. Select the library tab and open a **different** PDF. A second PDF tab opens.
+
+**Expected:** the tab bar shows the library tab, the first PDF tab, the Tabellify tab, and
+the second PDF tab. The Tabellify tab shows the heading and sentence from step 5. Write the
+two PDF titles and the tab order in Notes.
+
+- [ ] Pass  [ ] Fail
+- Notes:
+
+### Step 30: Quit Zotero with the Tabellify tab open
+**Where:** the Zotero menu bar, then Terminal.
+**Do:** choose Zotero → Quit Zotero. Wait until the Terminal window is ready for input
+again (Zotero has fully quit).
+**Expected:** Zotero quits without an error dialog.
+
+- [ ] Pass  [ ] Fail
+- Notes:
+
+### Step 31: Restart with Debug Output going to `build/debug-10.txt`, then RT3 and tab check
+**Where:** Terminal, then the dev Zotero window, then the Run JavaScript window.
+**Do:** paste the following line in Terminal and press Return:
+```bash
+cd ~/Documents/projects/Active/zotero_plugins/tabellify && /Applications/Zotero.app/Contents/MacOS/zotero -P tabellify-dev -ZoteroDebugText > build/debug-10.txt
+```
+When the dev Zotero window has opened, choose Tools → Developer → Run JavaScript. Leave "Run
+as async function" unticked, paste the RT3 snippet, and click **Run**:
+```js
+Zotero.Session.state.windows.map(w => ({ type: w.type, tabs: (w.tabs || []).map(t => t.type) }))
+```
+Then replace it with the tab check and click **Run** again:
+```js
+Zotero.getMainWindow().Zotero_Tabs.getState().map(t => t.type)
+```
+Both snippets only read; they change nothing.
+**Expected:**
+- **Both PDF tabs from step 29 are back** in the tab bar. **No Tabellify tab is back.** No
+  error dialog appears.
+- The RT3 result has an entry with `type: "pane"` whose `tabs` list contains `"reader"`
+  twice and **no** `"tabellify"`.
+- The tab check result contains `"reader"` twice and no `"tabellify"`.
+
+Copy both results into Notes. If either PDF tab is missing, or
+`Cannot destructure property 'itemID'` appears, apply the stop rule at the top of Part H.
+
+- [ ] Pass  [ ] Fail
+- Notes:
+
+### Step 32: Finish
+**Where:** the dev Zotero window, then Terminal.
+**Do:** close the Run JavaScript window. Choose Zotero → Quit Zotero and wait until the
+Terminal window is ready for input again.
+**Expected:** Zotero quits normally. Then tell the orchestrator (the Claude Code session in
+Terminal) that the run is done, so it can read `build/debug-6.txt`, `build/debug-7.txt`,
+`build/debug-8.txt`, `build/debug-9.txt` and `build/debug-10.txt`.
 
 - [ ] Pass  [ ] Fail
 - Notes:
@@ -484,11 +597,17 @@ appearance:
   `Tabellify: onMainWindowLoad (reason 9)`,
   `Tabellify: onMainWindowLoad: inserted FTL (already present: false, present now: true)`
 - Step 4 (install over the old build): `Tabellify: shutdown (version 0.1.0, reason <n>)`,
-  `Tabellify: shutdown`, `Tabellify: quit observer removed`,
+  `Tabellify: shutdown`, `Tabellify: quit observer removed` (**only if the installed build
+  is already F002**: the build installed before this run is F001, whose shutdown does not
+  write this line, so its absence here is expected),
   `Tabellify: menu unregistered (<menu id>): true`,
-  `Tabellify: onMainWindowUnload: removed FTL: 1`, then a new
-  `Tabellify: startup (version 0.1.0, reason <n>)` block as in step 3. (The reason numbers
-  for installing the same version over itself are not recorded yet. Write them down.)
+  `Tabellify: onMainWindowUnload: removed FTL: 1`, then a new startup block:
+  `Tabellify: startup (version 0.1.0, reason <n>)`, `Tabellify: init (version 0.1.0)`,
+  `Tabellify: menu registered (<menu id>)`, `Tabellify: quit observer added`,
+  `Tabellify: onMainWindowLoad: inserted FTL (already present: false, present now: true)`.
+  Unlike step 3, this mid-session block has **no** `Tabellify: onMainWindowLoad (reason 9)`
+  line: only the `onMainWindowLoad: inserted FTL …` line. (The reason numbers for installing
+  the same version over itself are not recorded yet. Write them down.)
 - Step 5 (RT4, AC1): `Tabellify: menu command window is main: true`,
   `Tabellify: workspace tab opened (<id>)`
 - Step 8 (AC2): `Tabellify: menu command window is main: true`,
@@ -517,9 +636,24 @@ appearance:
 **`build/debug-8.txt`** (steps 26–27): no Tabellify startup lines until step 27 re-enables
 Tabellify (Tabellify was disabled at quit); **no** `Cannot destructure property 'itemID'`.
 
+**`build/debug-9.txt`** (steps 28–30, quit observer registered at app startup):
+- Step 28: the step 3 startup block, including `Tabellify: quit observer added` and
+  `Tabellify: onMainWindowLoad (reason 9)`; **no** `Cannot destructure property 'itemID'`
+- Step 29: `Tabellify: menu command window is main: true`,
+  `Tabellify: workspace tab opened (<id>)`
+- Step 30: `Tabellify: quit-application-granted: closing workspace tabs`,
+  `Tabellify: closing workspace tab (<id>)`, `Tabellify: workspace tab closed (<id>)`, and
+  later `Tabellify: shutdown (version 0.1.0, reason 2)`. The orchestrator also checks that
+  the Tabellify close lines come before Zotero's own session-save lines, if Zotero logs any.
+
+**`build/debug-10.txt`** (steps 31–32): the step 3 startup block; **no**
+`Cannot destructure property 'itemID'`; Zotero's own lines show two reader tabs restored.
+
 **Must not appear in any file:** `Tabellify: Zotero_Tabs unavailable; opening workspace window instead`,
 `Tabellify: Zotero_Tabs.add failed; opening workspace window instead`,
 `Tabellify: Zotero_Tabs.add returned no tab; opening workspace window instead`,
+`Tabellify: closed incomplete workspace tab (<id>)`,
+`Tabellify: main window closed while opening workspace; not opening a tab`,
 `Tabellify: opening workspace window`, `Tabellify: tab title not found in Fluent; using fallback`,
 `Tabellify: menu command window is main: false`, and any Tabellify error.
 
@@ -533,12 +667,14 @@ Tabellify (Tabellify was disabled at quit); **no** `Cannot destructure property 
 | AC2 single instance | 7, 8, 9 | |
 | AC3 full screen and maximized | 10, 11 | |
 | AC4 closing the tab | 12, 13, 14, 15 | |
+| AC4 (optional) reopen closed tab brings back no broken tab | 12a | |
 | AC5 disable removes the tab | 16, 17 | |
-| AC6 quit/restart, other tabs survive | 21–26 | |
+| AC6 quit/restart, other tabs survive (observer added mid-session) | 21–26 | |
+| AC6 quit/restart, other tabs survive (observer added at app startup) | 28–31 | |
 | AC7 re-enable works | 18, 27 | |
 | AC8 main window close (macOS) | 19, 20 | |
-| RT3 saved session has no `"tabellify"` | 24, 26 | |
-| RT4 menu command window is main | 5 (log, orchestrator) | |
+| RT3 saved session has no `"tabellify"` | 24, 26, 31 | |
+| RT4 menu command window is main | 5, 29 (log, orchestrator) | |
 
 Automated coverage (run by `npm test`, step 1): AC1, AC2, AC4–AC9, AC11, title fallback and
 RT4 log line in `tests/behavior/workspace-tab.test.mjs`; the F001 window path (AC9 fallback)
@@ -567,5 +703,7 @@ real labels in Notes:
 - Whether Cmd-W closes only the selected tab (step 14); the spec also names a
   File → Close Tab menu item, which is not used here.
 - The label of the close item in the tab's right-click menu (step 15).
+- Whether Cmd-Shift-T reopens a closed tab in Zotero, and what that command is called
+  (step 12a).
 - Whether opening a PDF from the items list is a double-click on the item or on its PDF
   attachment (steps 7, 21), and where Zotero places new tabs in the tab bar (step 21).
