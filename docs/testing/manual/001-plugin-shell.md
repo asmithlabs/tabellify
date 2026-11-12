@@ -1,7 +1,7 @@
 # Manual checklist: Feature 001 (Plugin Shell)
 
 Covers acceptance criteria AC1–AC5 of `docs/features/001-plugin-shell.md`, plus runtime
-checks R2 and R3 from `docs/zotero-api-notes.md`. The owner performs every step. Agents
+checks R2, R3 and R7 from `docs/zotero-api-notes.md`. The owner performs every step. Agents
 never tick these boxes.
 
 **Use the Zotero dev profile only** (`tabellify-dev`, data directory `~/Zotero tabellify-dev`).
@@ -23,9 +23,12 @@ Never run these steps in your normal Zotero profile.
 
 **Status:** AC1–AC4 were verified by the owner on 2026-11-11 in Zotero 10.0.9 (see the
 spec, `docs/features/001-plugin-shell.md`). AC5 is verified except step 16 (FTL link removed
-after disable). Steps 7 (R2), 12 (R3) and 16 have no recorded results yet. They are pending the owner's
+after disable). Steps 7 (R2), 12 (R3), 12a (R7) and 16 have no recorded results yet. They are pending the owner's
 next combined run. The expected log lines below were updated after that run to the
-outcome-reporting wording (`present now: true`, `removed FTL: true`, `…: true`).
+outcome-reporting wording (`present now: true`, `…: true`), and then to the link count
+written since commit `9a1a61d` (`removed FTL: 1`). Step 10's window-opacity check and step
+12a were added after commit `64940be` (the Tabellify Workspace window now loads
+`global.css`) and have not been run yet.
 
 **Known Zotero errors to ignore.** These come from Zotero itself, appeared before Tabellify
 was ever installed (runtime check R1), and are not Tabellify failures:
@@ -233,6 +236,14 @@ and no Tabellify errors.
 **Tabellify Workspace** and the sentence **Your literature tables will appear here.**
 No raw IDs (text starting with `tabellify-`) and no empty boxes where text should be.
 
+Also check that the Tabellify Workspace window is **opaque** (solid, not see-through): move
+the Tabellify Workspace window so that it partly covers the dev Zotero window. Nothing of
+the dev Zotero window or the desktop shows through the Tabellify Workspace window, and the
+Tabellify Workspace window has a visible bottom edge (the solid background reaches all the
+way down to the bottom border of the Tabellify Workspace window). Before commit `64940be`
+the Tabellify Workspace window was see-through on macOS; a see-through Tabellify Workspace
+window is a failure.
+
 - [ ] Pass  [ ] Fail
 - Notes:
 
@@ -265,6 +276,43 @@ a count of exactly 1 open workspace window.
 - [ ] Pass  [ ] Fail
 - Notes:
 
+### Step 12a: R7 — Confirm the Tabellify Workspace window is opaque and loads its stylesheets
+Terms: a **stylesheet** is a CSS file that sets how a window looks. `global.css` is Mozilla's
+standard stylesheet that gives the Tabellify Workspace window its solid, theme-coloured
+background; `workspace.css` is Tabellify's own stylesheet. A **system colour** is a colour
+the app picks from the current light or dark theme instead of a fixed value.
+
+**Where:** the Run JavaScript window (reopen it from Tools → Developer → Run JavaScript in
+the dev Zotero window if you closed the Run JavaScript window). Keep the Tabellify Workspace
+window open.
+**Do, part 1:** leave "Run as async function" unticked, replace the code in the code box
+with the code below, and click **Run** (or press Cmd-R):
+```js
+(w => [getComputedStyle(w.document.documentElement).backgroundColor, getComputedStyle(w.document.documentElement).appearance, [...w.document.styleSheets].map(s => s.href)])(Services.wm.getMostRecentWindow("tabellify:workspace"))
+```
+**Expected, part 1:** the Run JavaScript window shows an array of three values:
+1. a solid colour such as `rgb(236, 236, 236)` (the numbers can differ). `rgba(0, 0, 0, 0)`
+   or `transparent` is a failure.
+2. `"auto"` (on macOS).
+3. a list that contains both `chrome://global/skin/global.css` and
+   `chrome://tabellify/content/workspace.css` (other entries may appear too).
+
+Write the colour from value 1 in Notes.
+
+**Do, part 2:** in the dev Zotero window open Zotero → Settings…, choose the **General**
+section, and switch the colour scheme setting (Light / Dark; see "Unconfirmed UI labels")
+to the other choice while the Tabellify Workspace window stays open. Then click **Run** in
+the Run JavaScript window again with the same code.
+**Expected, part 2:** the Tabellify Workspace window's background changes to match the new
+colour scheme without reopening the Tabellify Workspace window, and value 1 in the Run
+JavaScript window is now a different `rgb(…)` colour. Write the new colour in Notes. If the
+background changes only after you close and reopen the Tabellify Workspace window, write
+that in Notes (this is the open question R7 answers). Afterwards switch the colour scheme
+setting back to its original choice.
+
+- [ ] Pass  [ ] Fail
+- Notes:
+
 ---
 
 ## Part F: AC5 — Disable cleans up; re-enable restores (and runtime check R3, second half)
@@ -293,8 +341,11 @@ lines.
 3. `Tabellify: closing workspace window`
 4. `Tabellify: menu unregistered (…open-workspace): true` — `true` means Zotero found and
    removed the menu item; `false` is a failure
-5. `Tabellify: onMainWindowUnload: removed FTL: true` — `true` means the FTL link was
-   there and was removed; `false` is a failure
+5. `Tabellify: onMainWindowUnload: removed FTL: 1` — the number is how many FTL links
+   Tabellify found and removed in the dev Zotero window. `1` is correct; `0` is a failure.
+   A number above 1 means a duplicate FTL link was present (it can happen after removing
+   and reinstalling Tabellify in one Zotero session); Tabellify removed all of them, but
+   write the number in Notes
 
 No Tabellify errors.
 
@@ -379,15 +430,20 @@ in front). Optionally quit the dev Zotero window (Zotero → Quit Zotero).
 | AC1 install | 2, 4 | |
 | AC2 startup messages, no errors | 5, 6 | |
 | AC3 menu item opens window | 8, 9 | |
-| AC4 placeholder + single instance | 10, 11, 12 | |
+| AC4 placeholder, opaque window, single instance | 10, 11, 12, 12a | |
 | AC5 disable cleans up, re-enable restores | 13–18 | |
 | R2 Fluent + menu label | 7, 8 | |
 | R3 window open/focus/close | 11, 12, 13, 16 | |
+| R7 opaque window, stylesheets, colour scheme | 10, 12a | |
 
 Automated coverage (run by `npm test`, step 1): AC1 in `tests/static/xpi.test.mjs`; AC5 in
-`tests/behavior/lifecycle.test.mjs` and `tests/static/symmetry.test.mjs`; AC6 in
+`tests/behavior/lifecycle.test.mjs` (including removal of a duplicate FTL link, logged as
+`removed FTL: 2`) and `tests/static/symmetry.test.mjs`; AC6 in
 `tests/static/write-guard.test.mjs`; static support for AC3/AC4 in
-`tests/static/l10n-and-window.test.mjs`.
+`tests/static/l10n-and-window.test.mjs` (including: `workspace.xhtml` loads `global.css`
+before `<window>`, and `workspace.css` sets no background). No automated test can show
+that the window is opaque on screen or follows the colour scheme; steps 10 and 12a cover
+that.
 
 ## Unconfirmed UI labels
 
@@ -402,3 +458,8 @@ the Notes fields so this checklist can be corrected:
 - The menu item that switches Debug Output logging on (notes under steps 5 and 6).
 - Whether the Debug Output window supports Cmd+F search (step 5).
 - How the Run JavaScript window displays `undefined` inside an array (step 16).
+- The menu item that opens Zotero's settings on macOS, written as Zotero → Settings… in
+  step 12a (not recorded in `docs/development.md`).
+- The exact name of the colour scheme setting in Zotero → Settings… → General and of its
+  Light / Dark choices (step 12a). `docs/zotero-api-notes.md` records only the setting's
+  internal ID (`color-scheme`), not its visible label.
