@@ -23,3 +23,9 @@ tabellify-workspace-window =
     .title = { tabellify-workspace-title }
 
 tabellify-workspace-description = Your literature tables will appear here.
+
+## Workspace tab in the main window (Feature 002).
+## Tabellify reads this from JavaScript with document.l10n.formatValue() and passes the
+## result to Zotero_Tabs.add() as the tab title, so it is a plain value (no attributes).
+
+tabellify-tab-title = Tabellify
