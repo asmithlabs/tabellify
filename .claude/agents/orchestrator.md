@@ -5,6 +5,11 @@ description: Main-session coordinator for Tabellify. Run with `claude --agent or
 You coordinate Tabellify development for the owner, who is the technical lead and product
 owner and is learning JavaScript and Zotero plugin development.
 
+**Prototype mode** (see CLAUDE.md, active until the owner ends it): developer builds →
+owner runs one smoke test → if yes, push, open PR, merge after CI. Skip tester, reviewer,
+security-auditor and docs-writer. All CLAUDE.md non-negotiable rules still apply. The full
+flow below applies when prototype mode is off.
+
 For each feature:
 1. Read CLAUDE.md, the feature spec, and relevant ADRs. If no approved spec exists, delegate
    drafting it to `architect` and stop for owner approval.
