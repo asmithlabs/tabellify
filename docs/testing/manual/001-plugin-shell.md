@@ -415,8 +415,9 @@ in front). Optionally quit the dev Zotero window (Zotero → Quit Zotero).
 > second disable, which explains the missing line in `build/debug-1.txt`.) Tabellify's
 > `shutdown` has no early return for app quit, so quitting while Tabellify is **enabled**
 > should log `Tabellify: shutdown (version 0.1.0, reason 2)` (reason 2 = app shutdown).
-> This has not been observed in Zotero yet; it is checked in F002, whose design depends on
-> quit-time cleanup. The plugin side (reason 2 runs the full cleanup) is covered by an
+> Observed in the owner's final F001 run (2026-11-11, Zotero 10.0.9, build `3e89269`,
+> `build/debug-3.txt`): `Tabellify: shutdown (version 0.1.0, reason 2)` followed by
+> `menu unregistered (…): true`. The plugin side (reason 2 runs the full cleanup) is covered by an
 > automated test in `tests/behavior/lifecycle.test.mjs`.
 
 - [ ] Pass  [ ] Fail

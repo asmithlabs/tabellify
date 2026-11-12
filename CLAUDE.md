@@ -55,11 +55,20 @@ JavaScript and Zotero plugin development — explain non-obvious concepts briefl
 
 ## Agent workflow
 - The main session runs as `orchestrator` (`claude --agent orchestrator`). Specialists:
-  `architect`, `developer`, `tester`, `reviewer` (see `.claude/agents/`).
+  `architect`, `developer`, `tester`, `reviewer`, `security-auditor`, `docs-writer`
+  (see `.claude/agents/`).
 - Flow per feature (from Feature 002 on): spec + ADRs (architect) → owner approval →
-  task plan (orchestrator, part of the spec) → developer → tester → reviewer, run **back to
-  back without stopping** → **one combined owner manual test** at the end of the feature →
-  PR (owner approves push) → owner merges.
+  task plan (orchestrator, part of the spec) → developer → tester → reviewer →
+  security-auditor → docs-writer, run **back to back without stopping** → **one combined
+  owner manual test** at the end of the feature → PR (owner approves push) → owner merges.
+- **Security (ADR-0011):** security-auditor runs on every feature after reviewer. Critical
+  and high findings block the PR until fixed (developer) and re-audited. Full audit before
+  every release. Open findings live only in `build/security/` (gitignored), never in commits,
+  issues or PRs; only fixed issues are summarized in the changelog. Reporting: `SECURITY.md`.
+- **Documentation (ADR-0010):** docs-writer updates `README.md` (short, end-user) and
+  `docs/wiki/` (source of the GitHub wiki, reviewed in PRs). Document only behavior in code or
+  approved specs; label the rest "Planned"; never invent UI labels. `scripts/publish-wiki.sh`
+  commits to a local wiki clone; pushing the wiki needs owner approval.
 - Stop for the owner only for decisions that need the owner (see "Always escalate" in
   `.claude/agents/orchestrator.md`) and for the combined manual test. Review findings that
   stay within the approved spec are fixed (developer → tester → reviewer again) without
