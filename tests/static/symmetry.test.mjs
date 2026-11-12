@@ -36,22 +36,41 @@ const sources = listJs(srcDir).map((file) => ({
 const allCode = sources.map((s) => s.code).join("\n");
 
 /**
- * The cleanup for `insertFTLIfNeeded`: find our `<link href="…">` and call `.remove()` on it.
- * Accepted in two shapes:
+ * The cleanup for `insertFTLIfNeeded`: find our `<link href="…">` element(s) and call
+ * `.remove()`. Accepted in three shapes:
  *   1. one-liner:  document.querySelector(`link[href="${x}"]`)?.remove()
  *   2. split:      const link = document.querySelector(`link[href="${x}"]`);
  *                  link?.remove();            (or link.remove())
- * In shape 2 the `.remove()` must be called on the SAME identifier the querySelector result
- * was assigned to (the `\k<ident>` back-reference), so deleting the remove call, or
- * calling remove on something else, still fails the check.
+ *   3. all links:  const links = document.querySelectorAll(`link[href="${x}"]`);
+ *                  links.forEach((link) => link.remove());
+ *                  (arrow parameter with or without parentheses, body with or without braces)
+ * In shape 2 `.remove()` must be called on the SAME identifier the querySelector result was
+ * assigned to; in shape 3 `.forEach` must be called on the identifier holding the
+ * querySelectorAll result, and `.remove()` on the arrow's own parameter (the `\k<…>`
+ * back-references). So deleting the remove call, or calling remove on something else,
+ * still fails the check.
  */
-const LINK_SELECTOR =
-  /querySelector\(\s*(?:`link\[href="\$\{[^}]+\}"\]`|['"]link\[href="[^"]+"\]['"])\s*\)/.source;
+const IDENT = "[A-Za-z_$][\\w$]*";
+/** @param {"querySelector" | "querySelectorAll"} method */
+const linkSelector = (method) =>
+  `${method}\\(\\s*(?:\`link\\[href="\\$\\{[^}]+\\}"\\]\`|['"]link\\[href="[^"]+"\\]['"])\\s*\\)`;
+const LINK_SELECTOR = linkSelector("querySelector");
+const LINK_SELECTOR_ALL = linkSelector("querySelectorAll");
 const FTL_LINK_REMOVAL = new RegExp(
+  // shape 1
   `${LINK_SELECTOR}\\s*\\?\\.remove\\(\\)` +
   "|" +
-  `\\b(?:const|let|var)\\s+(?<ident>[A-Za-z_$][\\w$]*)\\s*=\\s*[\\w$.?]*${LINK_SELECTOR}\\s*;` +
-  `[\\s\\S]*?(?<![\\w$.])\\k<ident>\\s*\\??\\.remove\\(\\)`,
+  // shape 2
+  `\\b(?:const|let|var)\\s+(?<ident>${IDENT})\\s*=\\s*[\\w$.?]*${LINK_SELECTOR}\\s*;` +
+  `[\\s\\S]*?(?<![\\w$.])\\k<ident>\\s*\\??\\.remove\\(\\)` +
+  "|" +
+  // shape 3
+  `\\b(?:const|let|var)\\s+(?<list>${IDENT})\\s*=\\s*[\\w$.?]*${LINK_SELECTOR_ALL}\\s*;` +
+  `[\\s\\S]*?(?<![\\w$.])\\k<list>\\s*\\.forEach\\(\\s*` +
+  // One group for the arrow parameter, parentheses optional. (Two alternative groups would
+  // be wrong: in JS a back-reference to a group that did not take part matches "".)
+  `\\(?\\s*(?<el>${IDENT})\\s*\\)?\\s*=>\\s*(?:\\{\\s*)?` +
+  `\\k<el>\\s*\\??\\.remove\\(\\)`,
 );
 
 /**
@@ -62,7 +81,7 @@ const FTL_LINK_REMOVAL = new RegExp(
 const PAIRS = [
   [/\.registerChrome\(/, /\.destruct\(\)/, "registerChrome → chromeHandle.destruct()"],
   [/\.insertFTLIfNeeded\(/, FTL_LINK_REMOVAL,
-    "insertFTLIfNeeded → querySelector(link[href=…]) + .remove()"],
+    "insertFTLIfNeeded → querySelector(All)(link[href=…]) + .remove()"],
   [/\.addObserver\(/, /\.removeObserver\(/, "addObserver → removeObserver"],
   [/\.addEventListener\(/, /\.removeEventListener\(/, "addEventListener → removeEventListener"],
   [/\.addResourceIds\(/, /\.removeResourceIds\(/, "addResourceIds → removeResourceIds"],
@@ -119,11 +138,18 @@ test("AC5: shutdown calls Tabellify.shutdown() before chromeHandle.destruct() (s
   assert.ok(a < b, "Tabellify.shutdown() must come before chromeHandle.destruct()");
 });
 
-test("AC5: FTL-link cleanup check accepts both shapes and rejects a missing remove()", () => {
+test("AC5: FTL-link cleanup check accepts all three shapes and rejects a missing remove()", () => {
+  const SEL_ALL = "window.document.querySelectorAll(`link[href=\"${this.FTL_FILE}\"]`);";
   const accepted = [
     "window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`)?.remove();",
     "const link = window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`);\nlink?.remove();",
     "let el = document.querySelector('link[href=\"tabellify.ftl\"]');\nif (el) el.remove();",
+    // shape 3 (all links), as in src/tabellify.js, and its arrow-function variants
+    `const links = ${SEL_ALL}\nlinks.forEach((link) => link.remove());`,
+    `const links = ${SEL_ALL}\nlinks.forEach(link => link.remove());`,
+    `const links = ${SEL_ALL}\nlinks.forEach((l) => { l.remove(); });`,
+    `const links = ${SEL_ALL}\nlinks.forEach(l => { l?.remove() });`,
+    `let found = document.querySelectorAll('link[href="tabellify.ftl"]');\nthis.log(found.length);\nfound.forEach((x) => x.remove());`,
   ];
   const rejected = [
     // remove call deleted
@@ -134,6 +160,17 @@ test("AC5: FTL-link cleanup check accepts both shapes and rejects a missing remo
     "const link = window.document.querySelector(`link[href=\"${this.FTL_FILE}\"]`);\nmylink.remove();",
     // query for a different element
     "document.querySelector('div')?.remove();",
+    // all links: forEach callback does not call remove
+    `const links = ${SEL_ALL}\nlinks.forEach((link) => this.log(link));`,
+    // all links: remove call deleted entirely
+    `const links = ${SEL_ALL}\nthis.log(links.length);`,
+    // all links: forEach callback calls remove on a different identifier
+    `const links = ${SEL_ALL}\nlinks.forEach((link) => other.remove());`,
+    `const links = ${SEL_ALL}\nlinks.forEach((link) => mylink.remove());`,
+    // all links: forEach called on a different list
+    `const links = ${SEL_ALL}\nothers.forEach((link) => link.remove());`,
+    // all links: querySelectorAll result itself is not a single element; .remove() on it is a bug
+    `const links = ${SEL_ALL}\nlinks.remove();`,
   ];
   for (const code of accepted) assert.match(code, FTL_LINK_REMOVAL, `should accept: ${code}`);
   for (const code of rejected) assert.doesNotMatch(code, FTL_LINK_REMOVAL, `should reject: ${code}`);
