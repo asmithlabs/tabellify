@@ -24,7 +24,12 @@
        shows exactly one of the status messages at a time.
      - Feature 004: the "Codebook" section above the collection row. workspace.js builds the
        groups and tags inside it from codebooks.json (Tabellify's own file, not the
-       library). -->
+       library).
+     - Feature 005: the "Tag monitor" section under the collection row compares the
+       codebook with the manual tags on the chosen collection's papers (subcollections and
+       highlights included). The items table became the per-paper table: its column
+       headers are buttons that sort it, and each paper row has a "Show remaining" toggle
+       that adds a detail row (built by workspace.js with plain text only). -->
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         id="tabellify-workspace"
@@ -38,13 +43,14 @@
   <!-- Scripts run in order. include.js (Zotero's own file) defines the global `Zotero`
        object in THIS document, the same shared object the main window uses
        (docs/zotero-api-notes.md, include.js row). It works the same in the tab iframe and
-       in the fallback window. codebook-model.js (pure rules) and codebook-store.js (file
-       load/save, uses the model) each define one global that workspace.js uses, so they
-       come before it. workspace.js only waits for "load" here, so the elements further
+       in the fallback window. codebook-model.js (pure rules), codebook-store.js (file
+       load/save, uses the model) and tag-monitor-model.js (pure tag-monitor logic) each
+       define one global that workspace.js uses, so they come before it. workspace.js only waits for "load" here, so the elements further
        down exist when it starts. -->
   <script src="chrome://zotero/content/include.js"/>
   <script src="chrome://tabellify/content/codebook-model.js"/>
   <script src="chrome://tabellify/content/codebook-store.js"/>
+  <script src="chrome://tabellify/content/tag-monitor-model.js"/>
   <script src="chrome://tabellify/content/workspace.js"/>
 
   <html:main id="tabellify-workspace-main">
@@ -84,6 +90,25 @@
       </html:select>
     </html:div>
 
+    <!-- Feature 005: Tag monitor. The summary, messages and group list are filled by
+         workspace.js with plain text. "Refresh" is always present: it re-reads the
+         library at once (live updates also re-read it on their own). -->
+    <html:section id="tabellify-tag-monitor">
+      <html:div id="tabellify-monitor-header">
+        <html:h2 data-l10n-id="tabellify-monitor-heading"></html:h2>
+        <html:button id="tabellify-monitor-refresh"
+                     data-l10n-id="tabellify-monitor-refresh"></html:button>
+      </html:div>
+      <html:p id="tabellify-monitor-message"></html:p>
+      <html:p id="tabellify-monitor-summary" role="status" hidden="hidden">
+        <html:span id="tabellify-monitor-used"></html:span>
+        <html:span id="tabellify-monitor-all-used" hidden="hidden"></html:span>
+        <html:span id="tabellify-monitor-papers"></html:span>
+      </html:p>
+      <html:p id="tabellify-monitor-warning" hidden="hidden"></html:p>
+      <html:div id="tabellify-monitor-groups"></html:div>
+    </html:section>
+
     <!-- Status messages: workspace.js removes `hidden` from at most one of them. -->
     <html:p id="tabellify-no-collections" class="tabellify-status" hidden="hidden"
             data-l10n-id="tabellify-no-collections"></html:p>
@@ -94,11 +119,27 @@
     <html:p id="tabellify-load-error" class="tabellify-status" hidden="hidden"
             data-l10n-id="tabellify-load-error"></html:p>
 
+    <!-- Per-paper table (F005; replaces the F003 item list). The header buttons carry
+         data-sort (a TabellifyTagMonitor.SORT_KEYS value); workspace.js sets aria-sort
+         on the <th> of the active column. The Fluent ID sits on the button, not on the
+         <th>, because Fluent replaces the children of the element it translates. -->
     <html:table id="tabellify-items-table" hidden="hidden">
       <html:thead>
         <html:tr>
-          <html:th scope="col" data-l10n-id="tabellify-column-title"></html:th>
+          <html:th scope="col">
+            <html:button class="tabellify-sort" data-sort="title"
+                         data-l10n-id="tabellify-column-title"></html:button>
+          </html:th>
+          <html:th scope="col">
+            <html:button class="tabellify-sort" data-sort="count"
+                         data-l10n-id="tabellify-column-codebook"></html:button>
+          </html:th>
+          <html:th scope="col">
+            <html:button class="tabellify-sort" data-sort="collections"
+                         data-l10n-id="tabellify-column-in"></html:button>
+          </html:th>
           <html:th scope="col" data-l10n-id="tabellify-column-tags"></html:th>
+          <html:th scope="col" data-l10n-id="tabellify-column-details"></html:th>
         </html:tr>
       </html:thead>
       <html:tbody id="tabellify-items-body"></html:tbody>

@@ -1,4 +1,4 @@
-/* Tabellify — workspace.js (Feature 003 collection browser + Feature 004 codebook)
+/* Tabellify — workspace.js (F003 collection browser + F004 codebook + F005 tag monitor)
  *
  * Runs inside chrome://tabellify/content/workspace.xhtml, both when that document is shown
  * in the main-window tab (inside an <iframe>) and in the F001 fallback window.
@@ -6,8 +6,12 @@
  * `Zotero` object (docs/zotero-api-notes.md, include.js row).
  *
  * What it does:
- * - F003: fills a dropdown with every collection in My Library; when the user picks one,
- *   lists that collection's regular items (title + tags).
+ * - F003: fills a dropdown with every collection in My Library.
+ * - F005: when the user picks a collection, reads its papers AND those of all its
+ *   subcollections, with their manual tags and the tags on their highlights, and compares
+ *   them with the codebook: "Tags used N/M", used/remaining tags per group, and a per-paper
+ *   table (which replaced the F003 item list) with "k/M" and a "Show remaining" toggle.
+ *   The comparison itself is pure logic in tag-monitor-model.js (TabellifyTagMonitor).
  * - F004: shows and edits the codebook (super-tag groups and their planned tags). The rules
  *   live in codebook-model.js (TabellifyCodebook); the file is read and written by
  *   codebook-store.js (TabellifyCodebookStore): Tabellify's own codebooks.json in
@@ -25,10 +29,15 @@
  * or `new Option(text, value)`. The browser never parses those as HTML.
  * (tests/static/no-html-sinks.test.mjs fails if a markup-parsing API appears in src/.)
  *
- * Lifecycle: everything here lives exactly as long as this document. The only listeners
+ * Lifecycle: everything here lives exactly as long as this document. The DOM listeners
  * are on this document's own window and elements, and they are removed on "unload".
- * No timers.
- * Nothing is added to Zotero or to the main window, so bootstrap.js has nothing to undo.
+ * F005 adds two things with a life of their own, both ended in onUnload:
+ * - one Zotero.Notifier observer (Zotero keeps it in a global list, so it would outlive
+ *   this document if we did not unregister it; it also unregisters itself if it is ever
+ *   called after this document is gone);
+ * - at most one pending debounce timer of this window (cleared).
+ * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
+ * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
  * Why the pure helpers live in this file and not in src/modules/: bootstrap.js registers
  * only src/content/ as chrome://tabellify/content/, so a file in src/modules/ has no URL
@@ -98,7 +107,9 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * Rows for the items table, sorted by title. Empty titles get `untitledText` and sort last.
+   * Rows for the F003 items table, sorted by title. Empty titles get `untitledText` and sort
+   * last. Since F005 the per-paper table is built from TabellifyTagMonitor instead; this
+   * helper is kept (unused) because tests/unit/workspace-helpers.test.mjs still covers it.
    * @param {Array<{ title: string, tags: Array<{ tag: string, type?: number }> }>} items
    * @param {string} untitledText  Localized "(untitled)"
    * @returns {Array<{ title: string, tags: string, untitled: boolean }>}
@@ -161,6 +172,10 @@ var TabellifyWorkspace = {
   async init() {
     const select = this.el("tabellify-collection-select");
     select.addEventListener("change", this.onCollectionChange);
+    // F005: "Refresh", and one delegated click listener on the per-paper table (sort
+    // buttons in the header, "Show remaining" toggles in the rows). Removed in onUnload.
+    this.el("tabellify-monitor-refresh").addEventListener("click", this.onRefreshClick);
+    this.el("tabellify-items-table").addEventListener("click", this.onTableClick);
     try {
       // Normally already resolved (the workspace opens from a menu, after Zotero started),
       // so this returns at once. It guarantees all collections are loaded.
@@ -168,6 +183,10 @@ var TabellifyWorkspace = {
 
       // "(untitled)" is needed as plain text in table cells, so ask Fluent for the string.
       this.untitledText = (await document.l10n?.formatValue("tabellify-untitled")) ?? "";
+      // F005: the tag monitor's texts, formatted once (see MONITOR_STRINGS).
+      await this.formatStrings(this.MONITOR_STRINGS);
+      this.monitorReady = true;
+      this.renderMonitor();
 
       const libraryID = Zotero.Libraries.userLibraryID;
       // Synchronous: collections are kept in memory from start-up. `true` = include
@@ -185,6 +204,8 @@ var TabellifyWorkspace = {
         select.append(new Option(label, value));
       }
       select.disabled = false;
+      // F005: from now on, library changes re-count the chosen collection (live updates).
+      this.registerMonitorObserver();
     } catch (e) {
       this.showStatus("tabellify-load-error");
       Zotero.logError(e);
@@ -197,67 +218,508 @@ var TabellifyWorkspace = {
    * Being one fixed function object also lets onUnload remove exactly this listener.
    */
   onCollectionChange: (event) => {
-    TabellifyWorkspace.showCollection(event.target.value);
+    const W = TabellifyWorkspace;
+    // A newly chosen collection starts in the default order, with every paper collapsed.
+    W.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
+    W.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
+    W.expandedPaperIds.clear();
+    W.showCollection(event.target.value, "collection chosen");
   },
 
   /**
-   * Load and show the regular items of one collection.
+   * Read the chosen collection (and its subcollections) from the library and show the tag
+   * monitor and the per-paper table.
+   *
+   * `reason` is "collection chosen" when the user picks a collection: the old view is
+   * cleared and "Loading items…" is shown. Any other reason ("refresh", "library change")
+   * is a RECOMPUTE of the same collection: the current view stays on screen until the new
+   * result replaces it, so it does not flicker.
    * @param {string} value  The chosen option's value (collection ID), "" for the placeholder
+   * @param {string} reason  For Debug Output
    */
-  async showCollection(value) {
+  async showCollection(value, reason) {
     const request = ++this.requestCounter;
-    const table = this.el("tabellify-items-table");
-    const body = this.el("tabellify-items-body");
-    table.hidden = true;
-    body.replaceChildren(); // remove the previous rows (no markup involved)
-
+    const recompute = reason !== "collection chosen";
+    this.currentCollection = value;
+    if (!recompute || value === "") {
+      this.monitorData = null;
+      this.el("tabellify-items-table").hidden = true;
+      this.el("tabellify-items-body").replaceChildren(); // remove old rows (no markup involved)
+      this.renderMonitor();
+    }
     if (value === "") {
       this.showStatus(null);
       return;
     }
-    this.showStatus("tabellify-loading-items");
+    if (!recompute) this.showStatus("tabellify-loading-items");
     try {
-      const collection = Zotero.Collections.get(Number(value));
-      if (!collection) throw new Error(`collection ${value} not found`);
-
-      // Why waitForDataLoad: at start-up Zotero loads collections but NOT item data
-      // (titles, tags, creators). Item data is loaded the first time a library is used.
-      // Reading an item before that throws "… not loaded for item …". This call loads the
-      // library's items into memory once (it only reads the database), and returns at once
-      // if they are already loaded, e.g. because the main pane has shown My Library.
-      await Zotero.Libraries.get(collection.libraryID).waitForDataLoad("item");
-      if (request !== this.requestCounter) return; // the user picked another collection
-
-      // Direct members only; trashed items are left out. Notes and attachments can be
-      // direct members too, so keep only regular items.
-      const items = collection.getChildItems().filter((i) => i.isRegularItem());
-      this.log(`collection ${collection.id}: ${items.length} regular item(s)`);
-      if (items.length === 0) {
-        this.showStatus("tabellify-no-items");
-        return;
-      }
-
-      const rows = this.itemRows(
-        items.map((i) => ({ title: i.getDisplayTitle(), tags: i.getTags() })),
-        this.untitledText,
+      const data = await this.gatherMonitorData(Number(value));
+      if (request !== this.requestCounter) return; // a newer choice or recompute started
+      this.monitorData = data;
+      const result = this.renderMonitor();
+      this.log(
+        `tag monitor: recomputed for collection ${data.rootId} (${reason}): ` +
+        `${result?.used ?? 0}/${result?.total ?? 0} codebook tag(s) used, ` +
+        `${result?.paperCount ?? 0} paper(s) in ${data.scopeSize} collection(s)` +
+        (data.annotationErrors > 0 ? `, highlights unreadable for ${data.annotationErrors} paper(s)` : ""),
       );
-      for (const row of rows) {
-        const tr = document.createElementNS("http://www.w3.org/1999/xhtml", "tr");
-        const titleCell = document.createElementNS("http://www.w3.org/1999/xhtml", "td");
-        const tagsCell = document.createElementNS("http://www.w3.org/1999/xhtml", "td");
-        // `textContent` puts the string in as text, never as markup (see SECURITY above).
-        titleCell.textContent = row.title;
-        if (row.untitled) titleCell.classList.add("tabellify-untitled");
-        tagsCell.textContent = row.tags;
-        tr.append(titleCell, tagsCell);
-        body.append(tr);
-      }
-      this.showStatus(null);
-      table.hidden = false;
     } catch (e) {
       if (request !== this.requestCounter) return;
+      this.monitorData = null;
+      this.el("tabellify-items-table").hidden = true;
+      this.el("tabellify-items-body").replaceChildren();
+      this.renderMonitor();
       this.showStatus("tabellify-load-error");
+      this.log(`tag monitor: could not read collection ${value} (${reason})`);
       Zotero.logError(e);
+    }
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // Feature 005: Tag monitor (uses Zotero and the DOM; checked by the owner's smoke test).
+  // The comparison rules are in tag-monitor-model.js (TabellifyTagMonitor, unit-tested).
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * Fluent IDs the tag monitor shows from JavaScript, formatted once in init() into
+   * `strings` (like CODEBOOK_STRINGS). They are plain values without Fluent variables:
+   * numbers are added after the text in JavaScript ("Tags used" + " 2/4").
+   * tests/static/workspace-script.test.mjs checks that each exists in tabellify.ftl.
+   */
+  MONITOR_STRINGS: [
+    "tabellify-monitor-choose",
+    "tabellify-monitor-codebook-empty",
+    "tabellify-monitor-unavailable",
+    "tabellify-monitor-annotations-error",
+    "tabellify-monitor-tags-used",
+    "tabellify-monitor-all-used",
+    "tabellify-monitor-papers",
+    "tabellify-monitor-used",
+    "tabellify-monitor-remaining",
+    "tabellify-monitor-present",
+    "tabellify-monitor-none",
+    "tabellify-monitor-paper-one",
+    "tabellify-monitor-paper-other",
+    "tabellify-monitor-show-remaining",
+    "tabellify-monitor-hide-remaining",
+  ],
+
+  /** True once MONITOR_STRINGS are formatted; renderMonitor() waits for it. */
+  monitorReady: false,
+
+  /** The dropdown's current value (collection ID as text), "" when none is chosen. */
+  currentCollection: "",
+
+  /**
+   * What gatherMonitorData() read for the current collection (plain objects), or null.
+   * Kept so a codebook edit or a click on a sort button can re-render without reading the
+   * library again.
+   */
+  monitorData: null,
+
+  /** Per-paper table order (a TabellifyTagMonitor.SORT_KEYS value and "asc"/"desc"). */
+  sortKey: "count",
+  sortDirection: "asc",
+
+  /** Item IDs of the papers whose "Show remaining" detail row is open. */
+  expandedPaperIds: new Set(),
+
+  /**
+   * Format Fluent messages into `strings`. `await Promise.all(...)`: start every lookup at
+   * once and wait until all have finished.
+   * @param {string[]} ids
+   */
+  async formatStrings(ids) {
+    const values = await Promise.all(ids.map((id) => document.l10n?.formatValue(id)));
+    ids.forEach((id, i) => {
+      if (values[i] != null) this.strings[id] = values[i];
+    });
+  },
+
+  /**
+   * Read, without changing anything, what the tag monitor needs for one collection:
+   * the library's collection tree, and every regular item ("paper") in the chosen
+   * collection and its subcollections with its item tags and the tags of its highlights.
+   * Returns plain objects only (the shape TabellifyTagMonitor.summarize expects).
+   * @param {number} rootId
+   */
+  async gatherMonitorData(rootId) {
+    const root = Zotero.Collections.get(rootId);
+    if (!root) throw new Error(`collection ${rootId} not found`);
+
+    // Why waitForDataLoad: at start-up Zotero loads collections but NOT item data
+    // (titles, tags, creators, attachments, annotations). Reading an item before that
+    // throws "… not loaded for item …". This call loads the library's items into memory
+    // once (it only reads the database), and returns at once if they are already loaded.
+    // Annotations are items too, so this also covers highlights and their tags.
+    await Zotero.Libraries.get(root.libraryID).waitForDataLoad("item");
+
+    // A fresh snapshot of the collection tree (synchronous, in memory, no trashed
+    // collections), so subcollections created since the last read are included.
+    const collections = Zotero.Collections.getByLibrary(root.libraryID, true)
+      .map((c) => ({ id: c.id, parentID: c.parentID, name: c.name }));
+    const scope = TabellifyTagMonitor.descendantIds(collections, rootId);
+
+    const papers = [];
+    const read = new Map(); // item ID → what we read, so a paper in two collections is read once
+    const allTags = new Map(); // item ID → "All tags" column text (F003)
+    let annotationErrors = 0;
+    for (const collectionId of scope) {
+      const collection = Zotero.Collections.get(collectionId);
+      if (!collection) continue;
+      // Direct members only (subcollections are walked by this loop); trashed items are
+      // left out. Notes and attachments can be members too, so keep only regular items.
+      for (const item of collection.getChildItems()) {
+        if (!item.isRegularItem()) continue;
+        let entry = read.get(item.id);
+        if (!entry) {
+          const itemTags = item.getTags();
+          let annotationTags = [];
+          try {
+            annotationTags = this.annotationTags(item);
+          } catch (e) {
+            // Show the paper with its item tags only, and say so above the table.
+            annotationErrors++;
+            this.log(`tag monitor: could not read the highlights of item ${item.id}; using its item tags only`);
+            Zotero.logError(e);
+          }
+          entry = { title: item.getDisplayTitle(), itemTags, annotationTags };
+          read.set(item.id, entry);
+          allTags.set(item.id, this.joinTags(itemTags));
+        }
+        papers.push({ id: item.id, title: entry.title, collectionId, itemTags: entry.itemTags, annotationTags: entry.annotationTags });
+      }
+    }
+    return { rootId, collections, papers, allTags, annotationErrors, scopeSize: scope.length };
+  },
+
+  /**
+   * Tags on the highlights (and other annotations) of a paper's file attachments.
+   * All read-only getters (docs/zotero-api-notes.md, F005 rows).
+   * @param {object} item  A regular Zotero item
+   * @returns {Array<{ tag: string, type?: number }>}
+   */
+  annotationTags(item) {
+    const ids = item.getAttachments(); // IDs, not items; trashed attachments left out
+    if (ids.length === 0) return [];
+    const tags = [];
+    for (const attachment of Zotero.Items.get(ids)) {
+      // Only file attachments (PDF, EPUB, snapshot) have annotations; getAnnotations()
+      // throws on link-only attachments.
+      if (!attachment.isFileAttachment()) continue;
+      for (const annotation of attachment.getAnnotations()) tags.push(...annotation.getTags());
+    }
+    return tags;
+  },
+
+  /**
+   * "Heat index · 3 papers". The count and the word follow the tag as plain text.
+   * @param {{ tag: string, papers: number }} used
+   */
+  usedTagLabel(used) {
+    const word = this.text(used.papers === 1 ? "tabellify-monitor-paper-one" : "tabellify-monitor-paper-other");
+    return `${used.tag} · ${used.papers} ${word}`;
+  },
+
+  /**
+   * A labelled list of tags ("Remaining: Temperature, …"), built as elements with text only.
+   * @param {string} labelId  Fluent ID of the label
+   * @param {string[]} names
+   * @param {string} className
+   */
+  tagList(labelId, names, className) {
+    const box = this.html("div", `tabellify-monitor-list ${className}`);
+    const label = this.html("span", "tabellify-monitor-list-label");
+    label.textContent = this.text(labelId);
+    const list = this.html("ul");
+    if (names.length === 0) {
+      const none = this.html("li", "tabellify-monitor-none");
+      none.textContent = this.text("tabellify-monitor-none");
+      list.append(none);
+    }
+    for (const name of names) {
+      const li = this.html("li");
+      li.textContent = name; // library/codebook text: plain text only (see SECURITY)
+      list.append(li);
+    }
+    box.append(label, list);
+    return box;
+  },
+
+  /**
+   * Show the tag monitor and the per-paper table from `monitorData` and the current
+   * codebook. Synchronous and read-only: it never reads the library, so it can run after
+   * every codebook edit and every sort/toggle click.
+   * @returns {ReturnType<typeof TabellifyTagMonitor.summarize> | null}
+   */
+  renderMonitor() {
+    if (!this.monitorReady) return null;
+    const message = this.el("tabellify-monitor-message");
+    const summary = this.el("tabellify-monitor-summary");
+    const warning = this.el("tabellify-monitor-warning");
+    const groupsEl = this.el("tabellify-monitor-groups");
+    const table = this.el("tabellify-items-table");
+    groupsEl.replaceChildren();
+
+    const setMessage = (id) => {
+      message.hidden = id === null;
+      message.textContent = id === null ? "" : this.text(id);
+    };
+    const data = this.monitorData;
+    if (this.currentCollection === "") setMessage("tabellify-monitor-choose");
+    else if (this.codebookLoadDone && !this.codebook) setMessage("tabellify-monitor-unavailable");
+    else setMessage(null);
+    if (!data) {
+      summary.hidden = true;
+      warning.hidden = true;
+      return null;
+    }
+
+    const result = TabellifyTagMonitor.summarize(this.codebook, data.collections, data.rootId, data.papers);
+    // Counts make sense only with a loaded codebook that has tags.
+    const counting = Boolean(this.codebook) && result.total > 0;
+    if (this.codebook && result.total === 0) setMessage("tabellify-monitor-codebook-empty");
+
+    summary.hidden = !counting;
+    this.el("tabellify-monitor-used").textContent =
+      `${this.text("tabellify-monitor-tags-used")} ${result.used}/${result.total}`;
+    const allUsed = this.el("tabellify-monitor-all-used");
+    allUsed.hidden = !result.allUsed;
+    allUsed.textContent = this.text("tabellify-monitor-all-used");
+    this.el("tabellify-monitor-papers").textContent =
+      `${this.text("tabellify-monitor-papers")} ${result.paperCount}`;
+    warning.hidden = data.annotationErrors === 0;
+    warning.textContent = this.text("tabellify-monitor-annotations-error");
+
+    if (counting) {
+      for (const group of result.groups) {
+        const box = this.html("div", "tabellify-monitor-group");
+        const heading = this.html("h3", "tabellify-monitor-group-name");
+        const name = this.html("span");
+        name.textContent = group.name;
+        const count = this.html("span", "tabellify-monitor-count");
+        count.textContent = `${group.used}/${group.total}`;
+        heading.append(name, count);
+        box.append(
+          heading,
+          this.tagList("tabellify-monitor-remaining", group.remainingTags, "tabellify-monitor-remaining"),
+          this.tagList("tabellify-monitor-used", group.usedTags.map((u) => this.usedTagLabel(u)), "tabellify-monitor-used"),
+        );
+        groupsEl.append(box);
+      }
+    }
+
+    this.renderPaperTable(result, counting);
+    if (result.paperCount === 0) {
+      table.hidden = true;
+      this.showStatus("tabellify-no-items");
+    } else {
+      table.hidden = false;
+      this.showStatus(null);
+    }
+    return result;
+  },
+
+  /**
+   * Rebuild the per-paper table body (and the header's sort state).
+   * @param {ReturnType<typeof TabellifyTagMonitor.summarize>} result
+   * @param {boolean} counting  False when there is no codebook (or it has no tags)
+   */
+  renderPaperTable(result, counting) {
+    const body = this.el("tabellify-items-body");
+    body.replaceChildren();
+    // aria-sort tells screen readers (and our CSS arrow) which column sorts the table.
+    for (const button of this.el("tabellify-items-table").querySelectorAll("button[data-sort]")) {
+      const th = button.closest("th");
+      if (button.dataset.sort === this.sortKey) {
+        th.setAttribute("aria-sort", this.sortDirection === "desc" ? "descending" : "ascending");
+      } else {
+        th.removeAttribute("aria-sort");
+      }
+    }
+
+    const columns = 5;
+    for (const paper of TabellifyTagMonitor.sortPapers(result.papers, this.sortKey, this.sortDirection)) {
+      const tr = this.html("tr");
+      const title = this.html("td");
+      // `textContent` puts the string in as text, never as markup (see SECURITY above).
+      title.textContent = paper.untitled ? this.untitledText : paper.title;
+      if (paper.untitled) title.classList.add("tabellify-untitled");
+      const count = this.html("td", "tabellify-monitor-count");
+      count.textContent = counting ? `${paper.count}/${paper.total}` : "–";
+      const inCell = this.html("td");
+      inCell.textContent = paper.collectionNames.join(", ");
+      const tags = this.html("td");
+      tags.textContent = this.monitorData.allTags.get(paper.id) ?? "";
+      const toggleCell = this.html("td");
+      const expanded = counting && this.expandedPaperIds.has(paper.id);
+      const detailId = `tabellify-paper-detail-${paper.id}`;
+      if (counting) {
+        const toggle = this.html("button");
+        toggle.dataset.action = "toggle-paper";
+        toggle.dataset.paperId = String(paper.id);
+        toggle.setAttribute("aria-expanded", String(expanded));
+        toggle.setAttribute("aria-controls", detailId);
+        toggle.textContent = this.text(expanded ? "tabellify-monitor-hide-remaining" : "tabellify-monitor-show-remaining");
+        toggleCell.append(toggle);
+      }
+      tr.append(title, count, inCell, tags, toggleCell);
+      body.append(tr);
+
+      if (expanded) {
+        const detail = this.html("tr", "tabellify-monitor-detail");
+        detail.id = detailId;
+        const cell = this.html("td");
+        cell.colSpan = columns;
+        for (const group of paper.groups) {
+          const box = this.html("div", "tabellify-monitor-detail-group");
+          const name = this.html("strong");
+          name.textContent = group.name;
+          box.append(
+            name,
+            this.tagList("tabellify-monitor-remaining", group.remaining, "tabellify-monitor-remaining"),
+            this.tagList("tabellify-monitor-present", group.present, "tabellify-monitor-used"),
+          );
+          cell.append(box);
+        }
+        detail.append(cell);
+        body.append(detail);
+      }
+    }
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // Feature 005: live updates (Zotero.Notifier observer + debounce). See the spec's
+  // "Live updates" section for which library changes fire which events.
+  // ---------------------------------------------------------------------------------------
+
+  /** Wait this long after the LAST library change before re-reading (spec Q-new-4). */
+  RECOMPUTE_DELAY_MS: 500,
+
+  /** The key Zotero.Notifier.registerObserver returned (needed to unregister), or null. */
+  notifierKey: null,
+
+  /** The pending debounce timer's ID, or null. */
+  recomputeTimer: null,
+
+  /**
+   * Ask Zotero to tell us about library changes that can change the counts: tags added to /
+   * removed from items or highlights ("item-tag"), papers added to / removed from
+   * collections ("collection-item"), papers trashed ("item"), and subcollection changes
+   * ("collection"). An observer only listens; it cannot change the library.
+   * Paired with unregisterMonitorObserver() in onUnload (lifecycle symmetry).
+   */
+  registerMonitorObserver() {
+    if (this.notifierKey !== null) return;
+    this.notifierKey = Zotero.Notifier.registerObserver(
+      { notify: this.onNotify },
+      ["item-tag", "collection-item", "item", "collection"],
+      "tabellify-tag-monitor", // only a label in Zotero's debug output
+    );
+    this.log("tag monitor: notifier observer registered");
+  },
+
+  /**
+   * Stop listening and drop a pending recompute. Safe to call more than once.
+   * @param {string} reason  For Debug Output
+   */
+  unregisterMonitorObserver(reason) {
+    if (this.recomputeTimer !== null) {
+      try {
+        window.clearTimeout(this.recomputeTimer);
+      } catch (e) {
+        // The window may already be gone; its timers went with it.
+      }
+      this.recomputeTimer = null;
+    }
+    if (this.notifierKey === null) return;
+    const key = this.notifierKey;
+    this.notifierKey = null;
+    Zotero.Notifier.unregisterObserver(key);
+    this.log(`tag monitor: notifier observer unregistered (${reason})`);
+  },
+
+  /**
+   * Called by Zotero after library changes (signature from notifier.js:
+   * notify(event, type, ids, extraData)). It does not re-read at once: a single user action
+   * can fire several events in a row (e.g. a sync), so it (re)starts a short timer and
+   * re-reads once, RECOMPUTE_DELAY_MS after the last event ("debouncing"). No filtering by
+   * ID: one re-read of the chosen collection is cheap and always correct.
+   */
+  onNotify: (event, type, ids, extraData) => {
+    const W = TabellifyWorkspace;
+    // Belt and braces: if this document is gone (closed without our unload handler
+    // running), unregister instead of touching a dead page. `defaultView` is the window
+    // showing this document; it is null once the document is unloaded. Accessing a
+    // closed window's objects can also throw ("dead object"), hence the try.
+    let alive = false;
+    try {
+      alive = document.defaultView != null;
+    } catch (e) {
+      alive = false;
+    }
+    if (!alive) {
+      try {
+        W.unregisterMonitorObserver("workspace document is gone");
+      } catch (e) {
+        // Nothing more we can do; Zotero logs errors thrown by observers.
+      }
+      return;
+    }
+    if (W.currentCollection === "") return; // nothing to count yet
+    if (W.recomputeTimer !== null) window.clearTimeout(W.recomputeTimer);
+    // A function (never a string) is passed to setTimeout.
+    W.recomputeTimer = window.setTimeout(W.onRecomputeTimer, W.RECOMPUTE_DELAY_MS);
+  },
+
+  /** The debounce timer fired: re-read the chosen collection. */
+  onRecomputeTimer: () => {
+    const W = TabellifyWorkspace;
+    W.recomputeTimer = null;
+    if (W.currentCollection === "") return;
+    W.showCollection(W.currentCollection, "library change");
+  },
+
+  /** "Refresh": read the library again now, for the chosen collection. */
+  onRefreshClick: () => {
+    const W = TabellifyWorkspace;
+    if (W.currentCollection === "") return;
+    // A pending live update would only repeat this read.
+    if (W.recomputeTimer !== null) {
+      window.clearTimeout(W.recomputeTimer);
+      W.recomputeTimer = null;
+    }
+    W.showCollection(W.currentCollection, "refresh");
+  },
+
+  /**
+   * Clicks in the per-paper table (one delegated listener): a header button sorts by its
+   * column (clicking the active column again reverses the order); a "Show remaining"
+   * button opens or closes that paper's detail row. Neither reads the library.
+   */
+  onTableClick: (event) => {
+    const W = TabellifyWorkspace;
+    const button = event.target.closest?.("button");
+    if (!button || !W.monitorData) return;
+    if (button.dataset.sort) {
+      const key = button.dataset.sort;
+      if (key === W.sortKey) {
+        W.sortDirection = W.sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        W.sortKey = key;
+        W.sortDirection = "asc";
+      }
+      W.renderMonitor();
+      W.el("tabellify-items-table").querySelector(`button[data-sort="${key}"]`)?.focus();
+    } else if (button.dataset.action === "toggle-paper") {
+      const id = Number(button.dataset.paperId);
+      if (W.expandedPaperIds.has(id)) W.expandedPaperIds.delete(id);
+      else W.expandedPaperIds.add(id);
+      W.renderMonitor();
+      // The table was rebuilt: put the keyboard focus back on this paper's toggle.
+      for (const toggle of W.el("tabellify-items-body").querySelectorAll("button[data-action='toggle-paper']")) {
+        if (toggle.dataset.paperId === String(id)) toggle.focus();
+      }
     }
   },
 
@@ -305,6 +767,9 @@ var TabellifyWorkspace = {
   /** False when the file could not be loaded: nothing may overwrite it. */
   codebookEditable: false,
 
+  /** True once the first load attempt finished (F005: until then the monitor waits). */
+  codebookLoadDone: false,
+
   /** True while a save is running (controls are disabled meanwhile). */
   codebookBusy: false,
 
@@ -342,11 +807,7 @@ var TabellifyWorkspace = {
     try {
       await Zotero.initializationPromise;
 
-      const ids = [...this.CODEBOOK_STRINGS, ...this.codebookErrorIds()];
-      const values = await Promise.all(ids.map((id) => document.l10n?.formatValue(id)));
-      ids.forEach((id, i) => {
-        if (values[i] != null) this.strings[id] = values[i];
-      });
+      await this.formatStrings([...this.CODEBOOK_STRINGS, ...this.codebookErrorIds()]);
       this.el("tabellify-codebook-group-input").placeholder = this.text("tabellify-codebook-group-placeholder");
 
       this.codebookFs = TabellifyCodebookStore.platformFs();
@@ -356,6 +817,7 @@ var TabellifyWorkspace = {
     } catch (e) {
       this.codebook = null;
       this.codebookEditable = false;
+      this.codebookLoadDone = true;
       this.showCodebookStatus("tabellify-codebook-load-error", this.codebookDir, true);
       this.renderCodebook();
       Zotero.logError(e);
@@ -414,6 +876,7 @@ var TabellifyWorkspace = {
       const id = result.status === "newer" ? "tabellify-codebook-newer" : "tabellify-codebook-load-error";
       this.showCodebookStatus(id, result.path, true);
     }
+    this.codebookLoadDone = true;
     this.renderCodebook();
     return this.codebookEditable;
   },
@@ -520,6 +983,8 @@ var TabellifyWorkspace = {
    * (textContent / new Option), never as markup (see SECURITY at the top).
    */
   renderCodebook() {
+    // F005: the tag monitor follows every codebook change (no library read needed).
+    this.renderMonitor();
     this.updateCodebookControls();
     const container = this.el("tabellify-codebook-groups");
     container.replaceChildren();
@@ -726,10 +1191,18 @@ var TabellifyWorkspace = {
     W.applyCodebookEdit(TabellifyCodebook.addTagToGroup(W.codebook, groupId, event.target.value));
   },
 
-  /** Remove our listeners when the document goes away (lifecycle symmetry). */
+  /**
+   * Remove our listeners and the Notifier observer when the document goes away
+   * (lifecycle symmetry).
+   */
   onUnload: () => {
+    TabellifyWorkspace.unregisterMonitorObserver("workspace closed");
     TabellifyWorkspace.el("tabellify-collection-select")
       ?.removeEventListener("change", TabellifyWorkspace.onCollectionChange);
+    TabellifyWorkspace.el("tabellify-monitor-refresh")
+      ?.removeEventListener("click", TabellifyWorkspace.onRefreshClick);
+    TabellifyWorkspace.el("tabellify-items-table")
+      ?.removeEventListener("click", TabellifyWorkspace.onTableClick);
     const section = TabellifyWorkspace.el("tabellify-codebook");
     section?.removeEventListener("click", TabellifyWorkspace.onCodebookClick);
     section?.removeEventListener("keydown", TabellifyWorkspace.onCodebookKeydown);

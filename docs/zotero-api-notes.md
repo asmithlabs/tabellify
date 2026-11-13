@@ -48,6 +48,14 @@ The Feature 004 rows (codebook storage, ADR-0012 Proposed; library tag list) wer
 these rows were counted from the raw files by a fetch tool: treat them as ±a few lines and
 search for the quoted identifier. Runtime check: R9 (read-only).
 
+The Feature 005 rows (tag monitor: attachments, annotations and their tags; Notifier for a
+later live-update option) were checked on 2026-11-12 against Zotero source at tag
+**`10.0.9`** and the JSAPI page. **Line numbers could not be obtained** for `item.js`
+(the fetch tool cannot count lines in a 184 KB file): search the raw file for the quoted
+function header. `notifier.js`, `tags.js`, `annotations.js` and `collection.js` line
+numbers are approximate (±a few; counted by the fetch tool). Runtime checks: R10, R11
+(both read-only).
+
 Abbreviations used in the Source column:
 `Z7`/`Z8`/`Z10` = the dev guides above; `src:` = `https://github.com/zotero/zotero/blob/10.0.8/`;
 `src10:` = `https://github.com/zotero/zotero/blob/10.0.9/`;
@@ -117,6 +125,16 @@ Abbreviations used in the Source column:
 | `Zotero.Tags.getAll(libraryID, types?)` → `Promise<Array<{tag: string, type?: 1}>>` | F004: list tag names already used in My Library for the "pick from library" dropdown | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/data/tags.js#L141-L149`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/tags.js#L141-L149) (JSDoc "Get all tags in library", `@param {Number[]} [types]`, `@return {Promise<Array>} A promise for an array containing tag objects in API JSON format`; `this.getAll = async function (libraryID, types) {` L149 → `getAllWithin({ libraryID, types })`); `getAllWithin` [L164](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/tags.js#L164) (`"SELECT DISTINCT tagID \|\| ':' \|\| type FROM itemTags "`, `"JOIN tags USING (tagID) "`, plus `"JOIN items USING (itemID) WHERE libraryID = ? "`, run with `Zotero.DB.columnQueryAsync`; objects built by `cleanData`) | **Read-only** (a `SELECT`; no INSERT/UPDATE/DELETE on this path). Async. Same `{tag, type?}` shape as `item.getTags()` (`type` omitted for manual tags, `1` for automatic). A name used both as manual and automatic tag appears twice: de-duplicate by `tag`. `itemTags` holds tags of all item kinds, so annotation tags are included (inference from the SQL; R9 confirms if the owner has a tagged annotation). The query has no trash filter, so tags used **only** on trashed items are probably included (**UNVERIFIED**; R9). Not in any dev guide. Not matched by the write guard (`getAll` is not in the `Zotero.Tags write` pattern) |
 | `Zotero.Prefs.get(pref, global)` / `Zotero.Prefs.set(pref, value, global)` / `Zotero.Prefs.clear(pref, global)` | **Not used in F004.** Rejected for codebook storage (ADR-0012 option B); candidate for small settings later | Verified (source); `get` also (docs) | 10.0.9 | [src10:`xpcom/prefs.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/prefs.js) (`function get(pref, global)` [L248](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/prefs.js#L248), `function set(pref, value, global)` [L290](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/prefs.js#L290), `this.clear = function (pref, global)` [L331](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/prefs.js#L331); each does `pref = global ? pref : ZOTERO_CONFIG.PREF_BRANCH + pref;`; strings stored with `setStringPref`); JSAPI (`Zotero.Prefs.get("export.quickCopy.setting")`); moz:[`modules/libpref/Preferences.cpp`](https://searchfox.org/mozilla-esr140/source/modules/libpref/Preferences.cpp) (`static const uint32_t MAX_ADVISABLE_PREF_LENGTH = 4 * 1024;` ~L167; warning "attempting to write %d bytes to preference %s. This is bad for general performance…") | Tabellify prefs must pass `global = true` with the full name `extensions.tabellify.<name>` (otherwise Zotero prefixes its own branch; `PREF_BRANCH` value not checked). Strings over 4 KB trigger a Firefox warning, one reason codebooks don't go here |
 | `Zotero.File.putContentsAsync(path, data)` / `Zotero.File.getContentsAsync(path)` | **Not used.** Rejected alternative (ADR-0012 option A3) | Verified (docs + source) | 10.0.9 | JSAPI ("File I/O": `await Zotero.File.getContentsAsync(path);`, `await Zotero.File.putContentsAsync(path, data);`); [src10:`xpcom/file.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/file.js) (`this.getContentsAsync = async function (source, charset, maxLength) {` ~L222; `putContentsAsync` writes strings with `OS.File.writeAtomic(` … `tmpPath: path + ".tmp",`) | Atomic, but built on Zotero's `OS.File` compatibility shim, which the Z7 guide says not to rely on long-term. Also matched by the write guard ("Zotero.File write") |
+| `item.getAttachments(includeTrashed = false)` → **array of attachment IDs** (sync) | F005: a paper's attachments, to reach their annotations | Verified (docs + source) | 10.0.9 | JSAPI ("Get an item's attachments": `let attachmentIDs = item.getAttachments();`); [src10:`chrome/content/zotero/xpcom/data/item.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/item.js) (search `Zotero.Item.prototype.getAttachments = function (includeTrashed) {`; line not counted) | Returns **IDs**, not items: resolve with `Zotero.Items.get(ids)` (row below). Throws if called on an attachment item (call only on regular items). Needs `childItems` data (loaded by `waitForDataLoad("item")`; see the `_dataTypes` row). Trashed attachments left out by default. Result is cached and sorted by title. Read-only |
+| `Zotero.Items.get(ids)` with an **array** → array of items (sync) | F005: turn attachment IDs into items | Verified (source) | 10.0.9 | [src10:`…/xpcom/data/dataObjects.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/dataObjects.js) (`Zotero.DataObjects.prototype.get = function (ids) {`, JSDoc "Retrieves one or more already-loaded items", `@param {Array\|Integer} ids`) | Array in → array out; scalar in → one object or `false`. **Registered but not loaded** IDs throw `Zotero.Exception.UnloadedDataException` (one such ID aborts the whole call); **unknown** IDs are silently skipped. After `waitForDataLoad("item")` all item IDs of the library are loaded. `Zotero.Items.get` (scalar) was already used in F003 via `getChildItems`; this row adds the array form to Tabellify's own code (F003 allow-list in `workspace-script.test.mjs`) |
+| `item.isFileAttachment()` (sync) | F005: only file attachments can have annotations | Verified (source) | 10.0.9 | src10:`…/xpcom/data/item.js` (search `Zotero.Item.prototype.isFileAttachment`: `if (!this.isAttachment()) {` → `false`; `return this.attachmentLinkMode != Zotero.Attachments.LINK_MODE_LINKED_URL;`) | `true` for stored and linked files (PDF, EPUB, snapshot), `false` for link-only (URL) attachments and non-attachments. Use as a guard before `getAnnotations()`, which throws on non-file attachments. Siblings exist (`isPDFAttachment`, `isEPUBAttachment`, `isSnapshotAttachment`) but are not needed: the broader check covers every reader type |
+| `attachment.getAnnotations(includeTrashed = false, asIDs = false)` → annotation items (or IDs) (sync) | F005: annotations (highlights, notes, …) of a file attachment | Verified (source) | 10.0.9 | src10:`…/xpcom/data/item.js` (JSDoc "Returns child annotations for an attachment item"; `Zotero.Item.prototype.getAnnotations = function (includeTrashed, asIDs) {`; calls `this._requireData('childItems');`) | **Throws on non-file attachments** (guard with `isFileAttachment()`). Trashed annotations left out by default. Not in any dev guide. Related: `numAnnotations(includeTrashed)` (same file) returns the count. Annotations are `Zotero.Item`s, so `annotation.getTags()` is the F003 `getTags` row (same `{tag, type?}` shape). `isAnnotation()` (same file, "Determine if an item is an annotation") is available for a defensive check. Read-only |
+| `Zotero.Item.prototype._dataTypes` includes `tags`, `annotation`, `annotationDeferred`, `childItems` → `waitForDataLoad("item")` also loads attachment/annotation lists and annotation tags | F005: no extra loading call before reading annotations | Verified (source, **by inference**); runtime pending R10 | 10.0.9 | src10:`…/xpcom/data/item.js` (`Zotero.Item.prototype._dataTypes = Zotero.Item._super.prototype._dataTypes.concat([` … `'creators', 'tags', 'annotation', 'itemData', 'note', 'annotationDeferred', 'childItems', 'collections', 'relations'`; comment "Load creators/tags/annotations before itemData"); `loadAll` row (F003, `waitForDataLoad`) loops over every data type for the whole library | Annotations are rows in the same items table, so `Items.loadAll(libraryID)` covers them. Not observed at runtime: R10 reads annotation tags right after `waitForDataLoad("item")`. Fallback if R10 throws `UnloadedDataException`: `await Zotero.Items.loadDataTypes(annotations, ["tags"])` (F003 alternative in the `waitForDataLoad` row) |
+| `Zotero.Notifier.registerObserver(ref, types, id?, priority?)` → string key; `Zotero.Notifier.unregisterObserver(key)` | F005: live tag-monitor updates (registered in the workspace document, unregistered on its `unload`; spec F005 "Live updates") | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/notifier.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/notifier.js) (`_types` ~L33–56 incl. `'item'`, `'collection-item'`, `'item-tag'`, `'tag'`; `this.registerObserver = function (ref, types, id, priority) {` ~L68, JSDoc `@param {Object} [ref] signature {notify: function(event, type, ids, extraData) {}}`, returns `hash` ~L103; `this.unregisterObserver = function (id) {` ~L106 → `delete _observers[id];`; `trigger` ~L143 calls `await Promise.resolve(ref.notify(event, type, ids, extraData));` and catches observer errors with `Zotero.logError`); JSAPI "Notification System" (describes the system, names no methods) | Pass the **returned key** to `unregisterObserver`. Observers live in Zotero's global list, so an observer registered from the workspace document must be unregistered on that document's `unload` (and defensively in `shutdown`), or it outlives the document (lifecycle symmetry, CLAUDE.md rule 9). The `id` argument is only a debug label; the **returned key** is what `unregisterObserver` needs. `notifier.js` does not list events per type; which events fire for tags and collections is in the next row (from the code that queues them). Runtime: R11 |
+| Notifier events Tabellify relies on: **`add`/`remove` `item-tag`** (ids `"<itemID>-<tagID>"`, `extraData[id] = {libraryID, tag, type}`), **`modify` `item-tag`** (tag rename), **`remove` `item-tag`** (tag deleted from library), **`add`/`remove` `collection-item`** (ids `"<collectionID>-<itemID>"`), **`trash` `item`** | F005: which changes trigger a recompute | Verified (source); runtime pending R11. `collection` events for subcollection add/move/delete: **UNVERIFIED** | 10.0.9 | src10:`…/xpcom/data/item.js` `_saveData` (search `'add', 'item-tag', this.id + '-' + tagID`, `'remove', 'item-tag'`, `'add',` / `'remove',` + `'collection-item',` with `collectionID + '-' + this.id`, `Zotero.Notifier.queue('trash', 'item', this.id, {}, …)`, and `Zotero.Notifier.queue('modify', 'item', itemID, …)` for existing items; all inside `if (!env.options.skipNotifier) {`); [src10:`…/xpcom/data/tags.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/tags.js) (`rename` ~L340: `Zotero.Notifier.queue('modify', 'item-tag', oldItemIDs.map(itemID => itemID + '-' + newTagID), notifierData);`; `removeFromLibrary` ~L417: `Zotero.Notifier.queue('remove', 'item-tag', notifierIDs, notifierData);`; `purge` ~L545: `'delete', 'tag'`); `trigger` in `notifier.js` (row above) | Highlights are items, so tagging a highlight goes through the same `_saveData` path (next row). **A save with `skipNotifier: true` fires nothing** (Zotero uses it for some internal saves): keep a Refresh button. For `collection` events (subcollection created/moved/deleted) the queuing code in `collection.js` was not read: R11 observes them; F005 does not depend on them (Refresh) |
+| `Zotero.Annotations.saveFromJSON(attachment, json, saveOptions = {})` (reader → annotation item) | F005: proves that tagging a highlight in the reader fires `item-tag` events and saves the tag as **manual**. **Not called by Tabellify** | Verified (source). **Internal** | 10.0.9 | [src10:`chrome/content/zotero/xpcom/annotations.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/annotations.js) (`this.saveFromJSON = async function (attachment, json, saveOptions = {}) {` ~L214; `item.setTags((json.tags \|\| []).map(t => ({ tag: t.name })));` ~L249; `saveOptions.skipSelect = true;` ~L260; `await item.saveTx(saveOptions);` ~L262) | Tags get no `type`, so they are stored as type 0 (manual) (`_saveData`: `let tagType = tag.type ? tag.type : 0;`). No `skipNotifier` is set here. Whether the reader ever passes `skipNotifier` in `saveOptions` was not traced: R11 checks the end result (events appear when the owner tags a highlight) |
+| Tag `type` values: **0 = manual** (omitted by `getTags()`), **1 = automatic**; no other values allowed | F005: count only manual tags (`(t.type ?? 0) === 0`) for item and highlight tags | Verified (source) | 10.0.9 | src10:`…/xpcom/data/tags.js` (`cleanData` ~L866–867: `if (data.type !== undefined && data.type != 0 && data.type != 1) {` → `throw new Error("Tag 'type' must be 0 or 1");`; `getAutomaticInLibrary` ~L477: `WHERE type=1 AND libraryID=?`; `removeAutomaticFromLibrary` ~L485: `var tagType = 1;`; `rename` ~L326 sets `type=0`); src10:`…/xpcom/data/item.js` `_saveData` (`let tagType = tag.type ? tag.type : 0;`) | No named constants for 0/1 in `tags.js`; the meaning comes from `getAutomaticInLibrary` (1 = automatic) and the default 0. Zotero's UI calls type-1 tags "automatic" (tag selector "Display Automatic"). The same name can be manual on one item and automatic on another: filter per tag entry, not per name |
+| `collection.getDescendents(nested = false, type = null, includeTrashed = false, level)` → `Array<{id, name, key, type: 'collection', level, parent} \| {id, key, type: 'item', parent}>` | **Not used** (alternative for F005 subcollection walk) | Verified (source) | 10.0.9 | [src10:`…/xpcom/data/collection.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/collection.js) (`Zotero.Collection.prototype.getDescendents = function (nested, type, includeTrashed, level) {` ~L880; uses `Zotero.Collections.getByParent(this.id, false, includeTrashed)` and recurses; items via `getChildItems(false, includeTrashed)`) | Read-only, recursive. Not chosen because F005 computes descendants as a pure, Node-testable function from `Zotero.Collections.getByLibrary(libID, true)` (`id`, `parentID`; F003 rows). Quirks: an invalid `type` throws a TypeError (the code does `throw new (\`…\`)`); sort comparator returns 0 for unnamed entries. `getChildCollections(asIDs, includeTrashed)` (~L206, F003 row) is the other alternative: non-recursive, excludes trashed collections |
 
 ## Runtime checks for owner
 
@@ -280,6 +298,70 @@ Optional, only with data the dev library already has (do not create test data fo
 (1) if a trashed item carries a tag that no other item uses, see whether that tag is in the
 list (answers the trash question in the `Zotero.Tags.getAll` row); (2) if an annotation
 carries a tag that no item uses, check that the tag is listed (annotation question).
+
+**R10: F005 annotation tags (dev profile; read-only; any time, no Tabellify build needed).**
+Tick "Run as async function". Nothing here writes to the library. Expect
+`attachmentIdsAreNumbers: true`, no `error`, and, if the dev library has a tagged highlight
+in some collection, at least one entry in `samples` with `isAnnotation: true` and its tags.
+```js
+const libID = Zotero.Libraries.userLibraryID;
+await Zotero.Libraries.get(libID).waitForDataLoad("item");
+const samples = [];
+let attachmentIdsAreNumbers = true;
+try {
+  for (const c of Zotero.Collections.getByLibrary(libID, true)) {
+    for (const item of c.getChildItems().filter((i) => i.isRegularItem())) {
+      const ids = item.getAttachments();
+      if (!ids.every((id) => typeof id === "number")) attachmentIdsAreNumbers = false;
+      for (const att of Zotero.Items.get(ids).filter((a) => a.isFileAttachment())) {
+        for (const ann of att.getAnnotations()) {
+          const tags = ann.getTags();
+          if (tags.length) samples.push({ collection: c.name, isAnnotation: ann.isAnnotation(), tags });
+        }
+      }
+    }
+  }
+} catch (e) {
+  return { attachmentIdsAreNumbers, error: String(e) };
+}
+return { attachmentIdsAreNumbers, count: samples.length, samples: samples.slice(0, 5) };
+```
+What a failure would mean: `UnloadedDataException` mentioning `tags` or `childItems` →
+`waitForDataLoad("item")` does not cover annotations; use the `loadDataTypes` fallback (row
+`_dataTypes`). An error from `getAnnotations` → a non-file attachment slipped through the
+`isFileAttachment()` guard (report the attachment type).
+
+**R11: F005 Notifier events for tag changes (dev profile; observes only; any time, no
+Tabellify build needed).** Tick "Run as async function". The snippet listens for 60 seconds
+and then **always unregisters itself** (the `finally` block). While it runs, in the dev
+Zotero window: (1) add a manual tag to a paper in the library view, (2) remove it, (3) open a
+PDF and add a tag to a highlight, (4) remove it, (5) optionally create a subcollection and
+delete it again. The tag changes are the owner's own manual edits in the dev library; the
+snippet itself writes nothing.
+```js
+const events = [];
+const key = Zotero.Notifier.registerObserver(
+  { notify: (event, type, ids, extraData) => {
+      events.push({ event, type, ids: [...ids].slice(0, 3), extra: JSON.stringify(extraData).slice(0, 200) });
+  } },
+  ["item-tag", "collection-item", "item", "collection"],
+  "tabellify-r11-probe",
+);
+try {
+  await new Promise((resolve) => setTimeout(resolve, 60000));
+} finally {
+  Zotero.Notifier.unregisterObserver(key);
+}
+return { keyType: typeof key, count: events.length, events: events.slice(0, 40) };
+```
+Expect `keyType: "string"`; for (1)/(2) `add`/`remove` with type `item-tag` and ids like
+`"123-45"`, `extra` containing `"type":0`; for (3)/(4) the same with the **highlight's** item
+ID (an `add`/`modify` `item` event for the highlight may come too); for (5) `collection`
+events (records which ones, currently UNVERIFIED). What a failure would mean: no `item-tag`
+events for a highlight tag → live updates cannot catch reader edits; ship Refresh only (spec
+F005 "Fallback"). If the snippet fails at once with `setTimeout is not defined` (the Run
+JavaScript scope is not verified to provide it), nothing was registered past the `finally`;
+report the error and an agent will adapt the wait.
 
 **R4: Unload-hook reason (optional, after T2).** Temporarily log `reason` in
 `onMainWindowUnload`. Close and reopen the main window (macOS: close window, click Dock icon).
