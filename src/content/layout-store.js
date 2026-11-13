@@ -1,7 +1,8 @@
 /* Tabellify — layout-store.js (Feature 005c, ADR-0014: load and save the table layout)
  *
- * Reads and writes <Zotero data directory>/tabellify/layout.json: the column order of the
- * per-paper table and the hand-made paper order of each collection. Same rules as the
+ * Reads and writes <Zotero data directory>/tabellify/layout.json: the order of the
+ * per-paper table's codebook tag columns (groups, and tags inside each group; schema 2,
+ * ADR-0014 amendment 2026-11-13) and the hand-made paper order of each collection. Same rules as the
  * codebook file (ADR-0012), in a separate file so a damaged layout can never block the
  * codebook (and the other way round).
  * Owner's dev profile: ~/Zotero tabellify-dev/tabellify/layout.json
@@ -54,7 +55,8 @@ var TabellifyLayoutStore = {
 
   /**
    * Read the layout file.
-   * - `{ status: "ok", data, path, existed }`: usable (already cleaned by migrateLayout).
+   * - `{ status: "ok", data, path, existed, fromVersion? }`: usable (already migrated and
+   *   cleaned by migrateLayout; `fromVersion` is the file's own schemaVersion).
    *   `existed: false` means there was no file and `data` is the default layout (nothing
    *   was created).
    * - `{ status: "newer", path, reason }`: made by a newer Tabellify: use the default
@@ -79,7 +81,9 @@ var TabellifyLayoutStore = {
     }
     const check = TabellifyTableLayout.validateLayout(raw);
     if (!check.ok) return { status: check.newer ? "newer" : "invalid", path, reason: check.reason };
-    return { status: "ok", data: TabellifyTableLayout.migrateLayout(raw), path, existed: true };
+    // `fromVersion` < SCHEMA_VERSION means the data was migrated in memory (e.g. 1 → 2);
+    // the file itself is rewritten only by the next save after a user action.
+    return { status: "ok", data: TabellifyTableLayout.migrateLayout(raw), path, existed: true, fromVersion: raw.schemaVersion };
   },
 
   /**
@@ -96,7 +100,8 @@ var TabellifyLayoutStore = {
    *   file on disk is unchanged.
    * @param {LayoutFs} fs
    * @param {string} dir
-   * @param {{ columnOrder: string[], manualOrders: Record<string, string[]> }} perPaperTable
+   * @param {{ groupOrder: string[], tagOrder: Record<string, string[]>,
+   *   manualOrders: Record<string, string[]> }} perPaperTable
    * @param {number} loadedRevision  revision last loaded or saved (0 = no file)
    * @returns {Promise<object>}
    */

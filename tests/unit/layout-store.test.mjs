@@ -29,7 +29,6 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 const DIR = "/data/tabellify";
 const FILE = "/data/tabellify/layout.json";
 const CODEBOOK = "/data/tabellify/codebooks.json";
-const DEFAULT = ["title", "count", "collections", "tags", "details"];
 
 /**
  * A fake `fs`. readJSON rejects with a NotFoundError for a missing file (like IOUtils) and
@@ -66,6 +65,19 @@ function fakeFs(initial = {}, opts = {}) {
 
 function sample(revision = 3) {
   return {
+    schemaVersion: 2,
+    revision,
+    perPaperTable: {
+      groupOrder: ["g3", "g2"],
+      tagOrder: { g2: ["Temperature", "Heat index"] },
+      manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] },
+    },
+  };
+}
+
+/** A schema 1 file as written before the owner's 2026-11-13 column change. */
+function sampleV1(revision = 3) {
+  return {
     schemaVersion: 1,
     revision,
     perPaperTable: {
@@ -75,7 +87,7 @@ function sample(revision = 3) {
   };
 }
 
-const table = (manualOrders = {}, columnOrder = DEFAULT) => ({ columnOrder, manualOrders });
+const table = (manualOrders = {}, groupOrder = [], tagOrder = {}) => ({ groupOrder, tagOrder, manualOrders });
 
 // ---------------------------------------------------------------------------------------
 // load
@@ -99,8 +111,36 @@ test("T6: valid file → its cleaned data, existed true, nothing written", async
   const r = await Store.load(fs, DIR);
   assert.equal(r.status, "ok");
   assert.equal(r.existed, true);
+  assert.equal(r.fromVersion, 2);
   assert.deepEqual(plain(r.data), sample());
   assert.deepEqual(fs.writes(), []);
+});
+
+test("schema 1 file → migrated in memory to 2 (old columns dropped, manual orders kept), nothing written", async () => {
+  const text = JSON.stringify(sampleV1(4));
+  const fs = fakeFs({ [FILE]: text });
+  const r = await Store.load(fs, DIR);
+  assert.equal(r.status, "ok");
+  assert.equal(r.fromVersion, 1);
+  assert.deepEqual(plain(r.data), {
+    schemaVersion: 2,
+    revision: 4,
+    perPaperTable: { groupOrder: [], tagOrder: {}, manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] } },
+  });
+  assert.deepEqual(fs.writes(), []);
+  assert.equal(fs.files.get(FILE), text, "the file stays version 1 until the next save");
+});
+
+test("a save over a schema 1 file writes schema 2 and keeps the version 1 file as .bak", async () => {
+  const fs = fakeFs({ [FILE]: JSON.stringify(sampleV1(4)) });
+  const r = await Store.saveData(fs, DIR, table({ "1/ABCD2345": ["JKLM2345", "EFGH6789"] }, ["g2"]), 4);
+  assert.equal(r.status, "saved");
+  assert.deepEqual(JSON.parse(fs.files.get(FILE)), {
+    schemaVersion: 2,
+    revision: 5,
+    perPaperTable: { groupOrder: ["g2"], tagOrder: {}, manualOrders: { "1/ABCD2345": ["JKLM2345", "EFGH6789"] } },
+  });
+  assert.deepEqual(JSON.parse(fs.files.get(`${FILE}.bak`)), sampleV1(4));
 });
 
 test("T6: corrupt file → invalid, nothing written, file unchanged", async () => {
@@ -116,7 +156,7 @@ test("T6: corrupt file → invalid, nothing written, file unchanged", async () =
 test("T6: JSON that fails the frame check → invalid; newer schema → newer; read error → invalid", async () => {
   let fs = fakeFs({ [FILE]: JSON.stringify({ revision: 1 }) });
   assert.equal((await Store.load(fs, DIR)).status, "invalid");
-  fs = fakeFs({ [FILE]: JSON.stringify({ ...sample(), schemaVersion: 2 }) });
+  fs = fakeFs({ [FILE]: JSON.stringify({ ...sample(), schemaVersion: 3 }) });
   assert.equal((await Store.load(fs, DIR)).status, "newer");
   fs = fakeFs({}, { failRead: true });
   const r = await Store.load(fs, DIR);
@@ -137,16 +177,17 @@ test("T6: first save creates the folder, then writes atomically with .tmp and .b
   assert.deepEqual(fs.writes().map((c) => c[0]), ["makeDirectory", "writeJSON"]);
   assert.deepEqual(plain(fs.writes()[1][2]), { tmpPath: `${FILE}.tmp`, backupFile: `${FILE}.bak` });
   assert.deepEqual(JSON.parse(fs.files.get(FILE)), {
-    schemaVersion: 1, revision: 1, perPaperTable: { columnOrder: DEFAULT, manualOrders: { "1/AAAA1111": ["K1"] } },
+    schemaVersion: 2, revision: 1, perPaperTable: { groupOrder: [], tagOrder: {}, manualOrders: { "1/AAAA1111": ["K1"] } },
   });
 });
 
 test("T6: a later save bumps the revision and keeps the previous file as .bak", async () => {
   const fs = fakeFs({ [FILE]: JSON.stringify(sample(3)) });
-  const r = await Store.saveData(fs, DIR, table({}, ["tags"]), 3);
+  const r = await Store.saveData(fs, DIR, table({}, ["g5", "g5"], { g5: ["Cohort", "RCT"] }), 3);
   assert.equal(r.status, "saved");
   assert.equal(r.data.revision, 4);
-  assert.deepEqual(plain(r.data.perPaperTable.columnOrder), ["tags", "title", "count", "collections", "details"]);
+  assert.deepEqual(plain(r.data.perPaperTable.groupOrder), ["g5"]);
+  assert.deepEqual(plain(r.data.perPaperTable.tagOrder), { g5: ["Cohort", "RCT"] });
   assert.deepEqual(JSON.parse(fs.files.get(`${FILE}.bak`)), sample(3));
   assert.equal(JSON.parse(fs.files.get(FILE)).revision, 4);
 });
@@ -178,7 +219,7 @@ test("T6: a broken file on disk is never overwritten (conflict, nothing written)
 
 test("T6: invalid data to save → error, nothing written", async () => {
   const fs = fakeFs();
-  const r = await Store.saveData(fs, DIR, { columnOrder: "title", manualOrders: {} }, 0);
+  const r = await Store.saveData(fs, DIR, { groupOrder: "g2", tagOrder: {}, manualOrders: {} }, 0);
   assert.equal(r.status, "error");
   assert.deepEqual(fs.writes(), []);
 });
