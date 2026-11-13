@@ -66,7 +66,7 @@ const paper = (result, id) => result.papers.find((p) => p.id === id);
 
 test("AC13: the file defines TabellifyTagMonitor without Zotero/DOM/IOUtils", () => {
   assert.equal(typeof T, "object");
-  for (const fn of ["descendantIds", "summarize", "sortPapers"]) assert.equal(typeof T[fn], "function", fn);
+  for (const fn of ["descendantIds", "summarize", "sortPapers", "paperSummary"]) assert.equal(typeof T[fn], "function", fn);
   const src = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   assert.doesNotMatch(src, /\b(Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
 });
@@ -313,4 +313,84 @@ test("inputs are not mutated", () => {
   const sorted = T.sortPapers(r, "title", "desc");
   assert.equal(JSON.stringify(r), rowsBefore);
   assert.notEqual(sorted, r, "sortPapers returns a new array");
+});
+
+// ---------------------------------------------------------------------------------------
+// paperSummary (Feature 005b AC9: one paper, for the reader's "Tabellify tags" section)
+// ---------------------------------------------------------------------------------------
+
+/** The F005b smoke-test codebook: Exposure (Heat index, Temperature), Health outcome (Hospitalization). M = 3. */
+function readerCodebook() {
+  return {
+    schemaVersion: 1,
+    revision: 1,
+    nextId: 4,
+    codebooks: [{
+      id: "c1",
+      name: "Codebook",
+      groups: [
+        { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
+        { id: "g3", name: "Health outcome", tags: ["Hospitalization"] },
+      ],
+    }],
+  };
+}
+
+test("F005b AC9: paperSummary — the smoke-test paper gives 2 / 3, only Exposure remaining", () => {
+  const s = T.paperSummary(readerCodebook(), ["Heat index", "Hospitalization", "Unrelated"]);
+  assert.deepEqual(plain(s), {
+    total: 3,
+    used: 2,
+    allUsed: false,
+    remainingByGroup: [{ id: "g2", name: "Exposure", tags: ["Temperature"] }],
+  });
+});
+
+test("F005b AC9: paperSummary — exact, case-sensitive match after trimming both sides", () => {
+  const data = readerCodebook();
+  data.codebooks[0].groups[0].tags = ["  Heat index ", "Temperature"];
+  const s = T.paperSummary(data, ["heat index", " Temperature  ", "Hospitalization "]);
+  assert.equal(s.used, 2);
+  assert.deepEqual(plain(s.remainingByGroup), [{ id: "g2", name: "Exposure", tags: ["Heat index"] }]);
+});
+
+test("F005b AC9: paperSummary — groups in codebook order, groups with nothing remaining omitted", () => {
+  const s = T.paperSummary(codebook(), ["Hospitalization"]);
+  assert.deepEqual(plain(s.remainingByGroup.map((g) => g.name)), ["Exposure", "Outcome"]);
+  assert.deepEqual(plain(s.remainingByGroup[1].tags), ["Mortality"]);
+  const none = T.paperSummary(codebook(), ["Heat index", "Temperature"]);
+  assert.deepEqual(plain(none.remainingByGroup.map((g) => g.name)), ["Outcome"]);
+});
+
+test("F005b AC9: paperSummary — everything used gives allUsed and no remaining groups", () => {
+  const s = T.paperSummary(readerCodebook(), ["Temperature", "Heat index", "Hospitalization", "Temperature"]);
+  assert.deepEqual(plain(s), { total: 3, used: 3, allUsed: true, remainingByGroup: [] });
+});
+
+test("F005b AC9: paperSummary — empty or missing codebook gives total 0 (never allUsed)", () => {
+  const empty = { schemaVersion: 1, revision: 0, nextId: 1, codebooks: [{ id: "c1", name: "Codebook", groups: [] }] };
+  for (const data of [empty, null, undefined, {}]) {
+    assert.deepEqual(plain(T.paperSummary(data, ["Heat index"])), { total: 0, used: 0, allUsed: false, remainingByGroup: [] });
+  }
+  // A group without tags counts nothing and is not listed.
+  const noTags = { codebooks: [{ groups: [{ id: "g1", name: "Empty", tags: [] }] }] };
+  assert.deepEqual(plain(T.paperSummary(noTags, [])), { total: 0, used: 0, allUsed: false, remainingByGroup: [] });
+});
+
+test("F005b AC9: paperSummary — no tags on the paper, blank names ignored", () => {
+  const s = T.paperSummary(readerCodebook(), ["", "   ", null]);
+  assert.equal(s.used, 0);
+  assert.equal(s.total, 3);
+  assert.deepEqual(plain(T.paperSummary(readerCodebook(), undefined).remainingByGroup.length), 2);
+});
+
+test("F005b AC9: paperSummary — inputs are not mutated", () => {
+  const data = readerCodebook();
+  const names = ["Heat index", " Temperature "];
+  const before = JSON.stringify([data, names]);
+  const s = T.paperSummary(data, names);
+  assert.equal(JSON.stringify([data, names]), before);
+  // The returned tag lists are new arrays, not the codebook's own.
+  s.remainingByGroup[0]?.tags.push("x");
+  assert.equal(JSON.stringify(data), JSON.stringify(readerCodebook()));
 });
