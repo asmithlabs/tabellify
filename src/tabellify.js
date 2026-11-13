@@ -1,4 +1,5 @@
-/* Tabellify — main plugin object (F001: menu item, cleanup; F002: workspace tab).
+/* Tabellify — main plugin object (F001: menu item, cleanup; F002: workspace tab;
+ * F005b: "Tabellify tags" item pane section, see reader-tags.js).
  *
  * `bootstrap.js` loads this file with `Services.scriptloader.loadSubScript`, which runs it
  * in the bootstrap's own global scope. That's why `Tabellify` is declared with `var` at the
@@ -7,15 +8,18 @@
  *
  * The method names and call order are fixed by bootstrap.js:
  *
- *   startup  → Tabellify.init(...)               → register menu + quit observer, then
+ *   startup  → Tabellify.init(...)               → register menu + quit observer, load and
+ *                                                  register the reader section (F005b), then
  *                                                  onMainWindowLoad for each open main window
  *   window   → Tabellify.onMainWindowLoad/Unload  (forwarded from bootstrap)
- *   shutdown → Tabellify.shutdown()              → close workspace tabs and windows, remove
+ *   shutdown → Tabellify.shutdown()              → close workspace tabs and windows,
+ *                                                  unregister the reader section, remove
  *                                                  quit observer, unregister menu,
  *                                                  onMainWindowUnload for each open main window,
  *                                                  then (in bootstrap) chromeHandle.destruct()
  *
- * Verified APIs: docs/zotero-api-notes.md. This file never reads or writes library data.
+ * Verified APIs: docs/zotero-api-notes.md. This file never reads or writes library data
+ * (reader-tags.js reads it, read-only).
  */
 "use strict";
 
@@ -40,6 +44,18 @@ var Tabellify = {
   TAB_TYPE: "tabellify",
   /** Used if Fluent cannot format `tabellify-tab-title`. */
   FALLBACK_TAB_TITLE: "Tabellify",
+  /**
+   * F005b: scripts loaded into this (bootstrap) scope for the reader section, in order.
+   * Each defines one global with `var`: TabellifyCodebook, TabellifyCodebookStore,
+   * TabellifyTagMonitor, TabellifyReaderTags. The first three are the same files the
+   * workspace page loads; here they get their own copy in the bootstrap scope.
+   */
+  READER_SCRIPTS: [
+    "content/codebook-model.js",
+    "content/codebook-store.js",
+    "content/tag-monitor-model.js",
+    "reader-tags.js",
+  ],
 
   /** @type {string | null} */
   id: null,
@@ -86,6 +102,7 @@ var Tabellify = {
 
     this.registerMenu();
     this.addQuitObserver();
+    this.registerReaderTags();
 
     for (const window of Zotero.getMainWindows()) {
       this.onMainWindowLoad({ window });
@@ -129,6 +146,46 @@ var Tabellify = {
     catch (err) {
       Zotero.logError(err);
     }
+  },
+
+  /**
+   * F005b: load the reader-section scripts into this scope and register the section and its
+   * Notifier observer (reader-tags.js). Zotero adds the section to every item pane itself
+   * (library and reader tabs, including tabs already open), so nothing is done per window.
+   *
+   * `loadSubScript(url)` without a target object runs the file in the CALLER's global
+   * scope, which for this file is the bootstrap scope (the same way bootstrap.js loads
+   * tabellify.js). `var` globals declared by those files land there.
+   */
+  registerReaderTags() {
+    try {
+      for (const file of this.READER_SCRIPTS) {
+        Services.scriptloader.loadSubScript(this.rootURI + file);
+      }
+      TabellifyReaderTags.register({ pluginID: this.id, log: (message) => this.log(message) });
+    }
+    catch (err) {
+      Zotero.logError(err);
+    }
+  },
+
+  /**
+   * Mirror of `registerReaderTags`: unregister the section and the observer (with the ids
+   * they returned), then drop the four globals so the old code can be garbage-collected
+   * and a re-enable loads fresh copies. `typeof` checks: a script that failed to load never
+   * declared its global, and assigning to an undeclared name throws in strict mode.
+   */
+  unregisterReaderTags() {
+    try {
+      if (typeof TabellifyReaderTags !== "undefined") TabellifyReaderTags?.unregister();
+    }
+    catch (err) {
+      Zotero.logError(err);
+    }
+    if (typeof TabellifyReaderTags !== "undefined") TabellifyReaderTags = undefined;
+    if (typeof TabellifyTagMonitor !== "undefined") TabellifyTagMonitor = undefined;
+    if (typeof TabellifyCodebookStore !== "undefined") TabellifyCodebookStore = undefined;
+    if (typeof TabellifyCodebook !== "undefined") TabellifyCodebook = undefined;
   },
 
   /** Remove the menu item added by `registerMenu`. Safe to call when none is registered. */
@@ -519,9 +576,12 @@ var Tabellify = {
    *      registration right after this returns; a tab or window left open would point at a
    *      chrome:// URL that no longer exists, and a leftover "tabellify" tab could be saved
    *      in Zotero's session and break tab restore after a restart.
-   *   2. Remove the quit observer (mirror of `init`).
-   *   3. Unregister the menu, so no menu item is left calling into this unloaded code.
-   *   4. Remove the FTL link from every main window (the menu that needed it is gone).
+   *   2. Unregister the reader section and its Notifier observer (F005b), while the
+   *      chrome:// icon URLs still resolve, and drop the reader-section globals.
+   *   3. Remove the quit observer (mirror of `init`).
+   *   4. Unregister the menu, so no menu item is left calling into this unloaded code.
+   *   5. Remove the FTL link from every main window (the menu and section that needed it
+   *      are gone).
    * Each step catches its own errors, so one failure doesn't skip the rest.
    */
   shutdown() {
@@ -530,6 +590,7 @@ var Tabellify = {
 
     this.closeAllWorkspaceTabs();
     this.closeWorkspaceWindows();
+    this.unregisterReaderTags();
     this.removeQuitObserver();
     this.unregisterMenu();
 

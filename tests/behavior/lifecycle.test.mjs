@@ -398,3 +398,161 @@ test("AC5: a main window with TWO tabellify.ftl links (same-session reinstall du
   assert.ok(!h.debug.some((l) => /removed FTL: [^2]/.test(l)), h.debug.join("\n"));
   assert.deepEqual(h.errors, []);
 });
+
+// ---------------------------------------------------------------------------------------
+// Feature 005b AC11: the "Tabellify tags" item pane section and its Notifier observer,
+// through the real bootstrap.js → tabellify.js → reader-tags.js path.
+// ---------------------------------------------------------------------------------------
+
+const READER_SCRIPTS = ["content/codebook-model.js", "content/codebook-store.js", "content/tag-monitor-model.js", "reader-tags.js"];
+const READER_GLOBALS = ["TabellifyCodebook", "TabellifyCodebookStore", "TabellifyTagMonitor", "TabellifyReaderTags"];
+
+test("F005b AC11: startup loads the reader scripts and registers one section and one observer", () => {
+  const h = createHarness();
+  h.startup();
+  const log = h.takeLog();
+  assert.deepEqual(h.errors, []);
+
+  // Scripts load after tabellify.js, in dependency order.
+  const loads = log.filter((l) => l.startsWith("loadSubScript(")).map((l) => l.slice(`loadSubScript(${ROOT_URI}`.length, -1));
+  assert.deepEqual(loads, ["tabellify.js", ...READER_SCRIPTS]);
+  for (const name of READER_GLOBALS) assert.equal(h.evaluate(`typeof ${name}`), "object", name);
+
+  assert.equal(h.sections.size, 1, "exactly one section");
+  const [[sectionID, options]] = h.sections;
+  assert.equal(options.paneID, "reader-tags");
+  assert.equal(options.pluginID, "tabellify@asmithlabs.com");
+  assert.equal(options.header.l10nID, "tabellify-reader-section-header");
+  assert.equal(options.sidenav.l10nID, "tabellify-reader-section-sidenav");
+  assert.match(options.header.icon, /^chrome:\/\/tabellify\/content\/icons\/reader-tags-16\.svg$/);
+  assert.match(options.sidenav.icon, /^chrome:\/\/tabellify\/content\/icons\/reader-tags-20\.svg$/);
+  assert.equal(typeof options.onRender, "function");
+  assert.equal(h.evaluate("TabellifyReaderTags.sectionID"), sectionID, "keeps the RETURNED id");
+
+  assert.equal(h.notifierObservers.size, 1, "exactly one Notifier observer");
+  const [[key, observer]] = h.notifierObservers;
+  assert.deepEqual(observer.types, ["item", "item-tag"]);
+  assert.equal(h.evaluate("TabellifyReaderTags.observerID"), key);
+
+  // Order: menu → quit observer → section → Notifier observer → per-window FTL.
+  const order = [
+    "MenuManager.registerMenu(main/menubar/tools)",
+    "Services.obs.addObserver(quit-application-granted)",
+    "ItemPaneManager.registerSection(reader-tags)",
+    /^Notifier\.registerObserver\(/,
+    /^main\d+\.insertFTLIfNeeded/,
+  ].map((p) => indexOf(log, p));
+  assert.ok(order.every((i, n) => i >= 0 && (n === 0 || order[n - 1] < i)), JSON.stringify(order));
+
+  assert.ok(h.debug.includes(`Tabellify: reader section registered (${sectionID})`), h.debug.join("\n"));
+  assert.ok(h.debug.includes(`Tabellify: notifier observer added (${key})`), h.debug.join("\n"));
+});
+
+test("F005b AC11: shutdown unregisters observer and section with the returned ids, before chrome destruct", () => {
+  const h = createHarness();
+  h.startup();
+  const [sectionID] = h.sections.keys();
+  const [key] = h.notifierObservers.keys();
+  const menuID = [...h.menus.keys()][0];
+  const mounted = [h.mountSection(), h.mountSection()]; // e.g. library pane + one reader tab
+  assert.equal(h.evaluate("TabellifyReaderTags.refreshers.size"), 2);
+  h.takeLog();
+  h.debug.length = 0;
+
+  h.shutdown();
+  const log = h.takeLog();
+  assert.deepEqual(h.errors, []);
+  const obsIdx = indexOf(log, `Notifier.unregisterObserver(${key})`);
+  const secIdx = indexOf(log, `ItemPaneManager.unregisterSection(${sectionID})`);
+  assert.ok(obsIdx >= 0 && secIdx >= 0, "both unregistered with the returned ids");
+  assert.ok(obsIdx < secIdx, "reverse order: observer first, then section");
+  assert.ok(secIdx < indexOf(log, `MenuManager.unregisterMenu(${menuID})`), "before the menu goes");
+  assert.ok(secIdx < indexOf(log, "chromeHandle.destruct"), "before chrome (icon URLs) is destroyed");
+  assert.equal(log.filter((l) => l.startsWith("ItemPaneManager.unregisterSection(")).length, 1);
+  assert.equal(log.filter((l) => l.startsWith("Notifier.unregisterObserver(")).length, 1);
+
+  assert.equal(h.sections.size, 0);
+  assert.equal(h.notifierObservers.size, 0);
+  assert.ok(mounted.every((m) => m.destroyed), "every open copy of the section was removed");
+  for (const name of READER_GLOBALS) assert.equal(h.evaluate(`typeof ${name}`), "undefined", name);
+  assert.ok(h.debug.includes(`Tabellify: notifier observer removed (${key})`), h.debug.join("\n"));
+  assert.ok(h.debug.includes("Tabellify: reader section unregistered: true"), h.debug.join("\n"));
+});
+
+test("F005b AC4/AC11: a tag change refreshes open sections; a closed one and a disabled plugin are not refreshed", async () => {
+  const h = createHarness();
+  h.startup();
+  const a = h.mountSection();
+  const b = h.mountSection();
+  h.fireNotifier("add", "item-tag", ["10-5"]);
+  h.fireNotifier("modify", "item", [10]);
+  h.fireNotifier("add", "collection-item", ["1-10"]); // not a type we listen to
+  assert.deepEqual([a.refreshCalls, b.refreshCalls], [2, 2]);
+
+  h.unmountSection(b); // e.g. its reader tab was closed
+  h.fireNotifier("remove", "item-tag", ["10-5"]);
+  assert.deepEqual([a.refreshCalls, b.refreshCalls], [3, 2]);
+  assert.equal(h.evaluate("TabellifyReaderTags.refreshers.size"), 1);
+
+  // Keep a handle on the observer to prove it does nothing after shutdown.
+  const [{ ref }] = h.notifierObservers.values();
+  h.shutdown();
+  ref.notify("add", "item-tag", ["10-5"], {});
+  assert.equal(a.refreshCalls, 3);
+  assert.deepEqual(h.errors, []);
+});
+
+test("F005b AC11: re-enable registers fresh ids; a second shutdown removes them", () => {
+  const h = createHarness();
+  h.startup();
+  const firstSection = [...h.sections.keys()][0];
+  const firstKey = [...h.notifierObservers.keys()][0];
+  h.shutdown();
+  h.startup();
+  const [secondSection] = h.sections.keys();
+  const [secondKey] = h.notifierObservers.keys();
+  assert.notEqual(secondSection, firstSection);
+  assert.notEqual(secondKey, firstKey);
+  assert.equal(h.sections.size, 1);
+  assert.equal(h.notifierObservers.size, 1);
+  h.takeLog();
+  h.shutdown();
+  const log = h.takeLog();
+  assert.ok(log.includes(`ItemPaneManager.unregisterSection(${secondSection})`));
+  assert.ok(log.includes(`Notifier.unregisterObserver(${secondKey})`));
+  assert.equal(h.sections.size, 0);
+  assert.equal(h.notifierObservers.size, 0);
+  assert.deepEqual(h.errors, []);
+});
+
+test("F005b AC11: shutdown still runs both unregisters and the rest of cleanup if one throws", () => {
+  for (const opts of [{ itemPane: { unregisterThrows: true } }, { notifier: { unregisterThrows: true } }]) {
+    const h = createHarness(opts);
+    h.startup();
+    h.takeLog();
+    h.shutdown();
+    const log = h.takeLog();
+    assert.equal(log.filter((l) => /^(ItemPaneManager\.unregisterSection|Notifier\.unregisterObserver)\(/.test(l)).length, 2,
+      JSON.stringify(opts));
+    assert.equal(h.errors.length, 1, "the failure is logged once");
+    assert.ok(log.some((l) => l.startsWith("MenuManager.unregisterMenu(")), "menu still unregistered");
+    assert.equal(log.at(-1), "chromeHandle.destruct");
+    assert.equal(h.evaluate("typeof TabellifyReaderTags"), "undefined");
+  }
+});
+
+test("F005b AC11: a failed section registration (false or throw) leaves nothing to unregister", () => {
+  for (const register of [false, "throw"]) {
+    const h = createHarness({ itemPane: { register } });
+    h.startup();
+    assert.equal(h.sections.size, 0);
+    assert.equal(h.notifierObservers.size, 0, "no observer without a section");
+    assert.equal(h.errors.length, register === "throw" ? 1 : 0);
+    h.takeLog();
+    h.shutdown();
+    const log = h.takeLog();
+    assert.ok(!log.some((l) => /unregisterSection|unregisterObserver/.test(l)));
+    assert.equal(log.at(-1), "chromeHandle.destruct");
+    if (register === false) assert.ok(h.debug.includes("Tabellify: reader section registration failed"));
+  }
+});
