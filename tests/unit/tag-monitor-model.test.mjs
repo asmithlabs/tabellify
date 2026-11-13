@@ -20,21 +20,33 @@ const T = sandbox.TabellifyTagMonitor;
 // Objects made inside the sandbox have different prototypes; compare as plain JSON values.
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
-/** Codebook: Exposure (Heat index, Temperature), Outcome (Hospitalization, Mortality). M = 4. */
-function codebook() {
+/**
+ * A schema 2 codebook (ADR-0016) written compactly: `groups` as `{ id, name, tags }` (as the
+ * table shows them), `ungrouped` as a list of names. Ungrouped tags are stored first.
+ */
+function v2(groups, ungrouped = [], nextId = 10) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 3,
-    nextId: 4,
+    nextId,
     codebooks: [{
       id: "c1",
       name: "Codebook",
-      groups: [
-        { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
-        { id: "g3", name: "Outcome", tags: ["Hospitalization", "Mortality"] },
+      groups: groups.map((g) => ({ id: g.id, name: g.name })),
+      tags: [
+        ...ungrouped.map((name) => ({ name, group: null })),
+        ...groups.flatMap((g) => g.tags.map((name) => ({ name, group: g.id }))),
       ],
     }],
   };
+}
+
+/** Codebook: Exposure (Heat index, Temperature), Outcome (Hospitalization, Mortality). M = 4. */
+function codebook() {
+  return v2([
+    { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
+    { id: "g3", name: "Outcome", tags: ["Hospitalization", "Mortality"] },
+  ]);
 }
 
 /** "F005 test" (1) with "Phenotype A" (2) and "Phenotype B" (3); "Other" (9) elsewhere. */
@@ -394,19 +406,10 @@ test("inputs are not mutated", () => {
 
 /** The F005b smoke-test codebook: Exposure (Heat index, Temperature), Health outcome (Hospitalization). M = 3. */
 function readerCodebook() {
-  return {
-    schemaVersion: 1,
-    revision: 1,
-    nextId: 4,
-    codebooks: [{
-      id: "c1",
-      name: "Codebook",
-      groups: [
-        { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
-        { id: "g3", name: "Health outcome", tags: ["Hospitalization"] },
-      ],
-    }],
-  };
+  return v2([
+    { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
+    { id: "g3", name: "Health outcome", tags: ["Hospitalization"] },
+  ]);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -436,7 +439,7 @@ test("F005b: paperChecklist (switch on) — item tags count too: smoke-test pape
 
 test("F005b: paperChecklist — every codebook tag listed in codebook order; empty groups left out", () => {
   const data = codebook();
-  data.codebooks[0].groups.splice(1, 0, { id: "g9", name: "Empty", tags: [] });
+  data.codebooks[0].groups.splice(1, 0, { id: "g9", name: "Empty" });
   const s = T.paperChecklist(data, { annotationTags: [{ tag: "Mortality" }, { tag: "Off plan" }] });
   assert.deepEqual(plain(s.groups.map((g) => [g.name, g.tags.map((t) => t.tag)])), [
     ["Exposure", ["Heat index", "Temperature"]],
@@ -447,7 +450,7 @@ test("F005b: paperChecklist — every codebook tag listed in codebook order; emp
 
 test("F005b: paperChecklist — exact, case-sensitive match after trimming; automatic tags never count", () => {
   const data = readerCodebook();
-  data.codebooks[0].groups[0].tags = ["  Heat index ", "Temperature"];
+  data.codebooks[0].tags[0].name = "  Heat index ";
   const p = {
     itemTags: [{ tag: "Temperature", type: 1 }],
     annotationTags: [{ tag: "heat index" }, { tag: " Temperature  " }, { tag: "Hospitalization", type: 1 }],
@@ -467,8 +470,8 @@ test("F005b: paperChecklist — everything used gives allUsed", () => {
 });
 
 test("F005b: paperChecklist — empty or missing codebook gives total 0 (never allUsed)", () => {
-  const empty = { schemaVersion: 1, revision: 0, nextId: 1, codebooks: [{ id: "c1", name: "Codebook", groups: [] }] };
-  const noTags = { codebooks: [{ groups: [{ id: "g1", name: "Empty", tags: [] }] }] };
+  const empty = { schemaVersion: 2, revision: 0, nextId: 2, codebooks: [{ id: "c1", name: "Codebook", groups: [], tags: [] }] };
+  const noTags = { codebooks: [{ groups: [{ id: "g1", name: "Empty" }], tags: [] }] };
   for (const data of [empty, noTags, null, undefined, {}]) {
     assert.deepEqual(plain(T.paperChecklist(data, smokePaper(), WITH_ITEM)), { total: 0, used: 0, allUsed: false, groups: [] });
   }
@@ -489,4 +492,77 @@ test("F005b: paperChecklist — inputs are not mutated", () => {
   assert.equal(JSON.stringify([data, p]), before);
   s.groups[0].tags.push({ tag: "x", used: true });
   assert.equal(JSON.stringify(data), JSON.stringify(readerCodebook()));
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 006a AC15: the ungrouped block (ADR-0016 §5)
+// ---------------------------------------------------------------------------------------
+
+/** Exposure (Heat index, Temperature) + ungrouped age, sex; an empty group "Planned". */
+function mixedCodebook() {
+  return v2([
+    { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
+    { id: "g5", name: "Planned", tags: [] },
+  ], ["age", "sex"]);
+}
+
+test("AC15: codebookGroups reads schema 2; the ungrouped block comes first with name '' and ungrouped: true", () => {
+  assert.equal(T.UNGROUPED_ID, "ungrouped");
+  assert.deepEqual(plain(T.codebookGroups(mixedCodebook())), [
+    { id: "ungrouped", name: "", tags: ["age", "sex"], ungrouped: true },
+    { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
+    { id: "g5", name: "Planned", tags: [] },
+  ]);
+  // Tag order inside a group is the order of the tag list, wherever the records sit.
+  const data = codebook();
+  data.codebooks[0].tags.push(data.codebooks[0].tags.shift()); // Heat index to the end
+  assert.deepEqual(plain(T.codebookGroups(data)[0].tags), ["Temperature", "Heat index"]);
+});
+
+test("AC15: codebookGroups has no ungrouped block when there are no ungrouped tags", () => {
+  const groups = plain(T.codebookGroups(codebook()));
+  assert.deepEqual(groups.map((g) => g.id), ["g2", "g3"]);
+  assert.ok(groups.every((g) => g.ungrouped === undefined));
+  for (const data of [null, undefined, {}, { codebooks: [] }, v2([])]) {
+    assert.deepEqual(plain(T.codebookGroups(data)), []);
+  }
+  // Only ungrouped tags: one block.
+  assert.deepEqual(plain(T.codebookGroups(v2([], ["age"]))), [{ id: "ungrouped", name: "", tags: ["age"], ungrouped: true }]);
+});
+
+test("AC15: summarize counts ungrouped tags in M, k and per group", () => {
+  const r = T.summarize(mixedCodebook(), collections(), 1, [
+    { id: 1, title: "A", collectionId: 1, itemTags: [], annotationTags: [{ tag: "age" }, { tag: "Heat index" }] },
+    { id: 2, title: "B", collectionId: 2, itemTags: [], annotationTags: [{ tag: "sex" }] },
+  ]);
+  assert.equal(r.total, 4);
+  assert.equal(r.used, 3);
+  assert.deepEqual(plain(r.groups.map((g) => [g.id, g.name, g.used, g.total, g.ungrouped ?? false])), [
+    ["ungrouped", "", 2, 2, true],
+    ["g2", "Exposure", 1, 2, false],
+    ["g5", "Planned", 0, 0, false],
+  ]);
+  const a = r.papers.find((p) => p.id === 1);
+  assert.equal(a.count, 2);
+  assert.equal(a.total, 4);
+  assert.deepEqual(plain(a.groups[0]), { id: "ungrouped", name: "", ungrouped: true, present: ["age"], remaining: ["sex"] });
+});
+
+test("AC15: sortPapers by an ungrouped tag puts the papers that have it first", () => {
+  const r = T.summarize(mixedCodebook(), collections(), 1, [
+    { id: 1, title: "A", collectionId: 1, itemTags: [], annotationTags: [] },
+    { id: 2, title: "B", collectionId: 1, itemTags: [], annotationTags: [{ tag: "sex" }] },
+    { id: 3, title: "C", collectionId: 1, itemTags: [], annotationTags: [] },
+  ]);
+  assert.deepEqual(plain(T.sortPapers(r.papers, T.tagSortKey("sex")).map((p) => p.id)), [2, 1, 3]);
+  assert.deepEqual(plain(T.sortPapers(r.papers, T.tagSortKey("sex"), "desc").map((p) => p.id)), [1, 3, 2]);
+});
+
+test("AC15: paperChecklist lists the ungrouped tags first, flagged, and counts them", () => {
+  const s = T.paperChecklist(mixedCodebook(), { annotationTags: [{ tag: "sex" }, { tag: "Temperature" }] });
+  assert.deepEqual([s.used, s.total, s.allUsed], [2, 4, false]);
+  assert.deepEqual(plain(s.groups), [
+    { id: "ungrouped", name: "", ungrouped: true, total: 2, used: 1, tags: [{ tag: "age", used: false }, { tag: "sex", used: true }] },
+    { id: "g2", name: "Exposure", total: 2, used: 1, tags: [{ tag: "Heat index", used: false }, { tag: "Temperature", used: true }] },
+  ]);
 });

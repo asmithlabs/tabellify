@@ -58,6 +58,13 @@ var TabellifyTagMonitor = {
   COUNT_ITEM_TAGS_PREF: "extensions.tabellify.countItemTags",
 
   /**
+   * View id of the "Ungrouped" block (ADR-0016 §5). Same value as
+   * TabellifyCodebook.UNGROUPED_ID, repeated here because this file must also run alone
+   * (in its Node test). Never stored in codebooks.json; layout.json may use it as a key.
+   */
+  UNGROUPED_ID: "ungrouped",
+
+  /**
    * The chosen collection and all its descendants (children, grandchildren, …).
    * @param {Array<{ id: number, parentID?: number | null | false }>} collections
    *   Every collection of the library (any order)
@@ -117,17 +124,36 @@ var TabellifyTagMonitor = {
   },
 
   /**
-   * The codebook's groups as `{ id, name, tags }` (tags trimmed, empty ones dropped).
+   * The ONE adapter from the stored codebook (schema 2, ADR-0016) to the blocks the table,
+   * the pills and the reader section show: `{ id, name, tags }` per group in codebook order
+   * (tags trimmed, empty ones dropped; a group without tags keeps `tags: []`).
+   *
+   * When the codebook has ungrouped tags (`group: null`), one extra block comes FIRST
+   * (spec F006a Q8): `{ id: "ungrouped", name: "", tags, ungrouped: true }`. It is a VIEW,
+   * made up here; its empty name is shown as a blank super-header, never as "null".
    * A missing or empty codebook gives [].
-   * @param {object | null} codebookData  The codebooks.json data (F004), or null
+   * @param {object | null} codebookData  The codebooks.json data (already migrated to schema 2), or null
+   * @returns {Array<{ id: string, name: string, tags: string[], ungrouped?: true }>}
    */
   codebookGroups(codebookData) {
-    const groups = codebookData?.codebooks?.[0]?.groups ?? [];
-    return groups.map((g) => ({
-      id: String(g.id),
-      name: String(g.name ?? ""),
-      tags: (g.tags ?? []).map((t) => String(t).trim()).filter((t) => t !== ""),
-    }));
+    const cb = codebookData?.codebooks?.[0];
+    const groups = Array.isArray(cb?.groups) ? cb.groups : [];
+    const records = Array.isArray(cb?.tags) ? cb.tags : [];
+    /** The tag names whose `group` is `groupId` (null = ungrouped), in list order. */
+    const tagsOf = (groupId) =>
+      records
+        .filter((r) => (r?.group ?? null) === groupId)
+        .map((r) => String(r?.name ?? "").trim())
+        .filter((t) => t !== "");
+    const blocks = groups.map((g) => ({ id: String(g.id), name: String(g.name ?? ""), tags: tagsOf(g.id) }));
+    const ungrouped = tagsOf(null);
+    if (ungrouped.length > 0) blocks.unshift({ id: this.UNGROUPED_ID, name: "", tags: ungrouped, ungrouped: true });
+    return blocks;
+  },
+
+  /** `{ ungrouped: true }` for the ungrouped block, else `{}` (to spread into results). */
+  ungroupedFlag(group) {
+    return group.ungrouped ? { ungrouped: true } : {};
   },
 
   /**
@@ -182,7 +208,7 @@ var TabellifyTagMonitor = {
     const groupResults = groups.map((g) => {
       const usedTags = g.tags.filter((t) => paperCounts.get(t) > 0).map((t) => ({ tag: t, papers: paperCounts.get(t) }));
       const remainingTags = g.tags.filter((t) => !(paperCounts.get(t) > 0));
-      return { id: g.id, name: g.name, total: g.tags.length, used: usedTags.length, usedTags, remainingTags };
+      return { id: g.id, name: g.name, ...this.ungroupedFlag(g), total: g.tags.length, used: usedTags.length, usedTags, remainingTags };
     });
     const used = groupResults.reduce((sum, g) => sum + g.used, 0);
 
@@ -191,6 +217,7 @@ var TabellifyTagMonitor = {
       const paperGroups = groups.map((g) => ({
         id: g.id,
         name: g.name,
+        ...this.ungroupedFlag(g),
         present: g.tags.filter((t) => record.tags.has(t)),
         remaining: g.tags.filter((t) => !record.tags.has(t)),
       }));
@@ -218,7 +245,8 @@ var TabellifyTagMonitor = {
 
   /**
    * Feature 005b (owner change 2026-11-13): the reader section's CHECKLIST for one paper.
-   * Every codebook tag, grouped by super-tag in codebook order, each marked used or not.
+   * Every codebook tag, grouped by super-tag in codebook order (the ungrouped tags first,
+   * as an entry with `ungrouped: true` and name ""), each marked used or not.
    * Same counting rule as summarize() (countedTagNames): highlights only by default.
    * Groups without tags are left out (nothing to tick).
    * @param {object | null} codebookData  The codebooks.json data (F004), or null
@@ -235,7 +263,7 @@ var TabellifyTagMonitor = {
       .filter((g) => g.tags.length > 0)
       .map((g) => {
         const tags = g.tags.map((tag) => ({ tag, used: present.has(tag) }));
-        return { id: g.id, name: g.name, total: tags.length, used: tags.filter((t) => t.used).length, tags };
+        return { id: g.id, name: g.name, ...this.ungroupedFlag(g), total: tags.length, used: tags.filter((t) => t.used).length, tags };
       });
     const total = groups.reduce((sum, g) => sum + g.total, 0);
     const used = groups.reduce((sum, g) => sum + g.used, 0);

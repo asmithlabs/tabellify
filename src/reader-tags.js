@@ -349,12 +349,13 @@ var TabellifyReaderTags = {
 
   /**
    * The expanded body: "k of M codebook tags used on this paper", then the checklist: every
-   * codebook tag, grouped by super-tag in codebook order, each line "✓ Tag" (used) or
-   * "☐ Tag" (not yet). The mark is a Fluent message (character + tooltip), the tag name is
-   * plain text; nothing here is parsed as markup.
+   * codebook tag, grouped by super-tag in codebook order (ungrouped tags first, without a
+   * heading), each line "✓ Tag" (used) or "☐ Tag" (not yet). The mark is a Fluent message
+   * (character + tooltip), the tag name is plain text; nothing here is parsed as markup.
    * @param {any} doc
    * @param {{ total: number, used: number,
-   *   groups: Array<{ name: string, tags: Array<{ tag: string, used: boolean }> }> }} summary
+   *   groups: Array<{ name: string, ungrouped?: boolean,
+   *                   tags: Array<{ tag: string, used: boolean }> }> }} summary
    *   From TabellifyTagMonitor.paperChecklist
    * @returns {any[]}  Elements to put into the body
    */
@@ -362,10 +363,15 @@ var TabellifyReaderTags = {
     const { used, total } = summary;
     const nodes = [this.para(doc, "tabellify-reader-used", { used, total })];
     for (const group of summary.groups) {
-      const heading = this.el(doc, "p");
-      const name = this.el(doc, "strong");
-      name.textContent = group.name; // library/codebook text: textContent only, never markup
-      heading.append(name);
+      // The ungrouped tags (ADR-0016 §8, spec F006a Q11) come first WITHOUT a heading,
+      // mirroring the blank super-header in the table.
+      if (!group.ungrouped) {
+        const heading = this.el(doc, "p");
+        const name = this.el(doc, "strong");
+        name.textContent = group.name; // library/codebook text: textContent only, never markup
+        heading.append(name);
+        nodes.push(heading);
+      }
       const list = this.el(doc, "ul");
       for (const { tag, used: isUsed } of group.tags) {
         const li = this.el(doc, "li");
@@ -376,7 +382,7 @@ var TabellifyReaderTags = {
         li.append(mark, doc.createTextNode(" "), label);
         list.append(li);
       }
-      nodes.push(heading, list);
+      nodes.push(list);
     }
     return nodes;
   },
