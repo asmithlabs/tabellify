@@ -28,6 +28,18 @@
 //   - An optional fake `Zotero_Tabs` per main window (option `tabs`), modelling only the
 //     source/runtime-verified behaviour in api-notes (`add`, `select`, `close`, `getTabInfo`).
 //   - `document.createElementNS` (XHTML iframe only) and `document.l10n.formatValue`.
+//
+// Feature 005b additions (api-notes F005b rows / ADR-0013 appendix):
+//   - `Zotero.ItemPaneManager.registerSection(options)` → namespaced id or false (missing
+//     required option → false, as Zotero's validation does), `unregisterSection(id)` →
+//     boolean. Unregistering a section removes every mounted copy, which runs its
+//     `onDestroy` (Zotero: renderCustomSections → elem.remove() → destroy()).
+//   - `harness.mountSection()` models Zotero creating one section element in an item pane
+//     (library or reader tab): it calls `onInit({ paneID, doc, body, refresh })`.
+//   - `Zotero.Notifier.registerObserver(ref, types, id)` → key, `unregisterObserver(key)`;
+//     `harness.fireNotifier(event, type, ids)` calls `ref.notify` of matching observers.
+//   - Option `itemPane: { register?: "ok" | false | "throw", unregisterThrows?: boolean }`
+//     and `notifier: { registerThrows?: boolean, unregisterThrows?: boolean }`.
 
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
@@ -115,6 +127,8 @@ export function createHarness({
   tabs = false,
   l10n = "ftl",
   l10nMessages = {},
+  itemPane = {},
+  notifier = {},
 } = {}) {
   /** @type {string[]} Ordered call log. */
   const log = [];
@@ -436,6 +450,62 @@ export function createHarness({
   // ---- Chrome registration ----
   let chromeRegistrations = 0;
 
+  // ---- ItemPaneManager (F005b) ----
+  /** @type {Map<string, any>} Registered sections by RETURNED id. */
+  const sections = new Map();
+  /** @type {Array<{ id: string, body: any, refreshCalls: number, destroyed: boolean }>} */
+  const mountedSections = [];
+  let sectionSeq = 0;
+  const itemPaneManager = strict({
+    registerSection(options) {
+      log.push(`ItemPaneManager.registerSection(${options?.paneID})`);
+      if (itemPane.register === "throw") throw new Error("simulated registerSection failure");
+      if (itemPane.register === false) return false;
+      // Zotero's option validation (itemPaneManager.js): these are required.
+      const ok = options?.paneID && options.pluginID && typeof options.onRender === "function" &&
+        options.header?.l10nID && options.header?.icon && options.sidenav?.l10nID && options.sidenav?.icon;
+      if (!ok) return false;
+      // Real id: CSS.escape(pluginID + "-" + paneID). A sequence number makes it differ
+      // from paneID and unique across re-enables, so tests prove the RETURNED id is kept.
+      const id = `${options.pluginID}-${options.paneID}#${++sectionSeq}`;
+      sections.set(id, options);
+      return id;
+    },
+    unregisterSection(id) {
+      log.push(`ItemPaneManager.unregisterSection(${id})`);
+      if (itemPane.unregisterThrows) throw new Error("simulated unregisterSection failure");
+      const options = sections.get(id);
+      if (!options) return false;
+      sections.delete(id);
+      for (const m of mountedSections.filter((x) => x.id === id && !x.destroyed)) {
+        m.destroyed = true;
+        options.onDestroy?.({ paneID: options.paneID, doc: null, body: m.body });
+      }
+      return true;
+    },
+  }, "Zotero.ItemPaneManager");
+
+  // ---- Notifier (F005b) ----
+  /** @type {Map<string, { ref: any, types: string[], id: string }>} */
+  const notifierObservers = new Map();
+  let observerSeq = 0;
+  const notifierApi = strict({
+    registerObserver(ref, types, id) {
+      log.push(`Notifier.registerObserver(${JSON.stringify(types)}, ${id})`);
+      if (notifier.registerThrows) throw new Error("simulated registerObserver failure");
+      if (typeof ref?.notify !== "function") throw new TypeError("mock registerObserver: ref.notify missing");
+      // Real key: id + "_" + random characters (notifier.js); unique here too.
+      const key = `${id}_${++observerSeq}`;
+      notifierObservers.set(key, { ref, types: [...types], id });
+      return key;
+    },
+    unregisterObserver(key) {
+      log.push(`Notifier.unregisterObserver(${key})`);
+      if (notifier.unregisterThrows) throw new Error("simulated unregisterObserver failure");
+      notifierObservers.delete(key);
+    },
+  }, "Zotero.Notifier");
+
   /** @type {Record<string, any>} */
   const sandbox = {
     Zotero: {
@@ -459,6 +529,8 @@ export function createHarness({
           return menus.delete(id);
         },
       },
+      ItemPaneManager: itemPaneManager,
+      Notifier: notifierApi,
     },
     Services: {
       io: { newURI(spec) { return { spec }; } },
@@ -544,6 +616,41 @@ export function createHarness({
     workspaceWindows,
     openWorkspaceWindows,
     menus,
+    /** F005b: registered item pane sections by returned id. */
+    sections,
+    /** F005b: section elements "Zotero" created with mountSection(). */
+    mountedSections,
+    /** F005b: Notifier observers by returned key. */
+    notifierObservers,
+    /**
+     * F005b: model Zotero creating one copy of a registered section in an item pane: calls
+     * its onInit with a fake `body` and a `refresh` that counts calls. Returns the record.
+     */
+    mountSection(id = [...sections.keys()][0]) {
+      const options = sections.get(id);
+      if (!options) throw new Error(`mock: no registered section ${id}`);
+      const record = { id, body: { mountedSection: true }, refreshCalls: 0, destroyed: false };
+      mountedSections.push(record);
+      options.onInit?.({
+        paneID: options.paneID,
+        doc: null,
+        body: record.body,
+        refresh: () => { record.refreshCalls++; return Promise.resolve(); },
+      });
+      return record;
+    },
+    /** F005b: model Zotero removing one section element (e.g. its reader tab closed). */
+    unmountSection(record) {
+      const options = sections.get(record.id);
+      record.destroyed = true;
+      options?.onDestroy?.({ paneID: options.paneID, doc: null, body: record.body });
+    },
+    /** F005b: fire a Notifier event to every observer registered for `type`. */
+    fireNotifier(event, type, ids = []) {
+      for (const { ref, types } of [...notifierObservers.values()]) {
+        if (types.includes(type)) ref.notify(event, type, ids, {});
+      }
+    },
     /** Every registered observer (Zotero's own first, then the plugin's). */
     observers,
     /** Observers the plugin registered for `topic`. */

@@ -60,13 +60,16 @@ function papers() {
 
 const paper = (result, id) => result.papers.find((p) => p.id === id);
 
+/** The owner's switch "Also count tags on the paper itself" (default off: highlights only). */
+const WITH_ITEM = { countItemTags: true };
+
 // ---------------------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------------------
 
 test("AC13: the file defines TabellifyTagMonitor without Zotero/DOM/IOUtils", () => {
   assert.equal(typeof T, "object");
-  for (const fn of ["descendantIds", "summarize", "sortPapers"]) assert.equal(typeof T[fn], "function", fn);
+  for (const fn of ["descendantIds", "summarize", "sortPapers", "paperChecklist", "countedTagNames"]) assert.equal(typeof T[fn], "function", fn);
   const src = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   assert.doesNotMatch(src, /\b(Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
 });
@@ -110,8 +113,8 @@ test("descendantIds: a cycle does not loop forever", () => {
 // summarize: the whole collection
 // ---------------------------------------------------------------------------------------
 
-test("summarize: the spec's smoke-test setup (AC1–AC4 as data)", () => {
-  const r = T.summarize(codebook(), collections(), 1, papers());
+test("summarize (switch on): the spec's smoke-test setup (AC1–AC4 as data)", () => {
+  const r = T.summarize(codebook(), collections(), 1, papers(), WITH_ITEM);
   assert.equal(r.total, 4);
   assert.equal(r.used, 2);
   assert.equal(r.allUsed, false);
@@ -141,11 +144,11 @@ test("summarize: no papers", () => {
   assert.deepEqual(plain(r.groups.map((g) => g.remainingTags)), [["Heat index", "Temperature"], ["Hospitalization", "Mortality"]]);
 });
 
-test("summarize: an item-tag match and a highlight-tag match both count", () => {
+test("summarize (switch on): an item-tag match and a highlight-tag match both count", () => {
   const r = T.summarize(codebook(), collections(), 1, [
     { id: 1, title: "Item", collectionId: 1, itemTags: [{ tag: "Mortality" }], annotationTags: [] },
     { id: 2, title: "Highlight", collectionId: 1, itemTags: [], annotationTags: [{ tag: "Temperature" }] },
-  ]);
+  ], WITH_ITEM);
   assert.equal(r.used, 2);
   assert.deepEqual(plain(paper(r, 1).groups[1].present), ["Mortality"]);
   assert.deepEqual(plain(paper(r, 2).groups[0].present), ["Temperature"]);
@@ -171,7 +174,7 @@ test("summarize: a tag on the item and on highlights of the same paper counts th
       itemTags: [{ tag: "Heat index" }],
       annotationTags: [{ tag: "Heat index" }, { tag: "Heat index" }, { tag: "Heat index" }],
     },
-  ]);
+  ], WITH_ITEM);
   assert.deepEqual(plain(r.groups[0].usedTags), [{ tag: "Heat index", papers: 1 }]);
   assert.equal(paper(r, 1).count, 1);
 });
@@ -183,11 +186,11 @@ test("summarize: automatic tags (type 1) are ignored on items and highlights; mi
       itemTags: [{ tag: "Heat index", type: 1 }, { tag: "Mortality" }, { tag: "Temperature", type: 0 }],
       annotationTags: [{ tag: "Hospitalization", type: 1 }],
     },
-  ]);
+  ], WITH_ITEM);
   assert.deepEqual(plain(paper(r, 1).groups.map((g) => g.present)), [["Temperature"], ["Mortality"]]);
   assert.equal(r.used, 2);
   // The smoke-test Paper 3 (only an automatic "Temperature") has 0/4.
-  const smoke = T.summarize(codebook(), collections(), 1, papers());
+  const smoke = T.summarize(codebook(), collections(), 1, papers(), WITH_ITEM);
   assert.deepEqual([paper(smoke, 103).count, paper(smoke, 103).total], [0, 4]);
   assert.ok(smoke.groups[0].remainingTags.includes("Temperature"));
 });
@@ -199,7 +202,7 @@ test("summarize: matching is case-sensitive, ignores surrounding spaces and non-
       itemTags: [{ tag: "heat index" }, { tag: "  Mortality  " }, { tag: "Off plan" }, { tag: "" }],
       annotationTags: [{ tag: " Temperature" }],
     },
-  ]);
+  ], WITH_ITEM);
   assert.deepEqual(plain(paper(r, 1).groups.map((g) => g.present)), [["Temperature"], ["Mortality"]]);
   assert.equal(r.used, 2);
   assert.equal(r.total, 4);
@@ -211,7 +214,7 @@ test("summarize: per-group n/m, total N/M, allUsed and paper counts", () => {
     { id: 1, title: "A", collectionId: 1, itemTags: [{ tag: "Heat index" }, { tag: "Mortality" }], annotationTags: [] },
     { id: 2, title: "B", collectionId: 2, itemTags: [{ tag: "Heat index" }], annotationTags: [{ tag: "Temperature" }] },
     { id: 3, title: "C", collectionId: 3, itemTags: [], annotationTags: [{ tag: "Hospitalization" }, { tag: "Heat index" }] },
-  ]);
+  ], WITH_ITEM);
   assert.deepEqual([r.used, r.total, r.allUsed, r.paperCount], [4, 4, true, 3]);
   assert.deepEqual(plain(r.groups.map((g) => [g.name, g.used, g.total])), [["Exposure", 2, 2], ["Outcome", 2, 2]]);
   assert.deepEqual(plain(r.groups[0].usedTags), [{ tag: "Heat index", papers: 3 }, { tag: "Temperature", papers: 1 }]);
@@ -219,7 +222,7 @@ test("summarize: per-group n/m, total N/M, allUsed and paper counts", () => {
 });
 
 test("summarize: a subcollection as root counts only its own papers (AC5 as data)", () => {
-  const r = T.summarize(codebook(), collections(), 2, papers());
+  const r = T.summarize(codebook(), collections(), 2, papers(), WITH_ITEM);
   assert.deepEqual([r.used, r.total, r.paperCount], [1, 4, 1]);
   assert.deepEqual(plain(paper(r, 102).collectionNames), ["Phenotype A"]);
 });
@@ -230,11 +233,57 @@ test("summarize: unknown root gives no papers", () => {
 });
 
 // ---------------------------------------------------------------------------------------
+// Counting rule (owner decision 2026-11-13): highlight tags only, switch adds item tags
+// ---------------------------------------------------------------------------------------
+
+test("countedTagNames: default counts highlight tags only; the switch adds item tags", () => {
+  const p = {
+    itemTags: [{ tag: "Heat index" }, { tag: "Mortality", type: 1 }],
+    annotationTags: [{ tag: " Hospitalization " }, { tag: "Temperature", type: 1 }, { tag: "Heat index" }],
+  };
+  assert.deepEqual([...T.countedTagNames(p)], ["Hospitalization", "Heat index"]);
+  assert.deepEqual([...T.countedTagNames(p, {})], ["Hospitalization", "Heat index"]);
+  assert.deepEqual([...T.countedTagNames(p, { countItemTags: false })], ["Hospitalization", "Heat index"]);
+  // Switch on: item tags added (once), automatic tags still excluded.
+  assert.deepEqual([...T.countedTagNames(p, WITH_ITEM)], ["Hospitalization", "Heat index"]);
+  assert.deepEqual([...T.countedTagNames({ itemTags: [{ tag: "Mortality" }] }, WITH_ITEM)], ["Mortality"]);
+  assert.deepEqual([...T.countedTagNames({ itemTags: [{ tag: "Mortality" }] })], []);
+  // Only exactly `true` turns the switch on (a stray truthy pref value does not).
+  assert.deepEqual([...T.countedTagNames({ itemTags: [{ tag: "Mortality" }] }, { countItemTags: "yes" })], []);
+  assert.deepEqual([...T.countedTagNames(null)], []);
+  assert.deepEqual([...T.countedTagNames({}, WITH_ITEM)], []);
+});
+
+test("summarize (default): item tags do not count, highlight tags do", () => {
+  const r = T.summarize(codebook(), collections(), 1, papers());
+  // Paper 1 has "Heat index" only on the item: not counted. Paper 2's highlight counts.
+  assert.deepEqual([r.used, r.total, r.paperCount], [1, 4, 3], "papers are still listed");
+  assert.deepEqual(plain(r.groups[0].remainingTags), ["Heat index", "Temperature"]);
+  assert.deepEqual(plain(r.groups[1].usedTags), [{ tag: "Hospitalization", papers: 1 }]);
+  assert.deepEqual([paper(r, 101).count, paper(r, 102).count, paper(r, 103).count], [0, 1, 0]);
+  // Explicit `false` is the same as the default.
+  assert.deepEqual(plain(T.summarize(codebook(), collections(), 1, papers(), { countItemTags: false })), plain(r));
+});
+
+test("summarize: the switch changes only item-tag papers; automatic tags never count", () => {
+  const list = [
+    { id: 1, title: "Item only", collectionId: 1, itemTags: [{ tag: "Mortality" }], annotationTags: [] },
+    { id: 2, title: "Highlight only", collectionId: 1, itemTags: [], annotationTags: [{ tag: "Temperature" }] },
+    { id: 3, title: "Automatic", collectionId: 1, itemTags: [{ tag: "Heat index", type: 1 }], annotationTags: [{ tag: "Hospitalization", type: 1 }] },
+  ];
+  const off = T.summarize(codebook(), collections(), 1, list);
+  const on = T.summarize(codebook(), collections(), 1, list, WITH_ITEM);
+  assert.deepEqual(plain(off.papers.map((p) => p.count)), [0, 1, 0]);
+  assert.deepEqual(plain(on.papers.map((p) => p.count)), [1, 1, 0]);
+  assert.deepEqual([off.used, on.used], [1, 2]);
+});
+
+// ---------------------------------------------------------------------------------------
 // summarize: per paper
 // ---------------------------------------------------------------------------------------
 
 test("per paper: k/M, present and remaining grouped in codebook order (AC4 Paper 1)", () => {
-  const r = T.summarize(codebook(), collections(), 1, papers());
+  const r = T.summarize(codebook(), collections(), 1, papers(), WITH_ITEM);
   const p1 = paper(r, 101);
   assert.deepEqual([p1.count, p1.total], [1, 4]);
   assert.deepEqual(plain(p1.groups), [
@@ -313,4 +362,107 @@ test("inputs are not mutated", () => {
   const sorted = T.sortPapers(r, "title", "desc");
   assert.equal(JSON.stringify(r), rowsBefore);
   assert.notEqual(sorted, r, "sortPapers returns a new array");
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 005b AC9: one paper, for the reader's "Tabellify tags" section
+// ---------------------------------------------------------------------------------------
+
+/** The F005b smoke-test codebook: Exposure (Heat index, Temperature), Health outcome (Hospitalization). M = 3. */
+function readerCodebook() {
+  return {
+    schemaVersion: 1,
+    revision: 1,
+    nextId: 4,
+    codebooks: [{
+      id: "c1",
+      name: "Codebook",
+      groups: [
+        { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
+        { id: "g3", name: "Health outcome", tags: ["Hospitalization"] },
+      ],
+    }],
+  };
+}
+
+// ---------------------------------------------------------------------------------------
+// paperChecklist (Feature 005b, owner change 2026-11-13: checklist + counting rule)
+// ---------------------------------------------------------------------------------------
+
+/** The F005b smoke-test paper: item tag "Heat index", a highlight tagged "Hospitalization". */
+const smokePaper = () => ({ itemTags: [{ tag: "Heat index" }], annotationTags: [{ tag: "Hospitalization" }] });
+
+test("F005b: paperChecklist (default) — highlight tags only: smoke-test paper is 1 / 3", () => {
+  assert.deepEqual(plain(T.paperChecklist(readerCodebook(), smokePaper())), {
+    total: 3,
+    used: 1,
+    allUsed: false,
+    groups: [
+      { id: "g2", name: "Exposure", total: 2, used: 0, tags: [{ tag: "Heat index", used: false }, { tag: "Temperature", used: false }] },
+      { id: "g3", name: "Health outcome", total: 1, used: 1, tags: [{ tag: "Hospitalization", used: true }] },
+    ],
+  });
+});
+
+test("F005b: paperChecklist (switch on) — item tags count too: smoke-test paper is 2 / 3", () => {
+  const s = T.paperChecklist(readerCodebook(), smokePaper(), WITH_ITEM);
+  assert.deepEqual([s.used, s.total, s.allUsed], [2, 3, false]);
+  assert.deepEqual(plain(s.groups[0].tags), [{ tag: "Heat index", used: true }, { tag: "Temperature", used: false }]);
+});
+
+test("F005b: paperChecklist — every codebook tag listed in codebook order; empty groups left out", () => {
+  const data = codebook();
+  data.codebooks[0].groups.splice(1, 0, { id: "g9", name: "Empty", tags: [] });
+  const s = T.paperChecklist(data, { annotationTags: [{ tag: "Mortality" }, { tag: "Off plan" }] });
+  assert.deepEqual(plain(s.groups.map((g) => [g.name, g.tags.map((t) => t.tag)])), [
+    ["Exposure", ["Heat index", "Temperature"]],
+    ["Outcome", ["Hospitalization", "Mortality"]],
+  ]);
+  assert.deepEqual(plain(s.groups[1].tags.map((t) => t.used)), [false, true]);
+});
+
+test("F005b: paperChecklist — exact, case-sensitive match after trimming; automatic tags never count", () => {
+  const data = readerCodebook();
+  data.codebooks[0].groups[0].tags = ["  Heat index ", "Temperature"];
+  const p = {
+    itemTags: [{ tag: "Temperature", type: 1 }],
+    annotationTags: [{ tag: "heat index" }, { tag: " Temperature  " }, { tag: "Hospitalization", type: 1 }],
+  };
+  for (const opts of [undefined, WITH_ITEM]) {
+    const s = T.paperChecklist(data, p, opts);
+    assert.equal(s.used, 1);
+    assert.deepEqual(plain(s.groups[0].tags), [{ tag: "Heat index", used: false }, { tag: "Temperature", used: true }]);
+  }
+});
+
+test("F005b: paperChecklist — everything used gives allUsed", () => {
+  const p = { annotationTags: [{ tag: "Temperature" }, { tag: "Heat index" }, { tag: "Hospitalization" }] };
+  const s = T.paperChecklist(readerCodebook(), p);
+  assert.deepEqual([s.used, s.total, s.allUsed], [3, 3, true]);
+  assert.ok(s.groups.every((g) => g.tags.every((t) => t.used)));
+});
+
+test("F005b: paperChecklist — empty or missing codebook gives total 0 (never allUsed)", () => {
+  const empty = { schemaVersion: 1, revision: 0, nextId: 1, codebooks: [{ id: "c1", name: "Codebook", groups: [] }] };
+  const noTags = { codebooks: [{ groups: [{ id: "g1", name: "Empty", tags: [] }] }] };
+  for (const data of [empty, noTags, null, undefined, {}]) {
+    assert.deepEqual(plain(T.paperChecklist(data, smokePaper(), WITH_ITEM)), { total: 0, used: 0, allUsed: false, groups: [] });
+  }
+});
+
+test("F005b: paperChecklist — no tags or no paper gives 0 used", () => {
+  for (const p of [null, undefined, {}, { itemTags: [], annotationTags: [{ tag: "" }, { tag: "  " }] }]) {
+    const s = T.paperChecklist(readerCodebook(), p);
+    assert.deepEqual([s.used, s.total], [0, 3]);
+  }
+});
+
+test("F005b: paperChecklist — inputs are not mutated", () => {
+  const data = readerCodebook();
+  const p = smokePaper();
+  const before = JSON.stringify([data, p]);
+  const s = T.paperChecklist(data, p, WITH_ITEM);
+  assert.equal(JSON.stringify([data, p]), before);
+  s.groups[0].tags.push({ tag: "x", used: true });
+  assert.equal(JSON.stringify(data), JSON.stringify(readerCodebook()));
 });

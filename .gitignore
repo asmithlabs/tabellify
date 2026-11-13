@@ -6,3 +6,6 @@ build/
 .env.*
 .claude/settings.local.json
 coverage/
+
+# Stray browser download (not part of the project)
+chrome/

@@ -1,7 +1,7 @@
 # Tabellify — Architecture
 
-Status: v0.1 (2026-11-11). Covers decisions through ADR-0009. Updated by the architect when
-ADRs are accepted.
+Status: v0.1 (2026-11-11; §3–4 updated 2026-11-13 for ADR-0013). Covers decisions through
+ADR-0009, plus ADR-0013 (§4). Updated by the architect when ADRs are accepted.
 
 ## 1. Platform
 
@@ -35,6 +35,7 @@ src/
 ├── manifest.json          identity + compatibility
 ├── bootstrap.js           thin: forwards lifecycle hooks to Tabellify object
 ├── tabellify.js           plugin object: init/shutdown, menu registration, workspace tab (window fallback), quit cleanup
+├── reader-tags.js         F005b: "Tabellify tags" item pane section (bootstrap scope, read-only)
 ├── modules/               PURE logic (no Zotero globals) — table model, CSV, codebook
 ├── content/               workspace page: workspace.xhtml / .css (shown in the main-window tab; F001 window as fallback)
 └── locale/en-US/          Fluent strings (tabellify.ftl)
@@ -53,7 +54,7 @@ churn to one place.
 | Workspace tab (main window) | Planner, builder, saved tables | chrome registration + internal `Zotero_Tabs` (`add`/`select`/`close`/`getTabInfo` only) + `<iframe>` loading `workspace.xhtml` (ADR-0009) | F002 (placeholder) |
 | Workspace window (fallback) | Same document, used automatically if `Zotero_Tabs` is missing or `add` throws | chrome registration + XHTML window (ADR-0004, superseded) | F001; kept as fallback (F002 AC9) |
 | Settings pane | Possibly codebook management (sketch) | `Zotero.PreferencePanes.register()` | Pending Q3 |
-| Item pane / reader section | Tag monitor | `Zotero.ItemPaneManager.registerSection()` | F005, to verify |
+| Item pane / reader section ("Tabellify tags") | This paper's codebook progress ("k / M" in the header, remaining tags by super-tag) beside the reader and in the library item pane; read-only | `Zotero.ItemPaneManager.registerSection()` + one `Zotero.Notifier` observer, both registered in `Tabellify.init` and unregistered in `shutdown` (`src/reader-tags.js`, ADR-0013) | F005b |
 
 **Tab risk and cleanup (ADR-0009).** Zotero 8+ throws on restore when its saved session
 contains a tab type it doesn't know, and then skips every later tab, so a Tabellify tab must

@@ -207,3 +207,38 @@ test("AC5: FTL-link cleanup check accepts all three shapes and rejects a missing
   for (const code of accepted) assert.match(code, FTL_LINK_REMOVAL, `should accept: ${code}`);
   for (const code of rejected) assert.doesNotMatch(code, FTL_LINK_REMOVAL, `should reject: ${code}`);
 });
+
+test("F005b AC12: registerSection and registerObserver are found and paired with the stored ids (not vacuous)", () => {
+  const reader = sources.find((s) => s.file === "reader-tags.js");
+  assert.ok(reader, "src/reader-tags.js missing");
+  const code = reader.code;
+  // Exactly one of each registration, each result stored in a property…
+  assert.equal((code.match(/Zotero\.ItemPaneManager\.registerSection\(/g) ?? []).length, 1);
+  assert.equal((code.match(/Zotero\.Notifier\.registerObserver\(/g) ?? []).length, 1);
+  assert.match(code, /const id = Zotero\.ItemPaneManager\.registerSection\(/);
+  assert.match(code, /this\.sectionID = id;/);
+  assert.match(code, /this\.observerID = Zotero\.Notifier\.registerObserver\(/);
+  // …and unregistered with exactly that stored value.
+  assert.match(code, /Zotero\.ItemPaneManager\.unregisterSection\(this\.sectionID\)/);
+  assert.match(code, /Zotero\.Notifier\.unregisterObserver\(this\.observerID\)/);
+  // The generic Zotero.X.registerY ↔ unregisterY rule above therefore covers both.
+  assert.match(allCode, /Zotero\.ItemPaneManager\.unregisterSection\(/);
+  assert.match(allCode, /Zotero\.Notifier\.unregisterObserver\(/);
+});
+
+test("F005b AC12: Tabellify.init registers the reader section and shutdown unregisters it", () => {
+  const tab = sources.find((s) => s.file === "tabellify.js").code;
+  const body = (name) => {
+    const start = tab.search(new RegExp(`^ {2}${name}\\(`, "m"));
+    assert.ok(start >= 0, `${name}() not found`);
+    const rest = tab.slice(start);
+    return rest.slice(0, rest.search(/^ {2}\},$/m));
+  };
+  assert.match(body("init"), /this\.registerReaderTags\(\)/);
+  assert.match(body("shutdown"), /this\.unregisterReaderTags\(\)/);
+  assert.match(body("registerReaderTags"), /TabellifyReaderTags\.register\(/);
+  assert.match(body("unregisterReaderTags"), /TabellifyReaderTags\?\.unregister\(\)/);
+  // The section must go before the menu (and, in bootstrap.js, before chromeHandle.destruct).
+  const shutdown = body("shutdown");
+  assert.ok(shutdown.indexOf("unregisterReaderTags()") < shutdown.indexOf("unregisterMenu()"));
+});

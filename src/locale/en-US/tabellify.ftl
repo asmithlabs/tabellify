@@ -96,6 +96,9 @@ tabellify-codebook-error-tag-missing = This tag is no longer in the group.
 
 tabellify-monitor-heading = Tag monitor
 tabellify-monitor-refresh = Refresh
+# Checkbox next to "Refresh". Off (default): only tags on highlights count. On: tags on the
+# paper item itself count too. The reader's "Tabellify tags" section follows the same setting.
+tabellify-monitor-count-item-tags = Also count tags on the paper itself
 tabellify-monitor-choose = Choose a collection to see which codebook tags its papers use.
 tabellify-monitor-codebook-empty = The codebook has no tags yet. Add tags to the codebook to see which ones are used.
 tabellify-monitor-unavailable = The tag monitor is unavailable because the codebook could not be loaded.
@@ -115,3 +118,27 @@ tabellify-monitor-hide-remaining = Hide remaining
 tabellify-column-codebook = Codebook tags
 tabellify-column-in = In
 tabellify-column-details = Details
+
+## Item pane / reader section "Tabellify tags" (Feature 005b).
+## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
+## messages use attributes: `.label` (header text) and `.tooltiptext` (icon tooltip), like
+## Zotero's own sections. reader-tags.js reads `tabellify-reader-summary` with
+## document.l10n.formatValue(); the other messages are set on <p> elements with
+## data-l10n-id / data-l10n-args. `$used` and `$total` are numbers.
+
+tabellify-reader-section-header =
+    .label = Tabellify tags
+tabellify-reader-section-sidenav =
+    .tooltiptext = Tabellify tags
+# Header summary, also shown when the section is collapsed: "2 / 3".
+tabellify-reader-summary = { $used } / { $total }
+tabellify-reader-used = { $used } of { $total } codebook tags used on this paper
+# Checklist marks in front of each codebook tag (the tag name follows as plain text).
+# `.title` is the tooltip shown when pointing at the mark.
+tabellify-reader-mark-used = ✓
+    .title = Used on this paper
+tabellify-reader-mark-unused = ☐
+    .title = Not used on this paper yet
+tabellify-reader-no-codebook = No codebook yet. Create one in Tools → Tabellify…
+tabellify-reader-codebook-error = Could not read the codebook.
+tabellify-reader-counting = Counting…

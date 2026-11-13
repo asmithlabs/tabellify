@@ -12,6 +12,10 @@
  *   them with the codebook: "Tags used N/M", used/remaining tags per group, and a per-paper
  *   table (which replaced the F003 item list) with "k/M" and a "Show remaining" toggle.
  *   The comparison itself is pure logic in tag-monitor-model.js (TabellifyTagMonitor).
+ *   Counting rule (owner decision 2026-11-13): only highlight tags count, unless the
+ *   "Also count tags on the paper itself" checkbox is ticked. The checkbox is stored in the
+ *   Zotero pref extensions.tabellify.countItemTags (a setting, not library data); this is
+ *   the only place in Tabellify that writes it.
  * - F004: shows and edits the codebook (super-tag groups and their planned tags). The rules
  *   live in codebook-model.js (TabellifyCodebook); the file is read and written by
  *   codebook-store.js (TabellifyCodebookStore): Tabellify's own codebooks.json in
@@ -176,6 +180,11 @@ var TabellifyWorkspace = {
     // buttons in the header, "Show remaining" toggles in the rows). Removed in onUnload.
     this.el("tabellify-monitor-refresh").addEventListener("click", this.onRefreshClick);
     this.el("tabellify-items-table").addEventListener("click", this.onTableClick);
+    // Owner decision 2026-11-13: the "count item tags" checkbox (removed in onUnload).
+    const countBox = this.el("tabellify-monitor-count-item-tags");
+    this.countItemTags = this.readCountItemTags();
+    countBox.checked = this.countItemTags;
+    countBox.addEventListener("change", this.onCountItemTagsChange);
     try {
       // Normally already resolved (the workspace opens from a menu, after Zotero started),
       // so this returns at once. It guarantees all collections are loaded.
@@ -260,7 +269,8 @@ var TabellifyWorkspace = {
       this.log(
         `tag monitor: recomputed for collection ${data.rootId} (${reason}): ` +
         `${result?.used ?? 0}/${result?.total ?? 0} codebook tag(s) used, ` +
-        `${result?.paperCount ?? 0} paper(s) in ${data.scopeSize} collection(s)` +
+        `${result?.paperCount ?? 0} paper(s) in ${data.scopeSize} collection(s), ` +
+        `${this.countItemTags ? "highlight and item tags" : "highlight tags only"}` +
         (data.annotationErrors > 0 ? `, highlights unreadable for ${data.annotationErrors} paper(s)` : ""),
       );
     } catch (e) {
@@ -316,6 +326,49 @@ var TabellifyWorkspace = {
    * library again.
    */
   monitorData: null,
+
+  /**
+   * The checkbox "Also count tags on the paper itself" (false: highlight tags only).
+   * Read from the pref in init(), changed by onCountItemTagsChange.
+   */
+  countItemTags: false,
+
+  /**
+   * Read the switch from Zotero's prefs. `Zotero.Prefs.get(name, true)`: `true` means
+   * `name` is the FULL pref name (without it Zotero would put "extensions.zotero." in
+   * front). A pref that was never set reads as `undefined`, hence `=== true` (default off).
+   * @returns {boolean}
+   */
+  readCountItemTags() {
+    try {
+      return Zotero.Prefs.get(TabellifyTagMonitor.COUNT_ITEM_TAGS_PREF, true) === true;
+    } catch (e) {
+      Zotero.logError(e);
+      return false;
+    }
+  },
+
+  /**
+   * The checkbox changed: remember the choice in the pref (so the reader section and the
+   * next workspace use it too) and recount at once from the data already read. No library
+   * read is needed: monitorData keeps item tags and highlight tags apart.
+   */
+  onCountItemTagsChange: (event) => {
+    const W = TabellifyWorkspace;
+    W.countItemTags = event.target.checked === true;
+    try {
+      // `true` (third argument): full pref name, as in readCountItemTags. A pref is a
+      // Tabellify setting, not library data.
+      Zotero.Prefs.set(TabellifyTagMonitor.COUNT_ITEM_TAGS_PREF, W.countItemTags, true);
+    } catch (e) {
+      Zotero.logError(e);
+    }
+    const result = W.renderMonitor();
+    W.log(
+      `tag monitor: count item tags = ${W.countItemTags}` +
+      (result ? ` (recounted: ${result.used}/${result.total} codebook tag(s) used)` : ""),
+    );
+  },
 
   /** Per-paper table order (a TabellifyTagMonitor.SORT_KEYS value and "asc"/"desc"). */
   sortKey: "count",
@@ -475,7 +528,10 @@ var TabellifyWorkspace = {
       return null;
     }
 
-    const result = TabellifyTagMonitor.summarize(this.codebook, data.collections, data.rootId, data.papers);
+    // The counting rule (highlights only, unless the checkbox is ticked) is in the model.
+    const result = TabellifyTagMonitor.summarize(this.codebook, data.collections, data.rootId, data.papers, {
+      countItemTags: this.countItemTags,
+    });
     // Counts make sense only with a loaded codebook that has tags.
     const counting = Boolean(this.codebook) && result.total > 0;
     if (this.codebook && result.total === 0) setMessage("tabellify-monitor-codebook-empty");
@@ -1203,6 +1259,8 @@ var TabellifyWorkspace = {
       ?.removeEventListener("click", TabellifyWorkspace.onRefreshClick);
     TabellifyWorkspace.el("tabellify-items-table")
       ?.removeEventListener("click", TabellifyWorkspace.onTableClick);
+    TabellifyWorkspace.el("tabellify-monitor-count-item-tags")
+      ?.removeEventListener("change", TabellifyWorkspace.onCountItemTagsChange);
     const section = TabellifyWorkspace.el("tabellify-codebook");
     section?.removeEventListener("click", TabellifyWorkspace.onCodebookClick);
     section?.removeEventListener("keydown", TabellifyWorkspace.onCodebookKeydown);

@@ -2,8 +2,13 @@
  *
  * The tag monitor compares the codebook (the tags the researcher PLANS to use, F004) with
  * the MANUAL tags actually on the papers of a chosen collection and all its
- * subcollections, including tags on their highlights (annotations). See
- * docs/features/005-tag-monitor.md, "How 'used' is computed".
+ * subcollections. See docs/features/005-tag-monitor.md, "How 'used' is computed".
+ *
+ * COUNTING RULE (owner decision 2026-11-13, shared by the F005 tab and the F005b reader
+ * section so both always agree): by default only tags on a paper's HIGHLIGHTS
+ * (annotations) count. Tags on the paper item itself count only when the caller passes
+ * `{ countItemTags: true }` (the "Also count tags on the paper itself" checkbox, stored in
+ * the pref COUNT_ITEM_TAGS_PREF). The rule lives in countedTagNames() below.
  *
  * PURE: this file uses no Zotero, DOM, IOUtils or PathUtils globals, so
  * tests/unit/tag-monitor-model.test.mjs can run it in Node. workspace.js reads the library
@@ -38,6 +43,13 @@ var TabellifyTagMonitor = {
 
   /** The order shown when a collection is chosen: fewest codebook tags first. */
   DEFAULT_SORT: { key: "count", direction: "asc" },
+
+  /**
+   * Full name of the Zotero pref behind the "Also count tags on the paper itself" checkbox
+   * (boolean; missing = false). Only a NAME here: this file never reads or writes prefs.
+   * The workspace reads and writes it; the reader section only reads it.
+   */
+  COUNT_ITEM_TAGS_PREF: "extensions.tabellify.countItemTags",
 
   /**
    * The chosen collection and all its descendants (children, grandchildren, …).
@@ -82,6 +94,23 @@ var TabellifyTagMonitor = {
   },
 
   /**
+   * THE counting rule: which tag names of one paper count. Always the manual tags on its
+   * highlights; the manual tags on the paper item itself only with `countItemTags: true`.
+   * Automatic tags never count (see manualTagNames).
+   * @param {{ itemTags?: Array<{ tag?: string, type?: number }>,
+   *           annotationTags?: Array<{ tag?: string, type?: number }> } | null} paper
+   * @param {{ countItemTags?: boolean }} [options]
+   * @returns {Set<string>}  Trimmed names; a tag on the item AND on three highlights is one entry
+   */
+  countedTagNames(paper, options = {}) {
+    const names = new Set(this.manualTagNames(paper?.annotationTags));
+    if (options?.countItemTags === true) {
+      for (const name of this.manualTagNames(paper?.itemTags)) names.add(name);
+    }
+    return names;
+  },
+
+  /**
    * The codebook's groups as `{ id, name, tags }` (tags trimmed, empty ones dropped).
    * A missing or empty codebook gives [].
    * @param {object | null} codebookData  The codebooks.json data (F004), or null
@@ -104,6 +133,7 @@ var TabellifyTagMonitor = {
    * @param {Array<{ id: number, title: string, collectionId: number,
    *                 itemTags?: Array<{tag: string, type?: number}>,
    *                 annotationTags?: Array<{tag: string, type?: number}> }>} papers
+   * @param {{ countItemTags?: boolean }} [options]  See countedTagNames (default: highlights only)
    * @returns {{ total: number, used: number, allUsed: boolean, paperCount: number,
    *   groups: Array<{ id: string, name: string, total: number, used: number,
    *                   usedTags: Array<{ tag: string, papers: number }>, remainingTags: string[] }>,
@@ -111,7 +141,7 @@ var TabellifyTagMonitor = {
    *                   count: number, total: number,
    *                   groups: Array<{ id: string, name: string, present: string[], remaining: string[] }> }> }}
    */
-  summarize(codebookData, collections, rootId, papers) {
+  summarize(codebookData, collections, rootId, papers, options = {}) {
     const groups = this.codebookGroups(codebookData);
     const scope = this.descendantIds(collections, rootId);
     const order = new Map(scope.map((id, i) => [id, i]));
@@ -128,9 +158,8 @@ var TabellifyTagMonitor = {
         merged.set(p.id, record);
       }
       record.collectionIds.add(p.collectionId);
-      // A Set: a tag on the item AND on three highlights still counts once for the paper.
-      for (const name of this.manualTagNames(p.itemTags)) record.tags.add(name);
-      for (const name of this.manualTagNames(p.annotationTags)) record.tags.add(name);
+      // A Set: a tag on three highlights (or on the item too) still counts once for the paper.
+      for (const name of this.countedTagNames(p, options)) record.tags.add(name);
     }
 
     // 2. How many papers carry each codebook tag.
@@ -179,6 +208,32 @@ var TabellifyTagMonitor = {
       groups: groupResults,
       papers: paperResults,
     };
+  },
+
+  /**
+   * Feature 005b (owner change 2026-11-13): the reader section's CHECKLIST for one paper.
+   * Every codebook tag, grouped by super-tag in codebook order, each marked used or not.
+   * Same counting rule as summarize() (countedTagNames): highlights only by default.
+   * Groups without tags are left out (nothing to tick).
+   * @param {object | null} codebookData  The codebooks.json data (F004), or null
+   * @param {{ itemTags?: Array<{ tag?: string, type?: number }>,
+   *           annotationTags?: Array<{ tag?: string, type?: number }> } | null} paper
+   * @param {{ countItemTags?: boolean }} [options]
+   * @returns {{ total: number, used: number, allUsed: boolean,
+   *   groups: Array<{ id: string, name: string, total: number, used: number,
+   *                   tags: Array<{ tag: string, used: boolean }> }> }}
+   */
+  paperChecklist(codebookData, paper, options = {}) {
+    const present = this.countedTagNames(paper, options);
+    const groups = this.codebookGroups(codebookData)
+      .filter((g) => g.tags.length > 0)
+      .map((g) => {
+        const tags = g.tags.map((tag) => ({ tag, used: present.has(tag) }));
+        return { id: g.id, name: g.name, total: tags.length, used: tags.filter((t) => t.used).length, tags };
+      });
+    const total = groups.reduce((sum, g) => sum + g.total, 0);
+    const used = groups.reduce((sum, g) => sum + g.used, 0);
+    return { total, used, allUsed: total > 0 && used === total, groups };
   },
 
   /**

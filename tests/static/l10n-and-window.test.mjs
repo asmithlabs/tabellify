@@ -103,3 +103,19 @@ test("AC4 (static): workspace.css sets no background or background-color", () =>
   const css = workspaceCss.replace(/\/\*[\s\S]*?\*\//g, "");
   assert.doesNotMatch(css, /(^|[;{\s])background(-color)?\s*:/i);
 });
+
+test("F005b AC12: the reader section's Fluent IDs exist (header .label, side-nav .tooltiptext)", () => {
+  const reader = readFileSync(join(srcDir, "reader-tags.js"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+  const header = /header:\s*\{\s*l10nID:\s*"([^"]+)"/.exec(reader)?.[1];
+  const sidenav = /sidenav:\s*\{\s*l10nID:\s*"([^"]+)"/.exec(reader)?.[1];
+  assert.equal(header, "tabellify-reader-section-header");
+  assert.equal(sidenav, "tabellify-reader-section-sidenav");
+  assert.ok(messages.get(header)?.attributes.includes("label"), `${header} needs .label`);
+  assert.ok(messages.get(sidenav)?.attributes.includes("tooltiptext"), `${sidenav} needs .tooltiptext`);
+  // Every other tabellify-… literal in reader-tags.js is a message with a value.
+  const ids = [...reader.matchAll(/"(tabellify-[\w-]+)"/g)].map((m) => m[1]).filter((id) => id !== header && id !== sidenav);
+  assert.ok(ids.length >= 7, "reader Fluent IDs not found (check is vacuous)");
+  for (const id of ids) assert.ok(messages.get(id)?.value, `${id} missing from tabellify.ftl or has no value`);
+});
