@@ -66,7 +66,7 @@ per-paper table (column widths per `<col>`, the two sticky header rows) stay on
 - the blank group header of tags without a group (`th.tabellify-col-group-ungrouped`,
   Feature 006a): no text, only its grip; its name is for screen readers
 
-## 5a. Workspace page components (Feature 006a)
+## 5a. Workspace page components (Features 006a, 006b)
 The per-group summary cards and the Remaining/Used chip lists of Feature 005/005d were
 removed in Feature 006a. The page now uses:
 - the **summary line** in the collection row ("Tags used 4/6 · Papers 12"; the "·" is CSS)
@@ -77,6 +77,12 @@ removed in Feature 006a. The page now uses:
   bold, count in tabular figures after a CSS "·"; the ungrouped pill is dashed)
 - the **"Edit groups and tags"** disclosure (`<details>`), whose groups are flat cards with
   tag chips and a × button
+- (Feature 006b) the **suggestion list** under the script box (`#tabellify-script-suggestions`,
+  options `.tabellify-suggest-option`): `surface` background, `border-strong` 1px border,
+  `radius-md`, no shadow, about 10 rows high with scrolling; the highlighted option
+  (`aria-selected="true"`) uses `selected-bg` / `selected-text` with the `selected-bar` inset
+  line, like the focused table row; "group" and "codebook only" are muted notes
+  (`.tabellify-suggest-hint`, `text-muted`); "Create tag" is set apart by a `border` line
 All of them are in the states gallery.
 
 ## 6. Light and dark
