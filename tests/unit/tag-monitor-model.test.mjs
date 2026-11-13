@@ -307,13 +307,14 @@ test("per paper: title trimmed; empty title marked untitled", () => {
 
 /** Rows as summarize() returns them (only the fields sortPapers reads). */
 function rows() {
+  const g = (present) => [{ id: "g2", name: "Exposure", present, remaining: [] }];
   return [
-    { id: 1, title: "Item 10", untitled: false, count: 1, collectionNames: ["Phenotype B"] },
-    { id: 2, title: "item 2", untitled: false, count: 1, collectionNames: ["Phenotype A", "Phenotype B"] },
-    { id: 3, title: "", untitled: true, count: 0, collectionNames: ["F005 test"] },
-    { id: 4, title: "Zeta", untitled: false, count: 0, collectionNames: ["Phenotype A"] },
-    { id: 5, title: "Alpha", untitled: false, count: 3, collectionNames: ["F005 test"] },
-    { id: 6, title: "", untitled: true, count: 1, collectionNames: ["Phenotype A"] },
+    { id: 1, title: "Item 10", untitled: false, count: 1, groups: g(["Heat index"]) },
+    { id: 2, title: "item 2", untitled: false, count: 1, groups: g(["Temperature"]) },
+    { id: 3, title: "", untitled: true, count: 0, groups: g([]) },
+    { id: 4, title: "Zeta", untitled: false, count: 0, groups: g([]) },
+    { id: 5, title: "Alpha", untitled: false, count: 3, groups: g(["Heat index", "Temperature", "Humidity"]) },
+    { id: 6, title: "", untitled: true, count: 1, groups: g(["Heat index"]) },
   ];
 }
 const ids = (list) => plain(list).map((p) => p.id);
@@ -334,14 +335,37 @@ test("sortPapers: title ascending and descending; untitled always last", () => {
   assert.deepEqual(ids(T.sortPapers(rows(), "title", "desc")), [4, 1, 2, 5, 3, 6]);
 });
 
-test("sortPapers: 'In' column ascending and descending, then title", () => {
-  assert.deepEqual(ids(T.sortPapers(rows(), "collections", "asc")), [5, 3, 4, 6, 2, 1]);
-  assert.deepEqual(ids(T.sortPapers(rows(), "collections", "desc")), [1, 2, 4, 6, 5, 3]);
+test("sortPapers: a tag column puts papers with ✓ first (asc) or last (desc), then title", () => {
+  const key = T.tagSortKey("Heat index");
+  assert.equal(key, "tag:Heat index");
+  assert.equal(T.sortKeyTag(key), "Heat index");
+  assert.equal(T.sortKeyTag("count"), null);
+  assert.equal(T.sortKeyTag(undefined), null);
+  assert.deepEqual(ids(T.sortPapers(rows(), key, "asc")), [5, 1, 6, 2, 4, 3]);
+  assert.deepEqual(ids(T.sortPapers(rows(), key, "desc")), [2, 4, 3, 5, 1, 6]);
+  // A tag nobody has (or a tag no longer in the codebook): plain title order.
+  assert.deepEqual(ids(T.sortPapers(rows(), T.tagSortKey("Nope"))), [5, 2, 1, 4, 3, 6]);
+  // A name that looks like another key is still a tag ("tag:count").
+  assert.deepEqual(ids(T.sortPapers(rows(), T.tagSortKey("count"))), [5, 2, 1, 4, 3, 6]);
 });
 
-test("sortPapers: an unknown key falls back to the count order", () => {
+test("sortPapers: tag sort uses summarize()'s counting rule (highlights only by default)", () => {
+  // Paper 1 (101) has "Heat index" only as a tag on the paper item, not on a highlight;
+  // Paper 2 (102) has "Hospitalization" on a highlight.
+  const off = T.summarize(codebook(), collections(), 1, papers());
+  const on = T.summarize(codebook(), collections(), 1, papers(), WITH_ITEM);
+  const heat = T.tagSortKey("Heat index");
+  assert.deepEqual(ids(T.sortPapers(off.papers, heat)), [101, 102, 103], "nobody has it: title order");
+  assert.deepEqual(ids(T.sortPapers(on.papers, heat)), [101, 102, 103]);
+  assert.deepEqual(ids(T.sortPapers(on.papers, heat, "desc")), [102, 103, 101], "with item tags: Paper 1 has ✓");
+  assert.deepEqual(ids(T.sortPapers(off.papers, heat, "desc")), [101, 102, 103], "highlights only: no ✓");
+  assert.deepEqual(ids(T.sortPapers(off.papers, T.tagSortKey("Hospitalization"))), [102, 101, 103]);
+});
+
+test("sortPapers: an unknown key falls back to the count order; 'In' column is gone", () => {
   assert.deepEqual(ids(T.sortPapers(rows(), "nope")), ids(T.sortPapers(rows(), "count")));
-  assert.deepEqual(plain(T.SORT_KEYS), ["title", "count", "collections"]);
+  assert.deepEqual(ids(T.sortPapers(rows(), "collections")), ids(T.sortPapers(rows(), "count")));
+  assert.deepEqual(plain(T.SORT_KEYS), ["title", "count"]);
 });
 
 // ---------------------------------------------------------------------------------------
