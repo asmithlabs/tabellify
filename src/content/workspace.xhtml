@@ -44,7 +44,8 @@
        (docs/zotero-api-notes.md, include.js row). It works the same in the tab iframe and
        in the fallback window. codebook-model.js (pure rules), codebook-store.js (file
        load/save, uses the model), tag-script-model.js (F006a: pure parser of the tag script
-       box) and tag-monitor-model.js (pure tag-monitor logic) each define one global that
+       box), script-suggest-model.js (F006b: pure suggestion logic for that box, uses the
+       parser) and tag-monitor-model.js (pure tag-monitor logic) each define one global that
        workspace.js uses, so they come before it. table-layout-model.js (F005c: pure rules
        for column/row order) and layout-store.js (F005c, ADR-0014: loads and saves
        layout.json, uses the model) also define one global each for workspace.js.
@@ -54,6 +55,7 @@
   <script src="chrome://tabellify/content/codebook-model.js"/>
   <script src="chrome://tabellify/content/codebook-store.js"/>
   <script src="chrome://tabellify/content/tag-script-model.js"/>
+  <script src="chrome://tabellify/content/script-suggest-model.js"/>
   <script src="chrome://tabellify/content/tag-monitor-model.js"/>
   <script src="chrome://tabellify/content/table-layout-model.js"/>
   <script src="chrome://tabellify/content/layout-store.js"/>
@@ -101,6 +103,13 @@
          line describe the box (aria-describedby); the error line has role="alert" so a
          screen reader reads it out when it appears.
 
+         Feature 006b: the box is a WAI-ARIA "combobox" (a text box with a list of
+         choices). While typing, workspace.js fills the <ul role="listbox"> under it with
+         suggestions (library tags, group names, "Create tag"), one <li role="option"> each,
+         as plain text. The keyboard focus stays in the box; aria-activedescendant on the
+         box names the highlighted option, aria-expanded says whether the list is open.
+         autocomplete="off" turns off the browser's own form-history dropdown.
+
          Group pills: one <li> per group ("Outcome · 3") in the table's column order,
          filled by workspace.js. Not interactive.
 
@@ -114,7 +123,10 @@
                       data-l10n-id="tabellify-script-label"></html:label>
           <html:input id="tabellify-script-input" type="text" data-action="script-input"
                       autocomplete="off" spellcheck="false"
+                      role="combobox" aria-autocomplete="list" aria-expanded="false"
+                      aria-controls="tabellify-script-suggestions"
                       aria-describedby="tabellify-script-help tabellify-script-error"/>
+          <html:ul id="tabellify-script-suggestions" role="listbox" hidden="hidden"></html:ul>
           <html:p id="tabellify-script-help" data-l10n-id="tabellify-script-help"></html:p>
           <html:p id="tabellify-script-error" role="alert" hidden="hidden"></html:p>
           <html:p id="tabellify-codebook-status" role="status" hidden="hidden">

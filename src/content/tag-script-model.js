@@ -190,6 +190,107 @@ var TabellifyTagScript = {
   },
 
   /**
+   * Feature 006b: the name being typed at the cursor ("the token"), for the suggestion list.
+   *
+   * The token is the text between the last separator (`,` or `(`) before the cursor and the
+   * next separator (`,` `(` `)`) after it. Accepting a suggestion replaces only
+   * `text.slice(start, end)`; the rest of the line stays as typed.
+   *
+   * One left-to-right scan up to the cursor (tracking quotes and brackets), then one scan
+   * forward to the end of the token: linear time, so a 10 000-character line is fine.
+   *
+   * Returns null when no list should open: the cursor is right after a `)` (no comma since),
+   * the token is followed by `(` (a group name being edited), the cursor is inside a nested
+   * group (`A(B(c`), the token has a stray quote, or `cursor` is outside 0…text.length.
+   *
+   * @param {string} text  The script box's value (untrusted)
+   * @param {number} cursor  The caret position (input.selectionStart)
+   * @returns {ScriptToken | null}
+   */
+  tokenAt(text, cursor) {
+    const s = String(text ?? "");
+    const n = s.length;
+    if (!Number.isInteger(cursor) || cursor < 0 || cursor > n) return null;
+    const isSpace = (c) => c !== undefined && /\s/.test(c);
+
+    let segStart = 0; // index just after the last , ( or ) before the cursor
+    let depth = 0; // bracket depth at the cursor (1 = inside a group)
+    let afterClose = false; // a ")" since the last comma
+    let inQuote = false; // inside "…" at the cursor
+    let groupNameRaw = "";
+    for (let i = 0; i < cursor; i++) {
+      const c = s[i];
+      if (inQuote) {
+        if (c === '"') inQuote = false;
+        continue;
+      }
+      if (c === '"') {
+        inQuote = true;
+      } else if (c === ",") {
+        segStart = i + 1;
+        afterClose = false;
+      } else if (c === "(") {
+        groupNameRaw = s.slice(segStart, i);
+        depth++;
+        segStart = i + 1;
+        afterClose = false;
+      } else if (c === ")") {
+        depth = Math.max(0, depth - 1);
+        segStart = i + 1;
+        afterClose = true;
+      }
+    }
+    if (afterClose || depth > 1) return null;
+
+    // The token's first non-space character (never past the cursor).
+    let start = segStart;
+    while (start < cursor && isSpace(s[start])) start++;
+    const quoted = s[start] === '"' && start < cursor;
+    const typed = s.slice(start, cursor);
+    // A quote anywhere else in the token (`ab"c`, or after a closed `"ab"`) is a mistake the
+    // parser reports on Enter; no suggestions for it.
+    if (quoted ? !inQuote : typed.includes('"')) return null;
+
+    let end;
+    let valueRaw;
+    const close = quoted ? s.indexOf('"', cursor) : -1;
+    if (quoted && close !== -1) {
+      end = close + 1;
+      valueRaw = s.slice(start + 1, close);
+    } else {
+      // Bare token (or a quote not closed yet): up to the next separator, spaces trimmed.
+      let j = cursor;
+      while (j < n && !',()"'.includes(s[j])) j++;
+      end = j;
+      while (end > cursor && isSpace(s[end - 1])) end--;
+      valueRaw = s.slice(quoted ? start + 1 : start, end);
+    }
+    // Followed by "(": the user is editing a group name, not typing a tag (spec non-goal).
+    let k = end;
+    while (k < n && isSpace(s[k])) k++;
+    if (s[k] === "(") return null;
+
+    const inGroup = depth === 1;
+    let groupName = "";
+    if (inGroup) {
+      groupName = groupNameRaw.trim();
+      if (groupName.length >= 2 && groupName.startsWith('"') && groupName.endsWith('"')) {
+        groupName = groupName.slice(1, -1);
+      }
+      groupName = this.clean(groupName);
+    }
+    return {
+      start,
+      end,
+      prefix: this.clean(quoted ? typed.slice(1) : typed),
+      value: this.clean(valueRaw),
+      quoted,
+      inGroup,
+      groupName,
+    };
+  },
+
+  /**
    * Zotero's tag-name cleaning: trim, then Unicode NFC (two spellings of "é" become one).
    * @param {string} name
    */
@@ -200,4 +301,12 @@ var TabellifyTagScript = {
 
 /**
  * @typedef {{ kind: "tag", name: string } | { kind: "group", name: string, tags: string[] }} ScriptItem
+ */
+
+/**
+ * The token at the cursor (Feature 006b). `prefix` is the cleaned text from the token start
+ * (after an opening quote) to the cursor; `value` is the cleaned whole token, also past the
+ * cursor (what "Create tag" inserts).
+ * @typedef {{ start: number, end: number, prefix: string, value: string, quoted: boolean,
+ *   inGroup: boolean, groupName: string }} ScriptToken
  */

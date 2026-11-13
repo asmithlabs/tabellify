@@ -51,7 +51,7 @@ tabellify-untitled = (untitled)
 
 tabellify-script-label = Tags and groups
 tabellify-script-placeholder = Exposure(heat index, temperature), age
-tabellify-script-help = Type a tag, several tags separated by commas, or Group(tag, tag), then press Enter. Your Zotero tags are never changed.
+tabellify-script-help = Type a tag, several tags separated by commas, or Group(tag, tag), then press Enter. Suggestions come from your Zotero tags: ↓ to choose, Tab to accept. Your Zotero tags are never changed.
 tabellify-script-error-unbalanced = Check the brackets: every "(" needs a matching ")".
 tabellify-script-error-empty-tag = A tag name is missing. Remove the extra comma or type a name.
 tabellify-script-error-empty-group = Type a group name before "(".
@@ -60,6 +60,16 @@ tabellify-script-error-missing-comma = Separate the entries with a comma.
 tabellify-script-error-unclosed-quote = A quotation mark (") is not closed.
 tabellify-script-error-duplicate = The same tag appears twice in this entry.
 tabellify-script-nothing-new = These tags are already in the codebook.
+# Feature 006b: the suggestion list under the script box. Names are added by workspace.js
+# as plain text ("Create tag" + ' "xyz"').
+# Screen-reader name of the suggestion list.
+tabellify-script-suggestions-label = Suggestions
+# First part of the last option, for a name that is not a Zotero tag yet.
+tabellify-script-create = Create tag
+# Muted note after "Create tag": the name goes into Tabellify's codebook, not into Zotero.
+tabellify-script-create-hint = codebook only
+# Muted note after a suggested group name.
+tabellify-script-group-hint = group
 # Follows "Codebook saved." when the entry moved tags that were already in the codebook.
 tabellify-script-moved = Some tags were moved to another group.
 # Screen-reader name of the list of group pills.

@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Tabellify states gallery (Feature 005d, spec Q8; updated for Feature 006a). NOT shipped in the .xpi.
+<!-- Tabellify states gallery (Feature 005d, spec Q8; updated for Features 006a and 006b). NOT shipped in the .xpi.
      Open this file in any web browser. It loads the real token and workspace stylesheets
      from src/content/, so what you see is what the Tabellify tab uses. It follows the
      OPERATING SYSTEM's light/dark setting (a browser page), not Zotero's Color Scheme.
@@ -103,6 +103,22 @@
            aria-describedby="tabellify-script-error"
            style="width: 100%; max-width: 60em; box-sizing: border-box; outline: var(--tabellify-focus-width) solid var(--tabellify-color-status-error); outline-offset: 0">
     <p id="tabellify-script-error" role="alert">Check the brackets: every "(" needs a matching ")".</p>
+  </div>
+  <p class="gallery-label">Suggestion list (Feature 006b): normal, highlighted, group, create</p>
+  <!-- The real list floats over the help line (position: absolute); the min-height only
+       keeps the sample from covering the next gallery section. -->
+  <div id="tabellify-script-box" style="min-height: 13em">
+    <input id="gallery-suggest-input" type="text" value="mor" role="combobox" aria-autocomplete="list"
+           aria-expanded="true" aria-controls="tabellify-script-suggestions"
+           aria-activedescendant="tabellify-script-option-1"
+           style="width: 100%; max-width: 60em; box-sizing: border-box">
+    <ul id="tabellify-script-suggestions" role="listbox" aria-label="Suggestions">
+      <li class="tabellify-suggest-option" id="gallery-option-0" role="option" aria-selected="false"><span class="tabellify-suggest-name">Morbidity</span></li>
+      <li class="tabellify-suggest-option" id="tabellify-script-option-1" role="option" aria-selected="true"><span class="tabellify-suggest-name">Mortality</span></li>
+      <li class="tabellify-suggest-option" id="gallery-option-2" role="option" aria-selected="false"><span class="tabellify-suggest-name">Mortality outcomes</span><span class="tabellify-suggest-hint">group</span></li>
+      <li class="tabellify-suggest-option" id="gallery-option-3" role="option" aria-selected="false"><span class="tabellify-suggest-name">Tumor size</span></li>
+      <li class="tabellify-suggest-option tabellify-suggest-create" id="gallery-option-4" role="option" aria-selected="false"><span class="tabellify-suggest-name">Create tag "mor"</span><span class="tabellify-suggest-hint">codebook only</span></li>
+    </ul>
   </div>
 
   <h2>Group pills</h2>

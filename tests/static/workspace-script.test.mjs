@@ -46,6 +46,15 @@
 //     formatted at start-up (including the parser's error IDs)
 //   - the script box's listeners (keydown, input; delegated on the section) are removed in
 //     onUnload; the Zotero allow-list gains no entry
+// Feature 006b (AC12) adds:
+//   - script-suggest-model.js loads after tag-script-model.js, before tag-monitor-model.js,
+//     and uses no Zotero / DOM / IOUtils globals
+//   - the script box is a combobox with a hidden listbox; option IDs are built from the
+//     option's index, never from its name
+//   - the new delegated listeners (focusin, focusout, mousedown) are removed in onUnload
+//   - the new Fluent IDs exist, start with tabellify-, and are formatted at start-up
+//   - the tag list is marked stale on "item-tag" before the no-collection early return; the
+//     Zotero allow-list above gains no entry
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -65,6 +74,7 @@ const modelJs = code("content/codebook-model.js");
 const storeJs = code("content/codebook-store.js");
 const monitorJs = code("content/tag-monitor-model.js");
 const scriptJs = code("content/tag-script-model.js");
+const suggestJs = code("content/script-suggest-model.js");
 const layoutModelJs = code("content/table-layout-model.js");
 const layoutStoreJs = code("content/layout-store.js");
 const ftlIds = new Set([...read("locale/en-US/tabellify.ftl").matchAll(/^(tabellify-[\w-]+)\s*=/gm)].map((m) => m[1]));
@@ -368,12 +378,13 @@ test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never
 // Feature 006a AC17
 // ---------------------------------------------------------------------------------------
 
-test("F006a AC17: script order is model, store, tag script, tag monitor, layout model, layout store, workspace", () => {
+test("F006a AC17 / F006b AC12: script order is model, store, tag script, suggestions, tag monitor, layout model, layout store, workspace", () => {
   const scripts = [...xhtml.matchAll(/<script\s+src="chrome:\/\/tabellify\/content\/([\w-]+\.js)"\s*\/>/g)].map((m) => m[1]);
   assert.deepEqual(scripts, [
     "codebook-model.js",
     "codebook-store.js",
     "tag-script-model.js",
+    "script-suggest-model.js",
     "tag-monitor-model.js",
     "table-layout-model.js",
     "layout-store.js",
@@ -488,4 +499,73 @@ test("F006a AC17: script box markup and listener symmetry (keydown + input on th
     assert.match(onUnload, new RegExp(`section\\?\\.removeEventListener\\("${type}", TabellifyWorkspace\\.${handler}\\)`), `${type} not removed`);
   }
   assert.doesNotMatch(js, /addEventListener\("change", this\.onCodebookChange\)/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 006b AC12
+// ---------------------------------------------------------------------------------------
+
+test("F006b AC12: script-suggest-model.js uses no Zotero / DOM / IOUtils globals", () => {
+  assert.match(suggestJs, /var TabellifyScriptSuggest\b/, "suggestion model not found (check is vacuous)");
+  assert.doesNotMatch(suggestJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
+});
+
+test("F006b AC12: the script box is a combobox with a hidden listbox", () => {
+  const input = /<html:input id="tabellify-script-input"[^>]*\/>/.exec(xhtml)?.[0] ?? "";
+  for (const attr of ['role="combobox"', 'aria-autocomplete="list"', 'aria-expanded="false"',
+    'aria-controls="tabellify-script-suggestions"', 'autocomplete="off"',
+    'aria-describedby="tabellify-script-help tabellify-script-error"']) {
+    assert.ok(input.includes(attr), `script input lacks ${attr}`);
+  }
+  assert.match(xhtml, /<html:ul id="tabellify-script-suggestions" role="listbox" hidden="hidden"><\/html:ul>/);
+  // The list sits in the script box, right after the input.
+  const box = /<html:div id="tabellify-script-box">([\s\S]*?)<\/html:div>/.exec(xhtml)?.[1] ?? "";
+  assert.match(box, /id="tabellify-script-input"[^>]*\/>\s*<html:ul id="tabellify-script-suggestions"/);
+  // Its screen-reader name is set from Fluent text.
+  assert.match(js, /el\("tabellify-script-suggestions"\)\.setAttribute\("aria-label", this\.text\("tabellify-script-suggestions-label"\)\)/);
+});
+
+test("F006b AC12: option IDs use the index, never the name; names go in with textContent", () => {
+  const ids = [...js.matchAll(/tabellify-script-option-\$\{([^}]*)\}/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ["i"], "option IDs must be built from the index only");
+  assert.match(js, /name\.textContent = option\.name;/);
+  assert.doesNotMatch(js, /\.id = [^;\n]*\.name\b/);
+});
+
+test("F006b AC12: focusin, focusout and mousedown are added on the section and removed in onUnload", () => {
+  const onUnload = /onUnload:\s*\(\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  for (const [type, handler] of [["focusin", "onCodebookFocusin"], ["focusout", "onCodebookFocusout"], ["mousedown", "onCodebookMousedown"]]) {
+    assert.match(js, new RegExp(`section\\.addEventListener\\("${type}", this\\.${handler}\\)`), `${type} not added`);
+    assert.match(onUnload, new RegExp(`section\\?\\.removeEventListener\\("${type}", TabellifyWorkspace\\.${handler}\\)`), `${type} not removed`);
+  }
+  // No new observer, timer or pref for 006b.
+  assert.equal([...js.matchAll(/Zotero\.Notifier\.registerObserver\(/g)].length, 1);
+});
+
+test("F006b AC12: new Fluent IDs exist, start with tabellify-, and are formatted at start-up", () => {
+  const list = /CODEBOOK_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const formatted = new Set([...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+  for (const id of ["tabellify-script-suggestions-label", "tabellify-script-create",
+    "tabellify-script-create-hint", "tabellify-script-group-hint"]) {
+    assert.match(id, /^tabellify-/);
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+    assert.ok(formatted.has(id), `${id} is not in CODEBOOK_STRINGS`);
+  }
+  assert.match(read("locale/en-US/tabellify.ftl"), /^tabellify-script-help = .*Suggestions come from your Zotero tags: ↓ to choose, Tab to accept\. Your Zotero tags are never changed\.$/m);
+});
+
+test("F006b AC12: item-tag marks the tag list stale before the no-collection early return; old field gone", () => {
+  const notify = /onNotify:\s*\(event, type, ids, extraData\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  const stale = notify.search(/if \(type === "item-tag"\) W\.libraryTagsStale = true;/);
+  const early = notify.search(/if \(W\.currentCollection === ""\) return;/);
+  assert.ok(stale >= 0 && early >= 0, "stale flag or early return not found");
+  assert.ok(stale < early, "the stale flag must be set before the early return");
+  // Refresh reloads the tag list before its own early return.
+  const refresh = /onRefreshClick:\s*\(\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  assert.ok(refresh.search(/W\.loadLibraryTags\(\)/) >= 0, "Refresh does not reload the tag list");
+  assert.ok(refresh.search(/W\.loadLibraryTags\(\)/) < refresh.search(/if \(W\.currentCollection === ""\) return;/));
+  assert.doesNotMatch(js, /libraryTagNames/);
+  // Still exactly one library read for the tag list (the 006a call).
+  assert.equal([...js.matchAll(/Zotero\.Tags\.getAll\(/g)].length, 1);
+  assert.match(js, /Zotero\.Tags\.getAll\(Zotero\.Libraries\.userLibraryID\)/);
 });
