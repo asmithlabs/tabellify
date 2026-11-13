@@ -1,6 +1,6 @@
 # Feature 005b: Tags used / remaining while reading a paper
 
-- **Status:** Draft
+- **Status:** Approved (owner, 2026-11-13: option A; all recommended answers to the open questions accepted)
 - **Branch:** `feat/005b-reader-tags`
 - **Related ADRs:** 0013 (Proposed: reader tag surface; **must be approved first**),
   0012 (codebook storage), 0009 (workspace tab), 0011 (security), 0003 (no bundler).

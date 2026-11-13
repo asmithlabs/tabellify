@@ -1,6 +1,6 @@
 # ADR-0013: Showing "tags used / remaining" while reading a paper
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-13: option A, item pane section)
 - **Date:** 2026-11-12
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** PRD §3 step 3, §4 "Tag monitor: panel beside the reader", §7 Q2/Q4;
