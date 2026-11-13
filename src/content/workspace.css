@@ -12,7 +12,9 @@
 }
 
 /* Feature 003: collection dropdown, status messages and the items table.
-   No colours or backgrounds: global.css system colours follow light/dark mode. */
+   No colours or backgrounds: global.css system colours follow light/dark mode. The only
+   exception is the per-paper table (Feature 005c, below): translucent text-colour tints
+   and the system colour -moz-Dialog on its cells (tests/static/l10n-and-window.test.mjs). */
 
 /* Let the content area fill the tab/window and scroll when the list is long. */
 #tabellify-workspace-main {
@@ -38,9 +40,28 @@
   max-width: 100%;
 }
 
+/* Feature 005c: table formatting.
+   - `separate` + spacing 0 instead of `collapse`: with collapsed borders Gecko paints the
+     borders on the table, not on the sticky header cells, so the header's borders would
+     scroll away. Each cell draws its right and bottom border; the table draws the outer
+     top and left edge, so lines are never doubled.
+   - `table-layout: fixed`: column widths come from the <col> elements workspace.js builds
+     (one per column, with a class per kind: grip, title, tag, count) and do not jump when
+     the rows change. <col> and not the header cells, because the first header row has
+     group cells that span several columns.
+   - Width: at least the tab's width, and wider when there are many tag columns
+     (--tabellify-tag-columns is set by workspace.js); the page then scrolls sideways
+     instead of squeezing each tag column below 5.5em. The Title column takes the rest.
+   - Colours: borders and tints are the text colour mixed with transparency
+     (`color-mix(in srgb, currentColor N%, transparent)`), so they work in light and dark
+     mode without a hard-coded colour. */
 #tabellify-items-table {
-  border-collapse: collapse;
-  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  width: max(100%, calc(24em + var(--tabellify-tag-columns, 0) * 5.5em));
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
 
 #tabellify-items-table th,
@@ -48,7 +69,90 @@
   text-align: start;
   vertical-align: top;
   padding: 4px 8px;
+  border-right: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+/* Sticky header: the header cells stay at the top of the scrolling area
+   (#tabellify-workspace-main) while the rows scroll under them. They need an OPAQUE
+   background or rows would show through: -moz-Dialog is the system window colour that
+   global.css gives the window, so it matches the page and follows light/dark mode
+   (docs/zotero-api-notes.md, "System colours" row). */
+#tabellify-items-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: -moz-Dialog;
+  border-bottom: 2px solid color-mix(in srgb, currentColor 40%, transparent);
+}
+
+/* Two header rows (owner decision 2026-11-13): group (super-tag) headers, then tag
+   headers. The group row has a fixed minimum height and its names stay on one line (cut
+   with "…", full name in the tooltip), so the tag row can stick right below it. The tag
+   row sticks 1px higher and lies above the group row, so no gap can open between them. */
+#tabellify-items-table thead th.tabellify-col-group {
+  height: 2em;
+  border-bottom-width: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tabellify-items-table thead tr.tabellify-tag-row th {
+  top: calc(2em - 1px);
+  z-index: 2;
+}
+
+/* Every other paper row is lightly tinted (workspace.js sets the class). */
+#tabellify-items-table tbody tr.tabellify-row-alt {
+  background-color: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+/* Hover helps following one row across a wide table. */
+#tabellify-items-table tbody tr:hover {
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+/* Column widths by <col> class. The title gets what the fixed columns leave. */
+#tabellify-items-table col.tabellify-col-grip { width: 2.5em; }
+#tabellify-items-table col.tabellify-col-title { width: auto; }
+#tabellify-items-table col.tabellify-col-tag { width: 5.5em; }
+#tabellify-items-table col.tabellify-col-count { width: 4.5em; }
+
+#tabellify-items-table .tabellify-col-grip {
+  padding-inline: 2px;
+  text-align: center;
+}
+
+/* Long titles and tag names (and unbroken strings such as DOIs or URLs) wrap inside their
+   column instead of widening the table. */
+#tabellify-items-table td.tabellify-col-title,
+#tabellify-items-table th.tabellify-col-tag button.tabellify-sort {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: start;
+}
+
+#tabellify-items-table td.tabellify-col-count {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tag cells: centred ✓ when the paper has the tag. The glyph comes from CSS (like the
+   grip and the sort arrows); the cell's text for screen readers and its tooltip come from
+   Fluent ("Heat index: Used" / "Not used"), set by workspace.js. */
+#tabellify-items-table td.tabellify-col-tag {
+  text-align: center;
+}
+
+#tabellify-items-table td.tabellify-tag-used::before {
+  content: "✓";
+  font-weight: bold;
+}
+
+/* A stronger line where a new group (super-tag) starts. */
+#tabellify-items-table .tabellify-group-start {
+  border-left: 2px solid color-mix(in srgb, currentColor 40%, transparent);
 }
 
 .tabellify-untitled {
@@ -260,10 +364,92 @@
   content: " ▼";
 }
 
-.tabellify-monitor-detail td {
-  padding-inline-start: 24px;
+/* Feature 005c: table toolbar, grips and drag-and-drop marks. No colours: lines and
+   outlines use the text colour (currentColor), so they follow light/dark mode. */
+
+#tabellify-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-block: 8px;
 }
 
-.tabellify-monitor-detail-group {
-  margin-block: 4px 8px;
+/* "Manual order" while the manual order is shown (aria-pressed is set by workspace.js). */
+#tabellify-table-toolbar button[aria-pressed="true"] {
+  font-weight: bold;
+  outline: 1px solid currentColor;
+}
+
+/* Grip: a decorative glyph from CSS (like the ▲/▼ sort arrows); its accessible name
+   comes from Fluent (aria-label). */
+#tabellify-items-table .tabellify-grip {
+  display: inline-block;
+  padding: 0 2px;
+  border-radius: 3px;
+  cursor: grab;
+  user-select: none;
+  opacity: 0.7;
+}
+
+#tabellify-items-table .tabellify-grip::before {
+  content: "⠿";
+}
+
+#tabellify-items-table .tabellify-grip:hover {
+  opacity: 1;
+}
+
+#tabellify-items-table .tabellify-grip:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+#tabellify-items-table th .tabellify-grip {
+  margin-inline-end: 4px;
+}
+
+/* The column or row being dragged. */
+#tabellify-items-table .tabellify-dragging {
+  opacity: 0.5;
+}
+
+/* Drop line where the dragged item will land: left/right edge of a header cell for
+   columns, top/bottom edge of a row for papers. */
+#tabellify-items-table th.tabellify-drop-before {
+  box-shadow: inset 2px 0 0 currentColor;
+}
+
+#tabellify-items-table th.tabellify-drop-after {
+  box-shadow: inset -2px 0 0 currentColor;
+}
+
+#tabellify-items-table tr.tabellify-drop-before > td {
+  box-shadow: inset 0 2px 0 currentColor;
+}
+
+#tabellify-items-table tr.tabellify-drop-after > td {
+  box-shadow: inset 0 -2px 0 currentColor;
+}
+
+/* Problems with the saved layout file (ADR-0014): message, then the file path. */
+#tabellify-layout-status {
+  font-weight: bold;
+}
+
+#tabellify-layout-status code {
+  margin-inline-start: 4px;
+  font-weight: normal;
+  word-break: break-all;
+}
+
+/* Read by screen readers, not shown (the keyboard-move announcements). */
+.tabellify-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

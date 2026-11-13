@@ -17,6 +17,9 @@
 // Feature 001–003 authorize none. Feature 004 (docs/features/004-codebook.md, AC11;
 // ADR-0012) authorizes exactly one: IOUtils writes in src/content/codebook-store.js, which
 // saves Tabellify's own codebooks.json in <data dir>/tabellify/ (never the Zotero library).
+// Feature 005c (docs/features/005c-table-layout.md, task T6; ADR-0014 §6, accepted with
+// Q1 = C) authorizes exactly one more: IOUtils writes in src/content/layout-store.js, which
+// saves Tabellify's own layout.json in the same folder (never the Zotero library).
 //
 // Pattern sources: Zotero's data-object API names (Zotero.DataObject save/erase family,
 // Zotero.Item tag/field/collection/relation setters, Zotero.Collection item membership,
@@ -90,6 +93,8 @@ export const DENYLIST = [
 const ALLOWLIST = [
   // F004: the codebook store writes codebooks.json (+ .tmp/.bak) and creates its folder.
   { file: "content/codebook-store.js", pattern: "IOUtils write", spec: "docs/features/004-codebook.md" },
+  // F005c T6 / ADR-0014: the layout store writes layout.json (+ .tmp/.bak) in the same folder.
+  { file: "content/layout-store.js", pattern: "IOUtils write", spec: "docs/decisions/0014-table-layout-storage.md" },
 ];
 
 /**
@@ -129,9 +134,10 @@ test("AC6: src/ contains no Zotero library-write calls (heuristic denylist)", ()
   assert.deepEqual(violations, [], `library-write calls found:\n${violations.join("\n")}`);
 });
 
-test("F004 AC11: the allow-list has exactly the one F004 entry, and it is really needed", () => {
+test("F004 AC11 / F005c T6: the allow-list has exactly the F004 and ADR-0014 entries, both really needed", () => {
   assert.deepEqual(ALLOWLIST, [
     { file: "content/codebook-store.js", pattern: "IOUtils write", spec: "docs/features/004-codebook.md" },
+    { file: "content/layout-store.js", pattern: "IOUtils write", spec: "docs/decisions/0014-table-layout-storage.md" },
   ]);
   // A stale entry (file no longer writes) would silently allow a future write: fail instead.
   for (const a of ALLOWLIST) {
@@ -139,8 +145,15 @@ test("F004 AC11: the allow-list has exactly the one F004 entry, and it is really
     assert.ok(hits.length > 0, `allow-list entry ${a.file} [${a.pattern}] matches nothing`);
   }
   // Only the authorized pattern is allowed there: no other write kind in the store.
-  const store = findWrites(readFileSync(join(srcDir, "content/codebook-store.js"), "utf8"));
-  assert.deepEqual(store.filter((h) => h.pattern !== "IOUtils write"), []);
+  for (const file of ["content/codebook-store.js", "content/layout-store.js"]) {
+    const store = findWrites(readFileSync(join(srcDir, file), "utf8"));
+    assert.deepEqual(store.filter((h) => h.pattern !== "IOUtils write"), [], file);
+  }
+  // The layout store writes only layout.json: its file name is fixed, and the only write
+  // target is that path (with .tmp/.bak next to it).
+  const layoutStore = readFileSync(join(srcDir, "content/layout-store.js"), "utf8");
+  assert.match(layoutStore, /FILE_NAME:\s*"layout\.json"/);
+  assert.match(layoutStore, /writeJSON\(path, clean, \{ tmpPath: path \+ "\.tmp", backupFile: path \+ "\.bak" \}\)/);
 });
 
 test("AC6: guard self-test — every denylist pattern catches a known write call", () => {

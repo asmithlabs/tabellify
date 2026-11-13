@@ -41,7 +41,6 @@ tabellify-loading-items = Loading items…
 tabellify-no-items = No papers in this collection.
 tabellify-load-error = Could not load this collection. See Help → Debug Output Logging for details.
 tabellify-column-title = Title
-tabellify-column-tags = All tags
 tabellify-untitled = (untitled)
 
 ## Workspace: codebook (Feature 004).
@@ -108,16 +107,46 @@ tabellify-monitor-all-used = All codebook tags are used.
 tabellify-monitor-papers = Papers:
 tabellify-monitor-used = Used:
 tabellify-monitor-remaining = Remaining:
-tabellify-monitor-present = Present:
 tabellify-monitor-none = none
 # Follows a number: "1 paper", "3 papers".
 tabellify-monitor-paper-one = paper
 tabellify-monitor-paper-other = papers
-tabellify-monitor-show-remaining = Show remaining
-tabellify-monitor-hide-remaining = Hide remaining
-tabellify-column-codebook = Codebook tags
-tabellify-column-in = In
-tabellify-column-details = Details
+# Last column of the per-paper table: k codebook tags used on the paper, of M in the
+# codebook (owner decision 2026-11-13). The short header keeps the column narrow; the
+# tooltip and the screen-reader name say what it means.
+tabellify-column-count = k/M
+    .title = Codebook tags used on the paper (k of M)
+    .aria-label = Codebook tags used on the paper (k of M)
+
+## Workspace: per-paper table layout (Feature 005c; codebook tag columns since the
+## owner's 2026-11-13 change).
+## `tabellify-column-move` only sets the screen-reader name (`.aria-label`) of the grip
+## column header; the visible "⠿" of every grip comes from workspace.css. The toolbar
+## buttons are set in workspace.xhtml with data-l10n-id. The other messages are read from
+## JavaScript with document.l10n.formatValue() (no arguments) and put on the page as plain
+## text, with the paper title, group or tag name and numbers added by workspace.js:
+## "Move paper:" + " <title>", "Move group:" + " <group>", "Move column:" + " <tag>",
+## "<title>" + " moved to position" + " 2 " + "of" + " 12", "<tag>: " + "Used".
+
+tabellify-column-move =
+    .aria-label = Move
+tabellify-table-move-paper = Move paper:
+tabellify-table-move-group = Move group:
+tabellify-table-move-tag = Move column:
+# Tooltip and screen-reader text of a tag cell: ✓ (the paper has the tag) or empty.
+tabellify-table-tag-used = Used
+tabellify-table-tag-not-used = Not used
+tabellify-table-manual-order = Manual order
+tabellify-table-clear-manual = Clear manual order
+tabellify-table-reset-columns = Reset columns
+tabellify-table-moved-to = moved to position
+tabellify-table-of = of
+# Saved table layout (layout.json, ADR-0014). The load-error and newer messages are
+# followed by the file's path.
+tabellify-table-layout-load-error = The saved table layout could not be read, so the default layout is shown. Layout changes will not be saved, and the file is left unchanged:
+tabellify-table-layout-newer = The saved table layout was made by a newer version of Tabellify, so the default layout is shown. Layout changes will not be saved, and the file is left unchanged:
+tabellify-table-layout-save-error = The table layout could not be saved. See Help → Debug Output Logging for details.
+tabellify-table-layout-conflict = The table layout was changed in another Tabellify tab and has been reloaded.
 
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two

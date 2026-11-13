@@ -38,8 +38,14 @@
  * workspace.js.
  */
 var TabellifyTagMonitor = {
-  /** Columns of the per-paper table that sortPapers() can sort by. */
-  SORT_KEYS: ["title", "count", "collections"],
+  /**
+   * Fixed columns of the per-paper table that sortPapers() can sort by. Each codebook tag
+   * column sorts too, with the key tagSortKey(tag) (owner decision 2026-11-13).
+   */
+  SORT_KEYS: ["title", "count"],
+
+  /** Start of the sort key of a codebook tag column: "tag:" + the tag's name. */
+  TAG_SORT_PREFIX: "tag:",
 
   /** The order shown when a collection is chosen: fewest codebook tags first. */
   DEFAULT_SORT: { key: "count", direction: "asc" },
@@ -247,26 +253,50 @@ var TabellifyTagMonitor = {
   },
 
   /**
+   * The sort key of one codebook tag column. Tag names are unique in a codebook, so the
+   * name identifies the column.
+   * @param {string} tag
+   * @returns {string}
+   */
+  tagSortKey(tag) {
+    return this.TAG_SORT_PREFIX + tag;
+  },
+
+  /**
+   * The tag a sort key stands for, or null when it is not a tag column's key.
+   * @param {string} key
+   * @returns {string | null}
+   */
+  sortKeyTag(key) {
+    return typeof key === "string" && key.startsWith(this.TAG_SORT_PREFIX) ? key.slice(this.TAG_SORT_PREFIX.length) : null;
+  },
+
+  /**
    * Sort the per-paper rows by one column. Returns a new array.
    * - "count": codebook tags on the paper (k), then title.
    * - "title": title. Untitled papers always come last (in both directions).
-   * - "collections": the "In" column (collection names joined), then title.
+   * - tagSortKey(tag): papers that have that codebook tag (✓, under the counting rule
+   *   summarize() applied) first; "desc" puts them last. Then title.
    * `direction` "desc" reverses the chosen column; the title tie-break stays A→Z, untitled
    * last, so equal rows keep a stable, readable order.
-   * @template {{ id: number, title: string, untitled: boolean, count: number, collectionNames: string[] }} P
+   * @template {{ id: number, title: string, untitled: boolean, count: number,
+   *   groups?: Array<{ present: string[] }> }} P
    * @param {P[]} papers
-   * @param {string} [key]        One of SORT_KEYS (unknown keys sort by "count")
+   * @param {string} [key]        One of SORT_KEYS or a tag column's key (unknown keys sort by "count")
    * @param {string} [direction]  "asc" (default) or "desc"
    * @returns {P[]}
    */
   sortPapers(papers, key = "count", direction = "asc") {
     const sign = direction === "desc" ? -1 : 1;
     const byTitle = (a, b) => (a.untitled - b.untitled) || this.compareText(a.title, b.title) || (a.id - b.id);
+    const tag = this.sortKeyTag(key);
     let primary;
     if (key === "title") {
       primary = (a, b) => (a.untitled - b.untitled) || sign * this.compareText(a.title, b.title);
-    } else if (key === "collections") {
-      primary = (a, b) => sign * this.compareText(a.collectionNames.join(", "), b.collectionNames.join(", "));
+    } else if (tag !== null) {
+      // 1 when the paper has the tag (its ✓ cell), else 0. `present` comes from summarize().
+      const has = (p) => ((p.groups ?? []).some((g) => (g.present ?? []).includes(tag)) ? 1 : 0);
+      primary = (a, b) => sign * (has(b) - has(a));
     } else {
       primary = (a, b) => sign * (a.count - b.count);
     }
