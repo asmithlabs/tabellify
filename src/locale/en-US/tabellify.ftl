@@ -175,9 +175,11 @@ tabellify-table-layout-conflict = The table layout was changed in another Tabell
 ## on a column's grip). Shown from JavaScript as plain text, without arguments; workspace.js
 ## adds the tag or group name after the text:
 ## "Codebook saved." + " Tag moved to another group."; "<tag>" + " moved to group" + " <group>";
-## "Move into group:" + " <group>"; "Make a new group:" + " <tag>".
+## "Move into group:" + " <group>"; "Turn into a group name:" + " <tag>".
+## A nest under a tag without a group turns that tag into a group name only: the tag leaves
+## the codebook (never Zotero) and the dragged tag joins the group.
 tabellify-regroup-joined = Tag moved to another group.
-tabellify-regroup-created = New group created.
+tabellify-regroup-created = The tag is now a group name.
 tabellify-regroup-ungrouped = Tag removed from its group.
 tabellify-regroup-announce-moved = moved to group
 tabellify-regroup-announce-ungrouped = is now ungrouped
@@ -185,7 +187,7 @@ tabellify-regroup-announce-ungrouped = is now ungrouped
 tabellify-drop-hint-reorder = Move column here
 tabellify-drop-hint-join = Move into group:
 tabellify-drop-hint-to-ungrouped = Move to Ungrouped
-tabellify-drop-hint-new-group = Make a new group:
+tabellify-drop-hint-new-group = Turn into a group name:
 tabellify-drop-hint-ungroup = Remove from its group
 
 ## Item pane / reader section "Tabellify tags" (Feature 005b).

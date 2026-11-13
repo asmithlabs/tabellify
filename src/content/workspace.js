@@ -41,8 +41,9 @@
  *   codebook's group names and "Create tag" (codebook only). What the list contains is
  *   pure logic in script-suggest-model.js (TabellifyScriptSuggest).
  * - F006c: a tag column dragged into another group's span joins that group, dropped on
- *   the cells below another tag nests under it (a new group named after that tag when it
- *   is ungrouped), and dragged up onto the group-header row becomes ungrouped; Alt+Up /
+ *   the cells below another tag nests under it (when that tag is ungrouped, it becomes
+ *   ONLY the name of a new or same-named group and leaves the codebook; owner amendment
+ *   2026-11-13), and dragged up onto the group-header row becomes ungrouped; Alt+Up /
  *   Alt+Down on its grip do the same. Each such regroup is a normal codebook edit (same
  *   save as the script box); what a drop does is pure logic in regroup-model.js
  *   (TabellifyRegroup). Reordering stays in layout.json.
@@ -713,7 +714,11 @@ var TabellifyWorkspace = {
     ungroup: "tabellify-drop-hint-ungroup",
   },
 
-  /** F006c: regroup effect → Fluent ID shown after "Codebook saved.". */
+  /**
+   * F006c: regroup effect → Fluent ID shown after "Codebook saved.". A nest (the target tag
+   * became a group name, owner amendment 2026-11-13) always uses `created`'s text, also
+   * when an existing group with that name was reused.
+   */
   REGROUP_STATUS_IDS: {
     joined: "tabellify-regroup-joined",
     created: "tabellify-regroup-created",
@@ -1371,13 +1376,16 @@ var TabellifyWorkspace = {
    * @returns {Promise<boolean>}
    */
   async applyRegroup(plan, fromGroupId, tag, how) {
-    const shown = await this.applyCodebookEdit(plan.edit, this.REGROUP_STATUS_IDS[plan.effect] ?? null);
+    const statusId = plan.nest ? this.REGROUP_STATUS_IDS.created : this.REGROUP_STATUS_IDS[plan.effect];
+    const shown = await this.applyCodebookEdit(plan.edit, statusId ?? null);
     if (!shown) return false;
     this.columnLayout = plan.layout;
     this.renderMonitor();
     this.layoutChanged();
     // IDs only: tag and group names are library/codebook text and never go to Debug Output.
     if (plan.effect === "created") this.log(`regroup: group ${plan.groupId} created by a nest (${how})`);
+    // A nest removes the target tag from the codebook (it became the group's name).
+    if (plan.nest) this.log(`regroup: the nest target tag became the name of group ${plan.groupId} and left the codebook (${how})`);
     this.log(`regroup: a tag moved from block ${fromGroupId} to block ${plan.groupId} (${how})`);
     // Screen readers: "Temperature moved to group Outcome" / "Heat index is now ungrouped".
     const group = TabellifyCodebook.findGroup(this.codebook, plan.groupId);

@@ -6,7 +6,8 @@
  * - on a tag header of its own block: reorder inside the block (F005c, layout.json only);
  * - on a tag header of another block: the tag joins that group, or becomes ungrouped;
  * - on a body cell below tag B: the tag joins B's group, or (B ungrouped) a group named B
- *   is created or reused, holding B then the tag (ADR-0016 §7);
+ *   is created or reused and the tag joins it; B then becomes ONLY that group's name: the
+ *   tag B leaves the codebook (owner amendment 2026-11-13; ADR-0016 §7);
  * - on the super-header row: the tag becomes ungrouped.
  *
  * "Plan, then apply": this file only COMPUTES what a drop would do: a new codebook object
@@ -43,7 +44,9 @@ var TabellifyRegroup = {
    * @returns {{ kind: "none" }
    *   | { kind: "reorder", layout: ColumnLayout }
    *   | { kind: "regroup", edit: { ok: true, data: object }, layout: ColumnLayout,
-   *       effect: "joined" | "created" | "ungrouped", groupId: string }
+   *       effect: "joined" | "created" | "ungrouped", groupId: string, nest: boolean }
+   * `nest: true` when B (ungrouped) became a group name: a new group (`created`) or an
+   * existing one with that name (`joined`); in both cases the tag B left the codebook.
    *   | { kind: "refused", error: string }}
    */
   plan(codebook, columnLayout, drag, target) {
@@ -66,11 +69,12 @@ var TabellifyRegroup = {
     // exactly where it was dropped (a stale saved entry for A can never win).
     const groupsAfter = TabellifyTagMonitor.codebookGroups(r.edit.data);
     const blockAfter = groupsAfter.find((g) => g.id === r.blockId);
-    const moved = r.place.pair ? r.place.pair : [A];
+    // A nest removes the tag B from the codebook: it is pruned from every saved order too.
+    const moved = r.place.nest ? [r.place.nest, A] : [A];
     const base = (shown.find((g) => g.id === r.blockId)?.tags ?? []).filter((t) => !moved.includes(t));
     let list;
-    if (r.place.pair || r.place.end) {
-      list = [...base, ...moved];
+    if (r.place.nest || r.place.end) {
+      list = [...base, A];
     } else {
       const index = this.placeIndex(base, r.place);
       list = [...base.slice(0, index), A, ...base.slice(index)];
@@ -105,14 +109,15 @@ var TabellifyRegroup = {
 
     // 4. A codebook edit that changes nothing is only a reorder (never a codebook save).
     if (JSON.stringify(r.edit.data) === JSON.stringify(codebook)) return { kind: "reorder", layout };
-    return { kind: "regroup", edit: r.edit, layout, effect: r.effect, groupId: r.blockId };
+    return { kind: "regroup", edit: r.edit, layout, effect: r.effect, groupId: r.blockId, nest: Boolean(r.place.nest) };
   },
 
   /**
    * What a drop would do, for the drop hint shown while dragging.
    * `hint`: "reorder" | "join" | "to-ungrouped" | "new-group" | "ungroup".
-   * `name`: the group joined (stored spelling) or the tag B a new group is named after,
-   * as plain text; "" for the other hints. null when the drop is refused.
+   * `name`: the group joined (stored spelling), or for "new-group" the group name tag B
+   * becomes (B itself, or the stored spelling of an existing group with that name), as
+   * plain text; "" for the other hints. null when the drop is refused.
    * @param {object | null} codebook
    * @param {{ groupId: string, tag: string }} drag
    * @param {RegroupTarget} target
@@ -134,7 +139,7 @@ var TabellifyRegroup = {
   /**
    * Classify a drop (no layout needed: which block a tag is in does not depend on it).
    * Returns null for "nothing happens" (not ours, A = B, ungroup of an ungrouped tag, …).
-   * `place`: `{ ref, side }` (before/after tag `ref`), `{ end: true }` or `{ pair: [B, A] }`.
+   * `place`: `{ ref, side }` (before/after tag `ref`), `{ end: true }` or `{ nest: B }`.
    * @returns {null | { kind: "reorder" | "regroup", edit: any, effect?: string, hint: string,
    *   name: string, blockId: string, place: any, fromBlockOfAnchor?: string }}
    */
@@ -187,14 +192,14 @@ var TabellifyRegroup = {
           hint: "join", name: block.name, blockId: block.id, place,
         };
       }
-      // B is ungrouped: nest (a new group named B, or the existing group of that name).
+      // B is ungrouped: nest. B becomes only a group name (a new group named B, or the
+      // existing group of that name); the tag B leaves the codebook and A joins the group.
       const edit = C.groupUnderTag(codebook, A, B);
       if (!edit.ok) return { kind: "regroup", edit, hint: "", name: "", blockId: U, place: null };
-      const name = C.findGroup(edit.data, edit.groupId)?.name ?? "";
       return {
         kind: "regroup", edit: { ok: true, data: edit.data },
-        effect: edit.created ? "created" : "joined", hint: edit.created ? "new-group" : "join",
-        name: edit.created ? B : name, blockId: edit.groupId, place: { pair: [B, A] },
+        effect: edit.created ? "created" : "joined", hint: "new-group",
+        name: C.findGroup(edit.data, edit.groupId)?.name ?? B, blockId: edit.groupId, place: { nest: B },
         fromBlockOfAnchor: U,
       };
     }

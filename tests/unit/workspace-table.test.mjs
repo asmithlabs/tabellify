@@ -1044,7 +1044,7 @@ const REGROUP_STRINGS = {
   "tabellify-drop-hint-reorder": "Move column here",
   "tabellify-drop-hint-join": "Move into group:",
   "tabellify-drop-hint-to-ungrouped": "Move to Ungrouped",
-  "tabellify-drop-hint-new-group": "Make a new group:",
+  "tabellify-drop-hint-new-group": "Turn into a group name:",
   "tabellify-drop-hint-ungroup": "Remove from its group",
   "tabellify-regroup-announce-moved": "moved to group",
   "tabellify-regroup-announce-ungrouped": "is now ungrouped",
@@ -1172,7 +1172,7 @@ test("006c AC14: dragover a body cell = the whole column of B outlined, nest hin
   const index = bodyCell(document, "age").cellIndex;
   for (const tr of bodyRows(document)) assert.equal(hasClass(tr.children[index], "tabellify-drop-nest"), true);
   assert.equal(marked(document).length, 1 + bodyRows(document).length);
-  assert.equal(hint.textContent, "Make a new group: age");
+  assert.equal(hint.textContent, "Turn into a group name: age");
 });
 
 test("006c AC14: dragover a super-header cell = every group header dashed, ungroup hint", () => {
@@ -1267,16 +1267,35 @@ test("006c AC14: a regroup drop saves the codebook once and changes the layout o
   assert.ok(!debug.some((m) => m.includes("regroup:") && /Temperature|Outcome|Exposure/.test(m)));
 });
 
-test("006c AC14: a nest drop creates the group (status and Debug Output say so)", async () => {
-  const { W, document, debug } = regroupSetup();
+test("006c AC14 (amended): a nest drop makes B only a group name: no B column, B gone from the codebook", async () => {
+  const { W, document, debug, files } = regroupSetup();
   startTagDrag(W, document, "sex");
   W.onTableDrop(dragEvent(bodyCell(document, "age")));
   await tick();
-  assert.deepEqual(groupHeaders(document), ["grip", "title", "group:g9/2", "group:g2/2", "group:g3/2", "count"]);
-  assert.deepEqual(tagHeaders(document), ["age", "sex", "Heat index", "Temperature", "Hospitalization", "Mortality"]);
+  assert.deepEqual(groupHeaders(document), ["grip", "title", "group:g9/1", "group:g2/2", "group:g3/2", "count"]);
+  assert.deepEqual(tagHeaders(document), ["sex", "Heat index", "Temperature", "Hospitalization", "Mortality"]);
+  const saved = JSON.parse(files.get("/d/codebooks.json"));
+  assert.deepEqual(saved.codebooks[0].groups.at(-1), { id: "g9", name: "age" });
+  assert.equal(saved.codebooks[0].tags.some((t) => t.name === "age"), false, "tag age left the codebook");
+  assert.deepEqual(pills(document), ["age · 1", "Exposure · 2", "Outcome · 2"]);
   assert.equal(document.getElementById("tabellify-codebook-status-text").textContent,
     "tabellify-codebook-saved tabellify-regroup-created");
   assert.ok(debug.includes("Tabellify: workspace: regroup: group g9 created by a nest (drag)"), debug.join("\n"));
+  assert.ok(debug.includes("Tabellify: workspace: regroup: the nest target tag became the name of group g9 and left the codebook (drag)"));
+});
+
+test("006c AC14 (amended): a nest into a same-named group reuses it and says the tag is now a group name", async () => {
+  const groups = [{ id: "g2", name: "Country", tags: [] }];
+  const { W, document, files } = regroupSetup({ groups, ungrouped: ["country", "region"] });
+  startTagDrag(W, document, "region");
+  W.onTableDrop(dragEvent(bodyCell(document, "country")));
+  await tick();
+  const saved = JSON.parse(files.get("/d/codebooks.json"));
+  assert.deepEqual(saved.codebooks[0].groups, [{ id: "g2", name: "Country" }], "no second group");
+  assert.deepEqual(saved.codebooks[0].tags, [{ name: "region", group: "g2" }]);
+  assert.deepEqual(tagHeaders(document), ["region"]);
+  assert.equal(document.getElementById("tabellify-codebook-status-text").textContent,
+    "tabellify-codebook-saved tabellify-regroup-created");
 });
 
 test("006c AC14: on a save conflict the codebook is reloaded and the layout is NOT changed", async () => {
@@ -1328,7 +1347,8 @@ test("006c AC14: Alt+Up / Alt+Down on a tag grip give the same plans as the drop
   altKey(s.W, regroupTagGrip(s.document, "Heat index"), "ArrowDown");
   await tick();
   assert.equal(tagTh(s.document, "Heat index").dataset.groupId, "g9");
-  assert.deepEqual(groupHeaders(s.document), ["grip", "title", "group:ungrouped/1", "group:g9/2", "group:g2/1", "group:g3/2", "count"]);
+  assert.deepEqual(groupHeaders(s.document), ["grip", "title", "group:ungrouped/1", "group:g9/1", "group:g2/1", "group:g3/2", "count"]);
+  assert.equal(tagTh(s.document, "sex"), undefined, "sex is now only the group's name");
   assert.equal(s.document.byId.get("tabellify-table-announce").textContent, "Heat index moved to group sex");
 });
 
@@ -1352,7 +1372,7 @@ test("006c AC14: names with markup reach the hint and announcements only as text
   const s = regroupSetup({ ungrouped: [evil, "sex"] });
   startTagDrag(s.W, s.document, "sex");
   s.W.onTableDragOver(dragEvent(bodyCell(s.document, evil)));
-  assert.equal(s.hint.textContent, `Make a new group: ${evil}`);
+  assert.equal(s.hint.textContent, `Turn into a group name: ${evil}`);
   assert.equal(s.hint.children.length, 0, "plain text, no child elements");
   s.W.endDrag();
   altKey(s.W, regroupTagGrip(s.document, "sex"), "ArrowDown");
