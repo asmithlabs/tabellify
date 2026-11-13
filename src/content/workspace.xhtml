@@ -45,12 +45,15 @@
        (docs/zotero-api-notes.md, include.js row). It works the same in the tab iframe and
        in the fallback window. codebook-model.js (pure rules), codebook-store.js (file
        load/save, uses the model) and tag-monitor-model.js (pure tag-monitor logic) each
-       define one global that workspace.js uses, so they come before it. workspace.js only waits for "load" here, so the elements further
-       down exist when it starts. -->
+       define one global that workspace.js uses, so they come before it. table-layout-model.js
+       (F005c: pure rules for column/row order) also defines one global for workspace.js.
+       workspace.js only waits for "load" here, so the elements further down exist when it
+       starts. -->
   <script src="chrome://zotero/content/include.js"/>
   <script src="chrome://tabellify/content/codebook-model.js"/>
   <script src="chrome://tabellify/content/codebook-store.js"/>
   <script src="chrome://tabellify/content/tag-monitor-model.js"/>
+  <script src="chrome://tabellify/content/table-layout-model.js"/>
   <script src="chrome://tabellify/content/workspace.js"/>
 
   <html:main id="tabellify-workspace-main">
@@ -134,20 +137,24 @@
     <html:table id="tabellify-items-table" hidden="hidden">
       <html:thead>
         <html:tr>
-          <html:th scope="col">
+          <html:th scope="col" class="tabellify-col-title" data-column="title">
             <html:button class="tabellify-sort" data-sort="title"
                          data-l10n-id="tabellify-column-title"></html:button>
           </html:th>
-          <html:th scope="col">
+          <html:th scope="col" class="tabellify-col-count" data-column="count">
             <html:button class="tabellify-sort" data-sort="count"
                          data-l10n-id="tabellify-column-codebook"></html:button>
           </html:th>
-          <html:th scope="col">
+          <html:th scope="col" class="tabellify-col-collections" data-column="collections">
             <html:button class="tabellify-sort" data-sort="collections"
                          data-l10n-id="tabellify-column-in"></html:button>
           </html:th>
-          <html:th scope="col" data-l10n-id="tabellify-column-tags"></html:th>
-          <html:th scope="col" data-l10n-id="tabellify-column-details"></html:th>
+          <html:th scope="col" class="tabellify-col-tags" data-column="tags">
+            <html:span class="tabellify-column-label" data-l10n-id="tabellify-column-tags"></html:span>
+          </html:th>
+          <html:th scope="col" class="tabellify-col-details" data-column="details">
+            <html:span class="tabellify-column-label" data-l10n-id="tabellify-column-details"></html:span>
+          </html:th>
         </html:tr>
       </html:thead>
       <html:tbody id="tabellify-items-body"></html:tbody>

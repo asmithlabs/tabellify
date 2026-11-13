@@ -597,17 +597,19 @@ var TabellifyWorkspace = {
     const columns = 5;
     for (const paper of TabellifyTagMonitor.sortPapers(result.papers, this.sortKey, this.sortDirection)) {
       const tr = this.html("tr");
-      const title = this.html("td");
+      // F005c: each cell carries its column class (tabellify-col-<id>), which sets its
+      // width and wrapping in workspace.css.
+      const title = this.html("td", "tabellify-col-title");
       // `textContent` puts the string in as text, never as markup (see SECURITY above).
       title.textContent = paper.untitled ? this.untitledText : paper.title;
       if (paper.untitled) title.classList.add("tabellify-untitled");
-      const count = this.html("td", "tabellify-monitor-count");
+      const count = this.html("td", "tabellify-col-count tabellify-monitor-count");
       count.textContent = counting ? `${paper.count}/${paper.total}` : "–";
-      const inCell = this.html("td");
+      const inCell = this.html("td", "tabellify-col-collections");
       inCell.textContent = paper.collectionNames.join(", ");
-      const tags = this.html("td");
+      const tags = this.html("td", "tabellify-col-tags");
       tags.textContent = this.monitorData.allTags.get(paper.id) ?? "";
-      const toggleCell = this.html("td");
+      const toggleCell = this.html("td", "tabellify-col-details");
       const expanded = counting && this.expandedPaperIds.has(paper.id);
       const detailId = `tabellify-paper-detail-${paper.id}`;
       if (counting) {
@@ -642,6 +644,14 @@ var TabellifyWorkspace = {
         body.append(detail);
       }
     }
+
+    // F005c: shade every other paper row; a detail row copies its paper (pure rule in
+    // TabellifyTableLayout.stripeFlags, so detail rows do not break the alternation).
+    const rows = [...body.children];
+    const flags = TabellifyTableLayout.stripeFlags(
+      rows.map((row) => (row.classList.contains("tabellify-monitor-detail") ? "detail" : "paper")),
+    );
+    rows.forEach((row, i) => row.classList.toggle("tabellify-row-alt", flags[i]));
   },
 
   // ---------------------------------------------------------------------------------------

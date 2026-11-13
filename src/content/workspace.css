@@ -12,7 +12,9 @@
 }
 
 /* Feature 003: collection dropdown, status messages and the items table.
-   No colours or backgrounds: global.css system colours follow light/dark mode. */
+   No colours or backgrounds: global.css system colours follow light/dark mode. The only
+   exception is the per-paper table (Feature 005c, below): translucent text-colour tints
+   and the system colour -moz-Dialog on its cells (tests/static/l10n-and-window.test.mjs). */
 
 /* Let the content area fill the tab/window and scroll when the list is long. */
 #tabellify-workspace-main {
@@ -38,9 +40,24 @@
   max-width: 100%;
 }
 
+/* Feature 005c: table formatting.
+   - `separate` + spacing 0 instead of `collapse`: with collapsed borders Gecko paints the
+     borders on the table, not on the sticky header cells, so the header's borders would
+     scroll away. Each cell draws its right and bottom border; the table draws the outer
+     top and left edge, so lines are never doubled.
+   - `table-layout: fixed`: column widths come from the header cells' classes (below) and
+     do not jump when the rows change. Widths follow the column CLASS, not its position,
+     so they move with a column that is dragged elsewhere.
+   - Colours: borders and tints are the text colour mixed with transparency
+     (`color-mix(in srgb, currentColor N%, transparent)`), so they work in light and dark
+     mode without a hard-coded colour. */
 #tabellify-items-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
   width: 100%;
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
 
 #tabellify-items-table th,
@@ -48,7 +65,58 @@
   text-align: start;
   vertical-align: top;
   padding: 4px 8px;
+  border-right: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+/* Sticky header: the header cells stay at the top of the scrolling area
+   (#tabellify-workspace-main) while the rows scroll under them. They need an OPAQUE
+   background or rows would show through: -moz-Dialog is the system window colour that
+   global.css gives the window, so it matches the page and follows light/dark mode
+   (docs/zotero-api-notes.md, "System colours" row). */
+#tabellify-items-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: -moz-Dialog;
+  border-bottom: 2px solid color-mix(in srgb, currentColor 40%, transparent);
+}
+
+/* Every other paper row is lightly tinted (workspace.js sets the class; a paper's
+   "Show remaining" row gets the same class as its paper). */
+#tabellify-items-table tbody tr.tabellify-row-alt {
+  background-color: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+/* Hover helps following one row across a wide table. */
+#tabellify-items-table tbody tr:hover {
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+/* Column widths by column class. The Codebook-tags count is short; the title gets the
+   most room; "All tags" takes what is left. */
+#tabellify-items-table .tabellify-col-grip {
+  width: 2.5em;
+  padding-inline: 2px;
+  text-align: center;
+}
+#tabellify-items-table .tabellify-col-title { width: 38%; }
+#tabellify-items-table .tabellify-col-count { width: 7em; }
+#tabellify-items-table .tabellify-col-collections { width: 18%; }
+#tabellify-items-table .tabellify-col-tags { width: auto; }
+#tabellify-items-table .tabellify-col-details { width: 10em; }
+
+/* Long titles, collection lists and tag lists (and unbroken strings such as DOIs or URLs)
+   wrap inside their column instead of widening the table. */
+#tabellify-items-table td.tabellify-col-title,
+#tabellify-items-table td.tabellify-col-collections,
+#tabellify-items-table td.tabellify-col-tags {
+  overflow-wrap: anywhere;
+}
+
+#tabellify-items-table td.tabellify-col-count {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .tabellify-untitled {

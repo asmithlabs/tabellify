@@ -6,7 +6,8 @@
 //   - the workspace window's `windowtype` matches what tabellify.js looks for
 //   - the chrome:// URL that tabellify.js opens maps to a real file in src/content/
 //   - workspace.xhtml loads chrome://global/skin/global.css before <window> (opaque window
-//     background), and workspace.css sets no background of its own (docs/zotero-api-notes.md)
+//     background), and workspace.css sets no background of its own (docs/zotero-api-notes.md),
+//     except on the per-paper table (F005c, narrowed rule below)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -97,11 +98,77 @@ test("AC4 (static): workspace.xhtml loads global.css via <?xml-stylesheet?> befo
   assert.ok(pi < root, "the global.css processing instruction must come before <window>");
 });
 
-test("AC4 (static): workspace.css sets no background or background-color", () => {
-  // Owner-approved design: the background comes from global.css system colours, which
-  // follow Zotero's light/dark setting. A hard-coded background would break dark mode.
-  const css = workspaceCss.replace(/\/\*[\s\S]*?\*\//g, "");
-  assert.doesNotMatch(css, /(^|[;{\s])background(-color)?\s*:/i);
+/**
+ * F005c (docs/features/005c-table-layout.md, "The no-background test", option A, owner-
+ * approved as Q4): a background is allowed in workspace.css ONLY
+ *   1. on rules whose every selector starts with `#tabellify-items-table`, and
+ *   2. with a value that is a translucent text-colour tint
+ *      `color-mix(in srgb, currentColor <N>%, transparent)` or the system colour
+ *      `-moz-Dialog` / `Canvas`.
+ * Everything else stays forbidden: a background on :root, window, #tabellify-workspace-main
+ * or anywhere else (the window background comes from global.css; a hard-coded colour breaks
+ * dark mode or makes the window see-through), and any literal colour (hex, rgb(), hsl(),
+ * named colours).
+ * @param {string} cssText
+ * @returns {string[]}  One message per forbidden background declaration
+ */
+function backgroundViolations(cssText) {
+  const css = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+  const declRe = /(^|[;{\s])background(?:-color)?\s*:\s*([^;}]*)/gi;
+  const allowedValue = /^(?:color-mix\(\s*in\s+srgb\s*,\s*currentColor\s+\d{1,3}(?:\.\d+)?%\s*,\s*transparent\s*\)|-moz-Dialog|Canvas)$/i;
+  const allowedSelector = /^#tabellify-items-table(?![\w-])/;
+  const violations = [];
+  let seen = 0;
+  // Innermost rules only ("selectors { declarations }"); inside @media this still finds
+  // the inner rule with its own selectors.
+  for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    const selectors = rule[1].trim().split(",").map((x) => x.trim());
+    for (const decl of rule[2].matchAll(declRe)) {
+      seen++;
+      const value = decl[2].trim();
+      if (!selectors.every((x) => allowedSelector.test(x))) {
+        violations.push(`background outside #tabellify-items-table: ${rule[1].trim()}`);
+      } else if (!allowedValue.test(value)) {
+        violations.push(`background value not allowed: ${value}`);
+      }
+    }
+  }
+  // A declaration outside any rule (broken CSS) must not slip through.
+  const total = [...css.matchAll(declRe)].length;
+  if (total !== seen) violations.push(`${total - seen} background declaration(s) outside a rule`);
+  return violations;
+}
+
+test("AC4 / F005c AC12 (static): workspace.css backgrounds only on table cells, tints/system colours only", () => {
+  assert.deepEqual(backgroundViolations(workspaceCss), []);
+  // The F005c rules really are there (otherwise this test proves nothing new).
+  assert.match(workspaceCss, /#tabellify-items-table thead th\s*\{[^}]*background-color:\s*-moz-Dialog/);
+  assert.match(workspaceCss, /tr\.tabellify-row-alt\s*\{[^}]*background-color:\s*color-mix\(in srgb, currentColor 6%, transparent\)/);
+});
+
+test("F005c AC12: self-check — the background rule still rejects what it was written for", () => {
+  const bad = [
+    "#tabellify-items-table td { background: #fff; }",
+    "#tabellify-items-table td { background-color: rgb(255, 255, 255); }",
+    "#tabellify-items-table td { background-color: hsl(0 0% 100%); }",
+    "#tabellify-items-table td { background-color: white; }",
+    "#tabellify-items-table td { background: color-mix(in srgb, red 10%, transparent); }",
+    "#tabellify-items-table td { background: color-mix(in srgb, currentColor 6%, white); }",
+    ":root { background-color: -moz-Dialog; }",
+    "window { background: Canvas; }",
+    "#tabellify-workspace-main { background-color: color-mix(in srgb, currentColor 6%, transparent); }",
+    "#tabellify-items-table td, .other { background-color: Canvas; }",
+    "#tabellify-items-tablex td { background-color: Canvas; }",
+    "@media (prefers-color-scheme: dark) { :root { background: #000; } }",
+  ];
+  for (const css of bad) assert.ok(backgroundViolations(css).length > 0, `not rejected: ${css}`);
+  const good = [
+    "#tabellify-items-table thead th { background-color: -moz-Dialog; }",
+    "#tabellify-items-table td { background: Canvas; }",
+    "#tabellify-items-table tbody tr:hover { background-color: color-mix(in srgb, currentColor 10%, transparent); }",
+    "/* background: red; */ #tabellify-items-table td { color: inherit; }",
+  ];
+  for (const css of good) assert.deepEqual(backgroundViolations(css), [], `wrongly rejected: ${css}`);
 });
 
 test("F005b AC12: the reader section's Fluent IDs exist (header .label, side-nav .tooltiptext)", () => {
