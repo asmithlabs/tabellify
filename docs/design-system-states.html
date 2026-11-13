@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Tabellify states gallery (Feature 005d, spec Q8; updated for Features 006a and 006b). NOT shipped in the .xpi.
+<!-- Tabellify states gallery (Feature 005d, spec Q8; updated for Features 006a, 006b and 006c). NOT shipped in the .xpi.
      Open this file in any web browser. It loads the real token and workspace stylesheets
      from src/content/, so what you see is what the Tabellify tab uses. It follows the
      OPERATING SYSTEM's light/dark setting (a browser page), not Zotero's Color Scheme.
@@ -252,6 +252,84 @@
         <td class="tabellify-col-tag" aria-label="sex: Not used"></td>
         <td class="tabellify-col-tag tabellify-group-start" aria-label="Heat index: Not used"></td>
         <td class="tabellify-col-count tabellify-monitor-count">1/3</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Regroup drop marks (Feature 006c)</h2>
+  <p class="gallery-label">While a tag column is dragged: the toolbar hint, then the three marks. Each differs by shape, not only colour.</p>
+  <div id="tabellify-table-toolbar">
+    <button type="button">Reset columns</button>
+    <span id="tabellify-drop-hint">Move into group: Outcome</span>
+  </div>
+  <p class="gallery-label">Join another group sideways: drop line after "Hospitalization" and a line under "Outcome"</p>
+  <table class="tabellify-grid">
+    <thead>
+      <tr class="tabellify-group-row">
+        <th scope="col" rowspan="2" class="tabellify-col-title"><button type="button" class="tabellify-sort">Title</button></th>
+        <th scope="colgroup" colspan="1" class="tabellify-col-group tabellify-group-start"><span>Exposure</span></th>
+        <th scope="colgroup" colspan="2" class="tabellify-col-group tabellify-group-start tabellify-drop-into"><span>Outcome</span></th>
+      </tr>
+      <tr class="tabellify-tag-row">
+        <th scope="col" class="tabellify-col-tag tabellify-group-start tabellify-dragging"><button type="button" class="tabellify-sort">Temperature</button></th>
+        <th scope="col" class="tabellify-col-tag tabellify-group-start tabellify-drop-after"><button type="button" class="tabellify-sort">Hospitalization</button></th>
+        <th scope="col" class="tabellify-col-tag"><button type="button" class="tabellify-sort">Mortality</button></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="tabellify-col-title">A paper</td>
+        <td class="tabellify-col-tag tabellify-group-start" aria-label="Temperature: Not used"></td>
+        <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="Hospitalization: Used"></td>
+        <td class="tabellify-col-tag" aria-label="Mortality: Not used"></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="gallery-label">Nest below a tag ("Make a new group: age"): lines on both sides of the whole "age" column</p>
+  <table class="tabellify-grid">
+    <thead>
+      <tr class="tabellify-group-row">
+        <th scope="col" rowspan="2" class="tabellify-col-title"><button type="button" class="tabellify-sort">Title</button></th>
+        <th scope="colgroup" colspan="2" class="tabellify-col-group tabellify-group-start tabellify-col-group-ungrouped" aria-label="Ungrouped tags"></th>
+      </tr>
+      <tr class="tabellify-tag-row">
+        <th scope="col" class="tabellify-col-tag tabellify-group-start tabellify-drop-nest"><button type="button" class="tabellify-sort">age</button></th>
+        <th scope="col" class="tabellify-col-tag tabellify-dragging"><button type="button" class="tabellify-sort">sex</button></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="tabellify-col-title">A paper</td>
+        <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used tabellify-drop-nest" aria-label="age: Used"></td>
+        <td class="tabellify-col-tag" aria-label="sex: Not used"></td>
+      </tr>
+      <tr class="tabellify-row-alt">
+        <td class="tabellify-col-title">Another paper</td>
+        <td class="tabellify-col-tag tabellify-group-start tabellify-drop-nest" aria-label="age: Not used"></td>
+        <td class="tabellify-col-tag tabellify-tag-used" aria-label="sex: Used"></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="gallery-label">Ungroup ("Remove from its group"): a dashed outline inside every group header</p>
+  <table class="tabellify-grid">
+    <thead>
+      <tr class="tabellify-group-row">
+        <th scope="col" rowspan="2" class="tabellify-col-title"><button type="button" class="tabellify-sort">Title</button></th>
+        <th scope="colgroup" colspan="1" class="tabellify-col-group tabellify-group-start tabellify-col-group-ungrouped tabellify-drop-ungroup" aria-label="Ungrouped tags"></th>
+        <th scope="colgroup" colspan="2" class="tabellify-col-group tabellify-group-start tabellify-drop-ungroup"><span>Exposure</span></th>
+      </tr>
+      <tr class="tabellify-tag-row">
+        <th scope="col" class="tabellify-col-tag tabellify-group-start"><button type="button" class="tabellify-sort">age</button></th>
+        <th scope="col" class="tabellify-col-tag tabellify-group-start tabellify-dragging"><button type="button" class="tabellify-sort">Heat index</button></th>
+        <th scope="col" class="tabellify-col-tag"><button type="button" class="tabellify-sort">Temperature</button></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="tabellify-col-title">A paper</td>
+        <td class="tabellify-col-tag tabellify-group-start" aria-label="age: Not used"></td>
+        <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="Heat index: Used"></td>
+        <td class="tabellify-col-tag" aria-label="Temperature: Not used"></td>
       </tr>
     </tbody>
   </table>

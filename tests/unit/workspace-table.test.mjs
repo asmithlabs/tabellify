@@ -140,6 +140,11 @@ class FakeElement {
     return null;
   }
   focus() { this.focused = true; activeElement = this; }
+  // F006c: table cells and rows. cellIndex = position in the row; cells = the row's cells.
+  get cellIndex() { return this.parentNode ? this.parentNode.children.indexOf(this) : -1; }
+  get cells() { return this.children.filter((c) => c.localName === "td" || c.localName === "th"); }
+  // Every element is 100px wide at x = 0 (drop side: clientX < 50 is "before").
+  getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 20, right: 100, bottom: 20 }; }
   // Text inputs (the script box): the selected range, set by setSelectionRange.
   setSelectionRange(start, end) {
     this.selection = [start, end];
@@ -205,7 +210,7 @@ function load() {
   const Zotero = { debug: (m) => debug.push(m), logError: () => {} };
   const sandbox = vm.createContext({ document, Zotero });
   for (const name of ["codebook-model.js", "codebook-store.js", "tag-script-model.js", "script-suggest-model.js",
-    "tag-monitor-model.js", "table-layout-model.js", "workspace.js"]) {
+    "tag-monitor-model.js", "table-layout-model.js", "regroup-model.js", "workspace.js"]) {
     const file = join(contentDir, name);
     vm.runInContext(readFileSync(file, "utf8"), sandbox, { filename: file });
   }
@@ -228,7 +233,7 @@ function load() {
   W.layoutEditable = false; // no layout file in these tests: layoutChanged() does nothing
   return {
     W, T: sandbox.TabellifyTagMonitor, L: sandbox.TabellifyTableLayout, C: sandbox.TabellifyCodebook,
-    S: sandbox.TabellifyScriptSuggest, Zotero, document, debug,
+    S: sandbox.TabellifyScriptSuggest, R: sandbox.TabellifyRegroup, Zotero, document, debug,
   };
 }
 
@@ -1022,4 +1027,338 @@ test("F006b AC11: focus with a stale list reloads it once, then refreshes the su
   s.W.onRefreshClick();
   await tick();
   assert.equal(calls, 2);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 006c AC14: drag regrouping in the table (and Alt+Up / Alt+Down on a tag grip)
+// ---------------------------------------------------------------------------------------
+
+/** The spec's Setup: Exposure(Heat index, Temperature), Outcome(Hospitalization, Mortality), age, sex. */
+const REGROUP_GROUPS = () => [
+  { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
+  { id: "g3", name: "Outcome", tags: ["Hospitalization", "Mortality"] },
+];
+
+/** Test text for the 006c Fluent IDs (as the real tabellify.ftl). */
+const REGROUP_STRINGS = {
+  "tabellify-drop-hint-reorder": "Move column here",
+  "tabellify-drop-hint-join": "Move into group:",
+  "tabellify-drop-hint-to-ungrouped": "Move to Ungrouped",
+  "tabellify-drop-hint-new-group": "Make a new group:",
+  "tabellify-drop-hint-ungroup": "Remove from its group",
+  "tabellify-regroup-announce-moved": "moved to group",
+  "tabellify-regroup-announce-ungrouped": "is now ungrouped",
+};
+
+/**
+ * A table with the Setup codebook, a fake codebooks.json on a fake disk (so a regroup really
+ * goes through the save path) and a scrollable main area for the drag auto-scroll.
+ * @param {{ onDiskRevision?: number, ungrouped?: string[], groups?: object[] }} [options]
+ */
+function regroupSetup({ onDiskRevision = 1, ungrouped = ["age", "sex"], groups = REGROUP_GROUPS() } = {}) {
+  const env = setup({ groups, ungrouped });
+  const { W, document } = env;
+  Object.assign(W.strings, REGROUP_STRINGS);
+  const data = codebookData(groups, ungrouped);
+  const files = new Map([["/d/codebooks.json", JSON.stringify({ ...data, revision: onDiskRevision })]]);
+  const writes = [];
+  W.codebookFs = {
+    readJSON: async (path) => {
+      if (!files.has(path)) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
+      return JSON.parse(files.get(path));
+    },
+    writeJSON: async (path, value, options) => {
+      writes.push(path);
+      if (options?.backupFile && files.has(path)) files.set(options.backupFile, files.get(path));
+      files.set(path, JSON.stringify(value));
+    },
+    makeDirectory: async () => {},
+    join: (...parts) => parts.join("/"),
+  };
+  W.codebookDir = "/d";
+  W.codebook = data;
+  W.codebookRevision = data.revision;
+  W.codebookEditable = true;
+  W.renderMonitor();
+  document.getElementById("tabellify-workspace-main").scrollBy = () => {};
+  // As in workspace.xhtml: the drop hint starts hidden.
+  document.getElementById("tabellify-drop-hint").hidden = true;
+  return { ...env, files, writes, hint: document.getElementById("tabellify-drop-hint") };
+}
+
+const COLUMN_TYPES = ["application/x-tabellify-column"];
+/** A fake drag event at `target` (clientX 80 = right half of a 100px cell). */
+function dragEvent(target, { clientX = 80, types = COLUMN_TYPES } = {}) {
+  return {
+    target, clientX, clientY: 10, prevented: false,
+    dataTransfer: { types, dropEffect: "", effectAllowed: "", setData() {}, setDragImage() {} },
+    preventDefault() { this.prevented = true; },
+  };
+}
+/** Start a drag on tag column `tag`'s grip (the real onTableDragStart). */
+function startTagDrag(W, doc, tag) {
+  W.onTableDragStart(dragEvent(regroupTagGrip(doc, tag)));
+  assert.equal(W.dragging?.kind, "tag");
+}
+/** Tag header cells live in the tag row (two rows) or the group row (one row). */
+function tagTh(doc, tag) {
+  return [...headerRow(doc, "tabellify-items-tag-row"), ...headerRow(doc, "tabellify-items-group-row")]
+    .find((th) => th.dataset.tag === tag);
+}
+const regroupTagGrip = (doc, tag) => tagTh(doc, tag).querySelector(".tabellify-grip");
+const superTh = (doc, id) => headerRow(doc, "tabellify-items-group-row").find((th) => th.dataset.groupId === id && !th.hasAttribute("data-tag"));
+/** The body cell of column `tag` in the first row. */
+const bodyCell = (doc, tag) => bodyRows(doc)[0].children.find((td) => td.dataset.tag === tag);
+const hasClass = (el, cls) => el.classList.contains(cls);
+/** Every element in the table that carries one of the drop classes. */
+function marked(doc) {
+  return doc.byId.get("tabellify-items-table").descendants()
+    .filter((el) => ["tabellify-drop-before", "tabellify-drop-after", "tabellify-drop-into", "tabellify-drop-nest", "tabellify-drop-ungroup"]
+      .some((c) => el.classList.contains(c)));
+}
+const plainJson = (v) => JSON.parse(JSON.stringify(v));
+
+test("006c AC14: body tag cells carry their column (data-group-id, data-tag)", () => {
+  const { document } = regroupSetup();
+  const cells = bodyRows(document)[0].children.filter((td) => td.classList.contains("tabellify-col-tag"));
+  assert.deepEqual(cells.map((td) => [td.dataset.groupId, td.dataset.tag]), [
+    ["ungrouped", "age"], ["ungrouped", "sex"], ["g2", "Heat index"], ["g2", "Temperature"],
+    ["g3", "Hospitalization"], ["g3", "Mortality"],
+  ]);
+});
+
+test("006c AC14: tag grips list the four Alt keys; group grips keep two", () => {
+  const { document } = regroupSetup();
+  assert.equal(regroupTagGrip(document, "Temperature").getAttribute("aria-keyshortcuts"),
+    "Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown");
+  assert.equal(superTh(document, "g2").querySelector(".tabellify-grip").getAttribute("aria-keyshortcuts"),
+    "Alt+ArrowLeft Alt+ArrowRight");
+});
+
+test("006c AC14: dragover a tag header of the same block = reorder line and 'Move column here'", () => {
+  const { W, document, hint } = regroupSetup();
+  startTagDrag(W, document, "Temperature");
+  const ev = dragEvent(tagTh(document, "Heat index"), { clientX: 10 });
+  W.onTableDragOver(ev);
+  assert.equal(ev.prevented, true);
+  assert.equal(hasClass(tagTh(document, "Heat index"), "tabellify-drop-before"), true);
+  assert.equal(marked(document).length, 1, "no group mark for a reorder");
+  assert.equal(hint.hidden, false);
+  assert.equal(hint.textContent, "Move column here");
+});
+
+test("006c AC14: dragover a tag header of another group = line + mark under that group + join hint", () => {
+  const { W, document, hint } = regroupSetup();
+  startTagDrag(W, document, "Temperature");
+  const ev = dragEvent(tagTh(document, "Hospitalization"));
+  W.onTableDragOver(ev);
+  assert.equal(ev.prevented, true);
+  assert.equal(hasClass(tagTh(document, "Hospitalization"), "tabellify-drop-after"), true);
+  assert.equal(hasClass(superTh(document, "g3"), "tabellify-drop-into"), true);
+  assert.equal(hint.textContent, "Move into group: Outcome");
+  // Into the ungrouped block: "Move to Ungrouped".
+  W.onTableDragOver(dragEvent(tagTh(document, "age")));
+  assert.equal(hint.textContent, "Move to Ungrouped");
+  assert.equal(hasClass(superTh(document, "g3"), "tabellify-drop-into"), false, "old marks cleared");
+});
+
+test("006c AC14: dragover a body cell = the whole column of B outlined, nest hint", () => {
+  const { W, document, hint } = regroupSetup();
+  startTagDrag(W, document, "sex");
+  const ev = dragEvent(bodyCell(document, "age"));
+  W.onTableDragOver(ev);
+  assert.equal(ev.prevented, true);
+  assert.equal(hasClass(tagTh(document, "age"), "tabellify-drop-nest"), true);
+  const index = bodyCell(document, "age").cellIndex;
+  for (const tr of bodyRows(document)) assert.equal(hasClass(tr.children[index], "tabellify-drop-nest"), true);
+  assert.equal(marked(document).length, 1 + bodyRows(document).length);
+  assert.equal(hint.textContent, "Make a new group: age");
+});
+
+test("006c AC14: dragover a super-header cell = every group header dashed, ungroup hint", () => {
+  const { W, document, hint } = regroupSetup();
+  startTagDrag(W, document, "Heat index");
+  const ev = dragEvent(superTh(document, "g3"));
+  W.onTableDragOver(ev);
+  assert.equal(ev.prevented, true);
+  for (const id of ["ungrouped", "g2", "g3"]) assert.equal(hasClass(superTh(document, id), "tabellify-drop-ungroup"), true, id);
+  assert.equal(hint.textContent, "Remove from its group");
+});
+
+test("006c AC14: refused on Title, k/M and grip cells, on the super row for an ungrouped tag, and for foreign drags", () => {
+  const { W, document, hint } = regroupSetup();
+  const row = bodyRows(document)[0];
+  const refusedAt = (target, types) => {
+    const ev = dragEvent(target, types ? { types } : {});
+    W.onTableDragOver(ev);
+    return !ev.prevented && marked(document).length === 0 && hint.hidden;
+  };
+  startTagDrag(W, document, "Temperature");
+  const titleTh = headerRow(document, "tabellify-items-group-row").find((th) => th.classList.contains("tabellify-col-title"));
+  assert.ok(refusedAt(titleTh), "Title header");
+  assert.ok(refusedAt(row.children[1]), "Title cell");
+  assert.ok(refusedAt(row.children.at(-1)), "k/M cell");
+  assert.ok(refusedAt(row.children[0]), "grip cell");
+  assert.ok(refusedAt(row.children[0].children[0]), "row grip");
+  assert.ok(refusedAt(bodyCell(document, "Temperature")), "its own column (A = B)");
+  assert.ok(refusedAt(bodyCell(document, "age"), ["text/plain"]), "text dragged in from elsewhere");
+  W.endDrag();
+  startTagDrag(W, document, "age");
+  assert.ok(refusedAt(superTh(document, "g2")), "super row for an ungrouped tag");
+  // A drag that did not start in this table is never handled.
+  W.endDrag();
+  const ev = dragEvent(bodyCell(document, "age"));
+  W.onTableDragOver(ev);
+  assert.equal(ev.prevented, false);
+});
+
+test("006c AC14: regroup zones are refused while saving or not editable; reorders still accepted", () => {
+  for (const state of [{ codebookBusy: true }, { codebookEditable: false }, { codebook: null }]) {
+    const { W, document } = regroupSetup();
+    startTagDrag(W, document, "Temperature");
+    Object.assign(W, state);
+    for (const target of [tagTh(document, "Hospitalization"), bodyCell(document, "age"), superTh(document, "g3")]) {
+      const ev = dragEvent(target);
+      W.onTableDragOver(ev);
+      assert.equal(ev.prevented, false, JSON.stringify(state));
+    }
+    if (state.codebook === null) continue; // no codebook: nothing to describe
+    const ev = dragEvent(tagTh(document, "Heat index"), { clientX: 10 });
+    W.onTableDragOver(ev);
+    assert.equal(ev.prevented, true, `reorder while ${JSON.stringify(state)}`);
+  }
+});
+
+test("006c AC14: endDrag clears every new class and hides the hint", () => {
+  const { W, document, hint } = regroupSetup();
+  startTagDrag(W, document, "Heat index");
+  W.onTableDragOver(dragEvent(superTh(document, "g3")));
+  assert.ok(marked(document).length > 0);
+  W.onTableDragEnd();
+  assert.equal(marked(document).length, 0);
+  assert.equal(hint.hidden, true);
+  assert.equal(hint.textContent, "");
+  assert.equal(W.dragging, null);
+});
+
+test("006c AC14: a regroup drop saves the codebook once and changes the layout only after it is shown", async () => {
+  const { W, R, document, files, writes, debug } = regroupSetup();
+  const before = plainJson(W.columnLayout);
+  const expected = R.plan(W.codebook, W.columnLayout, { groupId: "g2", tag: "Temperature" },
+    { zone: "header", groupId: "g3", tag: "Hospitalization", side: "after" });
+  startTagDrag(W, document, "Temperature");
+  const ev = dragEvent(tagTh(document, "Hospitalization"));
+  W.onTableDrop(ev);
+  assert.equal(ev.prevented, true);
+  assert.equal(marked(document).length, 0, "endDrag ran in the drop handler");
+  assert.deepEqual(plainJson(W.columnLayout), before, "layout unchanged while the save runs");
+  await tick();
+  assert.deepEqual(writes, ["/d/codebooks.json"], "one codebook save, nothing else");
+  const saved = JSON.parse(files.get("/d/codebooks.json"));
+  assert.equal(saved.revision, 2);
+  assert.deepEqual(saved.codebooks[0].tags.filter((t) => t.group === "g3").map((t) => t.name), ["Hospitalization", "Mortality", "Temperature"]);
+  assert.deepEqual(plainJson(W.columnLayout), plainJson(expected.layout));
+  assert.deepEqual(tagHeaders(document), ["age", "sex", "Heat index", "Hospitalization", "Temperature", "Mortality"]);
+  assert.deepEqual(pills(document), ["Ungrouped · 2 (u)", "Exposure · 1", "Outcome · 3"]);
+  assert.equal(document.getElementById("tabellify-codebook-status-text").textContent,
+    "tabellify-codebook-saved tabellify-regroup-joined");
+  // Debug Output: IDs only, never names.
+  assert.ok(debug.includes("Tabellify: workspace: regroup: a tag moved from block g2 to block g3 (drag)"), debug.join("\n"));
+  assert.ok(!debug.some((m) => m.includes("regroup:") && /Temperature|Outcome|Exposure/.test(m)));
+});
+
+test("006c AC14: a nest drop creates the group (status and Debug Output say so)", async () => {
+  const { W, document, debug } = regroupSetup();
+  startTagDrag(W, document, "sex");
+  W.onTableDrop(dragEvent(bodyCell(document, "age")));
+  await tick();
+  assert.deepEqual(groupHeaders(document), ["grip", "title", "group:g9/2", "group:g2/2", "group:g3/2", "count"]);
+  assert.deepEqual(tagHeaders(document), ["age", "sex", "Heat index", "Temperature", "Hospitalization", "Mortality"]);
+  assert.equal(document.getElementById("tabellify-codebook-status-text").textContent,
+    "tabellify-codebook-saved tabellify-regroup-created");
+  assert.ok(debug.includes("Tabellify: workspace: regroup: group g9 created by a nest (drag)"), debug.join("\n"));
+});
+
+test("006c AC14: on a save conflict the codebook is reloaded and the layout is NOT changed", async () => {
+  const { W, document, writes } = regroupSetup({ onDiskRevision: 5 });
+  const before = plainJson(W.columnLayout);
+  startTagDrag(W, document, "Temperature");
+  W.onTableDrop(dragEvent(tagTh(document, "Hospitalization")));
+  await tick();
+  assert.deepEqual(writes, [], "nothing written over the newer file");
+  assert.deepEqual(plainJson(W.columnLayout), before);
+  assert.equal(W.codebookRevision, 5, "reloaded from disk");
+});
+
+test("006c AC14: a reorder drop never saves the codebook", async () => {
+  const { W, document, writes } = regroupSetup();
+  startTagDrag(W, document, "Temperature");
+  W.onTableDrop(dragEvent(tagTh(document, "Heat index"), { clientX: 10 }));
+  await tick();
+  assert.deepEqual(writes, []);
+  assert.deepEqual(tagHeaders(document), ["age", "sex", "Temperature", "Heat index", "Hospitalization", "Mortality"]);
+});
+
+test("006c AC14: Alt+Up / Alt+Down on a tag grip give the same plans as the drops, keep focus and announce", async () => {
+  // Alt+Up = drop on the super-header row.
+  let s = regroupSetup();
+  let expected = s.R.plan(s.W.codebook, s.W.columnLayout, { groupId: "g2", tag: "Temperature" }, { zone: "super" });
+  assert.equal(altKey(s.W, regroupTagGrip(s.document, "Temperature"), "ArrowUp"), true);
+  await tick();
+  assert.deepEqual(plainJson(s.W.codebook.codebooks[0].tags), plainJson(expected.edit.data.codebooks[0].tags));
+  assert.deepEqual(plainJson(s.W.columnLayout), plainJson(expected.layout));
+  assert.equal(regroupTagGrip(s.document, "Temperature").focused, true);
+  assert.equal(tagTh(s.document, "Temperature").dataset.groupId, "ungrouped");
+  assert.equal(s.document.byId.get("tabellify-table-announce").textContent, "Temperature is now ungrouped");
+  assert.ok(s.debug.includes("Tabellify: workspace: regroup: a tag moved from block g2 to block ungrouped (keyboard)"));
+
+  // Alt+Down = drop on the body of the column to the left (Temperature → join Exposure).
+  s = regroupSetup();
+  expected = s.R.plan(s.W.codebook, s.W.columnLayout, { groupId: "g3", tag: "Hospitalization" }, { zone: "body", groupId: "g2", tag: "Temperature" });
+  altKey(s.W, regroupTagGrip(s.document, "Hospitalization"), "ArrowDown");
+  await tick();
+  assert.deepEqual(plainJson(s.W.columnLayout), plainJson(expected.layout));
+  assert.deepEqual(tagHeaders(s.document), ["age", "sex", "Heat index", "Temperature", "Hospitalization", "Mortality"]);
+  assert.equal(tagTh(s.document, "Hospitalization").dataset.groupId, "g2");
+  assert.equal(regroupTagGrip(s.document, "Hospitalization").focused, true);
+  assert.equal(s.document.byId.get("tabellify-table-announce").textContent, "Hospitalization moved to group Exposure");
+
+  // Alt+Down under an ungrouped left neighbour nests (a new group named after it).
+  s = regroupSetup();
+  altKey(s.W, regroupTagGrip(s.document, "Heat index"), "ArrowDown");
+  await tick();
+  assert.equal(tagTh(s.document, "Heat index").dataset.groupId, "g9");
+  assert.deepEqual(groupHeaders(s.document), ["grip", "title", "group:ungrouped/1", "group:g9/2", "group:g2/1", "group:g3/2", "count"]);
+  assert.equal(s.document.byId.get("tabellify-table-announce").textContent, "Heat index moved to group sex");
+});
+
+test("006c AC14: Alt+Up on an ungrouped tag, Alt+Down on the first column or beside its own group: nothing", async () => {
+  const s = regroupSetup();
+  const before = plainJson(s.W.codebook);
+  altKey(s.W, regroupTagGrip(s.document, "age"), "ArrowUp");
+  altKey(s.W, regroupTagGrip(s.document, "age"), "ArrowDown");
+  altKey(s.W, regroupTagGrip(s.document, "Temperature"), "ArrowDown");
+  await tick();
+  assert.deepEqual(s.writes, []);
+  assert.deepEqual(plainJson(s.W.codebook), before);
+  // Alt+Left/Right still never leave the block.
+  altKey(s.W, regroupTagGrip(s.document, "Heat index"), "ArrowLeft");
+  assert.equal(tagTh(s.document, "Heat index").dataset.groupId, "g2");
+  assert.deepEqual(s.writes, []);
+});
+
+test("006c AC14: names with markup reach the hint and announcements only as text", async () => {
+  const evil = "<img src=x onerror=alert(1)>";
+  const s = regroupSetup({ ungrouped: [evil, "sex"] });
+  startTagDrag(s.W, s.document, "sex");
+  s.W.onTableDragOver(dragEvent(bodyCell(s.document, evil)));
+  assert.equal(s.hint.textContent, `Make a new group: ${evil}`);
+  assert.equal(s.hint.children.length, 0, "plain text, no child elements");
+  s.W.endDrag();
+  altKey(s.W, regroupTagGrip(s.document, "sex"), "ArrowDown");
+  await tick();
+  const announce = s.document.byId.get("tabellify-table-announce");
+  assert.equal(announce.textContent, `sex moved to group ${evil}`);
+  assert.equal(announce.children.length, 0);
+  // (The fake DOM throws on innerHTML, so reaching this line also proves none was used.)
 });

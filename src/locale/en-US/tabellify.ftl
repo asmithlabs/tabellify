@@ -171,6 +171,23 @@ tabellify-table-layout-newer = The saved table layout was made by a newer versio
 tabellify-table-layout-save-error = The table layout could not be saved. See Help → Debug Output Logging for details.
 tabellify-table-layout-conflict = The table layout was changed in another Tabellify tab and has been reloaded.
 
+## Feature 006c: regrouping tag columns by dragging them in the table (or Alt+Up / Alt+Down
+## on a column's grip). Shown from JavaScript as plain text, without arguments; workspace.js
+## adds the tag or group name after the text:
+## "Codebook saved." + " Tag moved to another group."; "<tag>" + " moved to group" + " <group>";
+## "Move into group:" + " <group>"; "Make a new group:" + " <tag>".
+tabellify-regroup-joined = Tag moved to another group.
+tabellify-regroup-created = New group created.
+tabellify-regroup-ungrouped = Tag removed from its group.
+tabellify-regroup-announce-moved = moved to group
+tabellify-regroup-announce-ungrouped = is now ungrouped
+# Drop hint in the table toolbar while a tag column is dragged.
+tabellify-drop-hint-reorder = Move column here
+tabellify-drop-hint-join = Move into group:
+tabellify-drop-hint-to-ungrouped = Move to Ungrouped
+tabellify-drop-hint-new-group = Make a new group:
+tabellify-drop-hint-ungroup = Remove from its group
+
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
 ## messages use attributes: `.label` (header text) and `.tooltiptext` (icon tooltip), like

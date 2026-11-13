@@ -49,6 +49,8 @@
        workspace.js uses, so they come before it. table-layout-model.js (F005c: pure rules
        for column/row order) and layout-store.js (F005c, ADR-0014: loads and saves
        layout.json, uses the model) also define one global each for workspace.js.
+       regroup-model.js (F006c: pure rules for regrouping a dragged tag column) uses the
+       codebook, tag-monitor and table-layout models, so it comes after them.
        workspace.js only waits for "load" here, so the elements further down exist when it
        starts. -->
   <script src="chrome://zotero/content/include.js"/>
@@ -58,6 +60,7 @@
   <script src="chrome://tabellify/content/script-suggest-model.js"/>
   <script src="chrome://tabellify/content/tag-monitor-model.js"/>
   <script src="chrome://tabellify/content/table-layout-model.js"/>
+  <script src="chrome://tabellify/content/regroup-model.js"/>
   <script src="chrome://tabellify/content/layout-store.js"/>
   <script src="chrome://tabellify/content/workspace.js"/>
 
@@ -151,6 +154,10 @@
     <html:div id="tabellify-table-toolbar" hidden="hidden">
       <html:button id="tabellify-table-reset-columns" data-action="reset-columns"
                    data-l10n-id="tabellify-table-reset-columns"></html:button>
+      <!-- Feature 006c: while a tag column is dragged over a valid place, workspace.js
+           writes what the drop will do here as plain text (for example "Move into group:"
+           and the group name). Mouse feedback only, so hidden from screen readers. -->
+      <html:span id="tabellify-drop-hint" aria-hidden="true" hidden="hidden"></html:span>
       <html:button id="tabellify-table-manual-order" data-action="manual-order"
                    aria-pressed="false" hidden="hidden"
                    data-l10n-id="tabellify-table-manual-order"></html:button>

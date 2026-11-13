@@ -257,12 +257,12 @@ test("F005c AC11: table-layout-model.js uses no Zotero / DOM / IOUtils globals",
   assert.doesNotMatch(layoutModelJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
 });
 
-test("F005c AC11: every LAYOUT_STRINGS ID exists in tabellify.ftl and starts with tabellify-table-", () => {
+test("F005c AC11: every LAYOUT_STRINGS ID exists in tabellify.ftl and starts with tabellify-table- (F006c: or tabellify-regroup- / tabellify-drop-hint-)", () => {
   const list = /LAYOUT_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
   const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   assert.ok(ids.length >= 3, "LAYOUT_STRINGS not found (check is vacuous)");
   for (const id of ids) {
-    assert.match(id, /^tabellify-table-/);
+    assert.match(id, /^tabellify-(?:table|regroup|drop-hint)-/);
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   }
   // The new header/toolbar IDs set in workspace.xhtml exist too.
@@ -378,7 +378,7 @@ test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never
 // Feature 006a AC17
 // ---------------------------------------------------------------------------------------
 
-test("F006a AC17 / F006b AC12: script order is model, store, tag script, suggestions, tag monitor, layout model, layout store, workspace", () => {
+test("F006a AC17 / F006b AC12 / F006c AC15: script order is model, store, tag script, suggestions, tag monitor, layout model, regroup model, layout store, workspace", () => {
   const scripts = [...xhtml.matchAll(/<script\s+src="chrome:\/\/tabellify\/content\/([\w-]+\.js)"\s*\/>/g)].map((m) => m[1]);
   assert.deepEqual(scripts, [
     "codebook-model.js",
@@ -387,6 +387,7 @@ test("F006a AC17 / F006b AC12: script order is model, store, tag script, suggest
     "script-suggest-model.js",
     "tag-monitor-model.js",
     "table-layout-model.js",
+    "regroup-model.js",
     "layout-store.js",
     "workspace.js",
   ]);
@@ -568,4 +569,53 @@ test("F006b AC12: item-tag marks the tag list stale before the no-collection ear
   // Still exactly one library read for the tag list (the 006a call).
   assert.equal([...js.matchAll(/Zotero\.Tags\.getAll\(/g)].length, 1);
   assert.match(js, /Zotero\.Tags\.getAll\(Zotero\.Libraries\.userLibraryID\)/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 006c AC15
+// ---------------------------------------------------------------------------------------
+
+const regroupJs = code("content/regroup-model.js");
+
+test("F006c AC15: regroup-model.js uses no Zotero / DOM / IOUtils globals and never writes", () => {
+  assert.match(regroupJs, /var TabellifyRegroup\b/, "regroup model not found (check is vacuous)");
+  assert.doesNotMatch(regroupJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
+  assert.doesNotMatch(regroupJs, /saveData|writeJSON|applyCodebookEdit/);
+});
+
+test("F006c AC15: the regroup and drop-hint Fluent IDs exist, start with tabellify-, and are formatted at start-up", () => {
+  const list = /LAYOUT_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const formatted = new Set([...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+  const ids = [
+    "tabellify-regroup-joined", "tabellify-regroup-created", "tabellify-regroup-ungrouped",
+    "tabellify-regroup-announce-moved", "tabellify-regroup-announce-ungrouped",
+    "tabellify-drop-hint-reorder", "tabellify-drop-hint-join", "tabellify-drop-hint-to-ungrouped",
+    "tabellify-drop-hint-new-group", "tabellify-drop-hint-ungroup",
+  ];
+  for (const id of ids) {
+    assert.match(id, /^tabellify-/);
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+    assert.ok(formatted.has(id), `${id} is not in LAYOUT_STRINGS`);
+  }
+  // The maps workspace.js reads them from name only IDs from that list.
+  for (const name of ["DROP_HINT_IDS", "REGROUP_STATUS_IDS"]) {
+    const map = new RegExp(`${name}:\\s*\\{([\\s\\S]*?)\\}`).exec(js)?.[1] ?? "";
+    const used = [...map.matchAll(/"(tabellify-[^"]+)"/g)].map((m) => m[1]);
+    assert.ok(used.length >= 3, `${name} not found (check is vacuous)`);
+    for (const id of used) assert.ok(formatted.has(id), `${id} (${name}) is not in LAYOUT_STRINGS`);
+  }
+});
+
+test("F006c AC15: the drop hint sits in the table toolbar, hidden and aria-hidden; no new listener", () => {
+  const toolbar = /<html:div id="tabellify-table-toolbar"[^>]*>([\s\S]*?)<\/html:div>/.exec(xhtml)?.[1] ?? "";
+  assert.match(toolbar, /<html:span id="tabellify-drop-hint" aria-hidden="true" hidden="hidden"><\/html:span>/);
+  // Still exactly the F005c table listeners (one of each kind) and no new timer or observer.
+  for (const type of ["dragstart", "dragover", "dragleave", "drop", "dragend", "keydown"]) {
+    assert.equal([...js.matchAll(new RegExp(`table\\.addEventListener\\("${type}"`, "g"))].length, 1, type);
+  }
+  assert.equal([...js.matchAll(/Zotero\.Notifier\.registerObserver\(/g)].length, 1);
+  // The two existing timers (F005 recompute debounce, F005c layout save debounce); 006c reuses them.
+  assert.equal([...js.matchAll(/setTimeout\(/g)].length, 2);
+  // Names reach the hint and the announcements only as text.
+  assert.match(js, /hint\.textContent = /);
 });

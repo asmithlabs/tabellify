@@ -63,6 +63,11 @@ per-paper table (column widths per `<col>`, the two sticky header rows) stay on
 - numbers right-aligned with tabular figures; `td.tabellify-count-complete` in
   `status-positive` with a "✓"
 - group start lines (`.tabellify-group-start`), grips, `.tabellify-dragging`, drop lines
+- regroup drop marks while a tag column is dragged (Feature 006c), all in `action` and told
+  apart by shape: `th.tabellify-drop-into` (a 2px line under the group joined sideways),
+  `.tabellify-drop-nest` (2px lines on both sides of the whole column a tag nests under) and
+  `th.tabellify-drop-ungroup` (a dashed 2px outline inside every group header, dashed =
+  "ungrouped"); the toolbar's `#tabellify-drop-hint` names the action in `text-muted` italics
 - the blank group header of tags without a group (`th.tabellify-col-group-ungrouped`,
   Feature 006a): no text, only its grip; its name is for screen readers
 

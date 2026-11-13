@@ -40,6 +40,12 @@
  *   names of My Library (read once, re-read after Refresh or a Zotero tag change), the
  *   codebook's group names and "Create tag" (codebook only). What the list contains is
  *   pure logic in script-suggest-model.js (TabellifyScriptSuggest).
+ * - F006c: a tag column dragged into another group's span joins that group, dropped on
+ *   the cells below another tag nests under it (a new group named after that tag when it
+ *   is ungrouped), and dragged up onto the group-header row becomes ungrouped; Alt+Up /
+ *   Alt+Down on its grip do the same. Each such regroup is a normal codebook edit (same
+ *   save as the script box); what a drop does is pure logic in regroup-model.js
+ *   (TabellifyRegroup). Reordering stays in layout.json.
  *
  * THE LIBRARY IS READ-ONLY. Every Zotero call here only reads (see the "Read-only
  * guarantee" row in docs/zotero-api-notes.md). Nothing is saved, changed or deleted in the
@@ -631,6 +637,10 @@ var TabellifyWorkspace = {
         const label = `${tag}: ${has ? usedText : notUsedText}`;
         cell.title = label;
         cell.setAttribute("aria-label", label);
+        // F006c: the cell names its column, so a tag column dropped on it can nest under
+        // that tag. dataset values are attributes: plain strings, never used in a selector.
+        cell.dataset.groupId = group.id;
+        cell.dataset.tag = tag;
         return cell;
       }));
       const count = this.html("td", "tabellify-col-count tabellify-monitor-count");
@@ -681,7 +691,34 @@ var TabellifyWorkspace = {
     "tabellify-table-layout-newer",
     "tabellify-table-layout-save-error",
     "tabellify-table-layout-conflict",
+    // F006c: regroup status, announcements and the drop hint.
+    "tabellify-regroup-joined",
+    "tabellify-regroup-created",
+    "tabellify-regroup-ungrouped",
+    "tabellify-regroup-announce-moved",
+    "tabellify-regroup-announce-ungrouped",
+    "tabellify-drop-hint-reorder",
+    "tabellify-drop-hint-join",
+    "tabellify-drop-hint-to-ungrouped",
+    "tabellify-drop-hint-new-group",
+    "tabellify-drop-hint-ungroup",
   ],
+
+  /** F006c: TabellifyRegroup.describe() hint → Fluent ID of the drop-hint text. */
+  DROP_HINT_IDS: {
+    reorder: "tabellify-drop-hint-reorder",
+    join: "tabellify-drop-hint-join",
+    "to-ungrouped": "tabellify-drop-hint-to-ungrouped",
+    "new-group": "tabellify-drop-hint-new-group",
+    ungroup: "tabellify-drop-hint-ungroup",
+  },
+
+  /** F006c: regroup effect → Fluent ID shown after "Codebook saved.". */
+  REGROUP_STATUS_IDS: {
+    joined: "tabellify-regroup-joined",
+    created: "tabellify-regroup-created",
+    ungrouped: "tabellify-regroup-ungrouped",
+  },
 
   /**
    * The user's order of the tag columns: `{ groupOrder, tagOrder }` (TabellifyTableLayout).
@@ -714,6 +751,12 @@ var TabellifyWorkspace = {
    * `{ kind: "tag", groupId, id }` (a tag column; `id` is the tag) or `{ kind: "row", id }`.
    */
   dragging: null,
+
+  /**
+   * F006c: what the shown drop indicator is for (a short key), or null when none is shown.
+   * dragover fires many times a second; the DOM is only touched when this key changes.
+   */
+  dropKey: null,
 
   /**
    * Collection ID → "<libraryID>/<key>" (the shape of Zotero's own `libraryKey`). `key` and
@@ -904,7 +947,10 @@ var TabellifyWorkspace = {
     grip.setAttribute("draggable", "true");
     grip.setAttribute("tabindex", "0");
     grip.setAttribute("role", "button");
-    grip.setAttribute("aria-keyshortcuts", "Alt+ArrowLeft Alt+ArrowRight");
+    // F006c: a tag column's grip also has Alt+Up (ungroup) and Alt+Down (nest).
+    grip.setAttribute("aria-keyshortcuts", kind === "tag"
+      ? "Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
+      : "Alt+ArrowLeft Alt+ArrowRight");
     grip.setAttribute("aria-label", label);
     return grip;
   },
@@ -1023,25 +1069,21 @@ var TabellifyWorkspace = {
     if (!drag) return null;
     // `types` lists the data types of the drag (here only to check it is ours).
     const types = Array.from(event.dataTransfer?.types ?? []);
-    if (drag.kind === "group" || drag.kind === "tag") {
+    if (drag.kind === "tag") {
+      if (!types.includes(this.COLUMN_DRAG_TYPE)) return null;
+      return this.tagDropTarget(event, drag);
+    }
+    if (drag.kind === "group") {
       if (!types.includes(this.COLUMN_DRAG_TYPE)) return null;
       const th = event.target.closest?.("thead th[data-group-id]");
       if (!th) return null;
       // A group may be dropped on any header of another group (its group header or one of
       // its tags); the drop line is drawn on that group's header.
-      // A tag may only be dropped on a tag header of its OWN group (owner decision
-      // 2026-11-13: a tag never leaves its super-tag); elsewhere the drop is refused.
-      let target;
-      if (drag.kind === "group") {
-        target = this.columnHeader(th.dataset.groupId);
-      } else if (th.hasAttribute("data-tag") && th.dataset.groupId === drag.groupId) {
-        target = th;
-      }
+      const target = this.columnHeader(th.dataset.groupId);
       if (!target) return null;
       const rect = target.getBoundingClientRect();
       const side = TabellifyTableLayout.dropSide(event.clientX, rect.left, rect.width);
-      const id = drag.kind === "group" ? target.dataset.groupId : target.dataset.tag;
-      return { kind: drag.kind, id, side, first: target, last: target };
+      return { kind: "group", id: target.dataset.groupId, side, first: target, last: target };
     }
     if (!types.includes(this.ROW_DRAG_TYPE)) return null;
     const row = event.target.closest?.("tbody tr[data-paper-id]");
@@ -1051,18 +1093,108 @@ var TabellifyWorkspace = {
     return { kind: "row", id: Number(row.dataset.paperId), side, first: row, last: row };
   },
 
-  /** Remove every drop line. */
-  clearDropIndicator() {
-    for (const node of this.el("tabellify-items-table").querySelectorAll(".tabellify-drop-before, .tabellify-drop-after")) {
-      node.classList.remove("tabellify-drop-before", "tabellify-drop-after");
+  /**
+   * F006c: where a dragged TAG column would land (docs/features/006c-drag-regroup.md).
+   * The zone comes from the element under the pointer (dragover fires at that element):
+   * - a tag header → "header" (before/after from the pointer's side of its middle);
+   * - a group (super-)header, including the blank ungrouped one → "super" (ungroup);
+   * - a body cell of a tag column → "body" (nest below that tag).
+   * Title, k/M and the grip column carry no data-group-id, so they are refused. A drop
+   * that would change the codebook is refused while it cannot be saved.
+   * @param {DragEvent} event
+   * @param {{ kind: "tag", groupId: string, id: string }} drag
+   */
+  tagDropTarget(event, drag) {
+    let regroup;
+    let cell;
+    const th = event.target.closest?.("thead th[data-group-id]");
+    if (th) {
+      cell = th;
+      if (th.hasAttribute("data-tag")) {
+        const rect = th.getBoundingClientRect();
+        const side = TabellifyTableLayout.dropSide(event.clientX, rect.left, rect.width);
+        regroup = { zone: "header", groupId: th.dataset.groupId, tag: th.dataset.tag, side };
+      } else {
+        regroup = { zone: "super" };
+      }
+    } else {
+      cell = event.target.closest?.("tbody td.tabellify-col-tag");
+      if (!cell || !cell.hasAttribute("data-tag")) return null;
+      regroup = { zone: "body", groupId: cell.dataset.groupId, tag: cell.dataset.tag };
     }
+    const info = TabellifyRegroup.describe(this.codebook, { groupId: drag.groupId, tag: drag.id }, regroup);
+    if (!info) return null;
+    if (info.kind === "regroup" && !this.canRegroup()) return null;
+    return { kind: "tag", id: regroup.tag ?? null, side: regroup.side ?? null, first: cell, last: cell, regroup, info };
   },
 
-  /** Show the line where the dragged column or paper would land. */
+  /** F006c: true when a regroup (a codebook edit) could be saved right now. */
+  canRegroup() {
+    return Boolean(this.codebook) && this.codebookEditable && !this.codebookBusy;
+  },
+
+  /** Every class a drop indicator can add (F005c lines, F006c regroup marks). */
+  DROP_CLASSES: ["tabellify-drop-before", "tabellify-drop-after", "tabellify-drop-into", "tabellify-drop-nest", "tabellify-drop-ungroup"],
+
+  /** Remove every drop line and mark, and hide the drop hint. */
+  clearDropIndicator() {
+    this.dropKey = null;
+    const selector = this.DROP_CLASSES.map((c) => `.${c}`).join(", ");
+    for (const node of this.el("tabellify-items-table").querySelectorAll(selector)) {
+      node.classList.remove(...this.DROP_CLASSES);
+    }
+    const hint = this.el("tabellify-drop-hint");
+    hint.hidden = true;
+    hint.textContent = "";
+  },
+
+  /**
+   * Show where the dragged column or paper would land. Only touches the DOM when the
+   * target changed since the last dragover.
+   */
   showDropIndicator(target) {
+    const r = target.regroup;
+    const key = JSON.stringify([target.kind, target.id, target.side, r?.zone ?? null, r?.groupId ?? null]);
+    if (key === this.dropKey) return;
     this.clearDropIndicator();
-    if (target.side === "before") target.first.classList.add("tabellify-drop-before");
-    else target.last.classList.add("tabellify-drop-after");
+    this.dropKey = key;
+    if (!r) {
+      if (target.side === "before") target.first.classList.add("tabellify-drop-before");
+      else target.last.classList.add("tabellify-drop-after");
+      return;
+    }
+    const table = this.el("tabellify-items-table");
+    if (r.zone === "header") {
+      target.first.classList.add(target.side === "before" ? "tabellify-drop-before" : "tabellify-drop-after");
+      // Joining another block: also underline that block's group header (two-row header).
+      if (target.info.kind === "regroup") this.columnHeader(r.groupId)?.classList.add("tabellify-drop-into");
+    } else if (r.zone === "body") {
+      // Outline B's whole column: its header and its cell in every row. cellIndex is the
+      // cell's position in its row, so row.cells[index] is the same column in each row.
+      this.columnHeader(r.groupId, r.tag)?.classList.add("tabellify-drop-nest");
+      const index = target.first.cellIndex;
+      for (const row of this.el("tabellify-items-body").children) row.cells[index]?.classList.add("tabellify-drop-nest");
+    } else {
+      for (const th of table.querySelectorAll("thead th[data-group-id]")) {
+        if (!th.hasAttribute("data-tag")) th.classList.add("tabellify-drop-ungroup");
+      }
+    }
+    this.showDropHint(target.info);
+  },
+
+  /**
+   * F006c (spec Q6): the toolbar hint saying what the drop will do, as plain text, e.g.
+   * "Move into group: Outcome". aria-hidden: mouse feedback only (keyboard moves are
+   * announced instead).
+   * @param {{ hint: string, name: string }} info  From TabellifyRegroup.describe()
+   */
+  showDropHint(info) {
+    const id = this.DROP_HINT_IDS[info.hint];
+    if (!id) return;
+    const hint = this.el("tabellify-drop-hint");
+    // The name is codebook text: textContent only (see SECURITY at the top).
+    hint.textContent = info.name ? `${this.text(id)} ${info.name}` : this.text(id);
+    hint.hidden = false;
   },
 
   /** Forget the drag and remove its marks (after a drop, or when it was cancelled). */
@@ -1146,7 +1278,7 @@ var TabellifyWorkspace = {
     W.autoScroll(event.clientY);
     const target = W.dropTarget(event);
     if (!target) {
-      W.clearDropIndicator();
+      if (W.dropKey !== null) W.clearDropIndicator();
       return;
     }
     event.preventDefault();
@@ -1170,19 +1302,17 @@ var TabellifyWorkspace = {
     event.preventDefault(); // handled here; no default drop action
     const drag = W.dragging;
     W.endDrag();
+    if (target.kind === "tag") {
+      // F006c: a tag column. The pure model decides (reorder, regroup or nothing).
+      const plan = TabellifyRegroup.plan(W.codebook, W.columnLayout, { groupId: drag.groupId, tag: drag.id }, target.regroup);
+      W.applyTagPlan(plan, drag.groupId, drag.id, "drag");
+      return;
+    }
     if (drag.id === target.id) return; // dropped onto itself
     if (target.kind === "group") {
       const rest = W.tableGroups.map((g) => g.id).filter((id) => id !== drag.id);
       const index = rest.indexOf(target.id) + (target.side === "after" ? 1 : 0);
       W.setColumnLayout(TabellifyTableLayout.moveGroup(W.columnLayout, W.codebookGroups(), drag.id, index), drag.id, null, "drag");
-    } else if (target.kind === "tag") {
-      const tags = W.tableGroups.find((g) => g.id === drag.groupId)?.tags ?? [];
-      const rest = tags.filter((t) => t !== drag.id);
-      const index = rest.indexOf(target.id) + (target.side === "after" ? 1 : 0);
-      W.setColumnLayout(
-        TabellifyTableLayout.moveTag(W.columnLayout, W.codebookGroups(), drag.groupId, drag.id, index),
-        drag.groupId, drag.id, "drag",
-      );
     } else {
       const keys = W.monitorData.keys;
       let beforeId = target.id;
@@ -1201,15 +1331,111 @@ var TabellifyWorkspace = {
   },
 
   /**
+   * F006c: carry out a TabellifyRegroup plan for tag column `tag` of block `fromGroupId`.
+   * - "reorder": layout.json only (the F005c path).
+   * - "regroup": a codebook edit, saved without blocking the caller (applyRegroup).
+   * - "refused": the model's reason in the codebook status line.
+   * @param {ReturnType<typeof TabellifyRegroup.plan>} plan
+   * @param {string} fromGroupId
+   * @param {string} tag
+   * @param {string} how  "drag" or "keyboard", for Debug Output
+   * @returns {Promise<boolean>} resolves true once a regroup is shown (false otherwise)
+   */
+  applyTagPlan(plan, fromGroupId, tag, how) {
+    if (plan.kind === "reorder") {
+      this.setColumnLayout(plan.layout, fromGroupId, tag, how);
+      return Promise.resolve(false);
+    }
+    if (plan.kind === "refused") {
+      this.showCodebookStatus(plan.error, null, true);
+      return Promise.resolve(false);
+    }
+    if (plan.kind !== "regroup") return Promise.resolve(false);
+    // async/await: applyRegroup returns a Promise at its first `await` (the file save), so
+    // the event handler that called us finishes at once; errors are caught here.
+    return this.applyRegroup(plan, fromGroupId, tag, how).catch((e) => {
+      this.log("regroup: could not apply the change");
+      Zotero.logError(e);
+      return false;
+    });
+  },
+
+  /**
+   * F006c: save a regroup like any other codebook edit (revision check, atomic write,
+   * .bak) and, only if the edit is now shown, use the plan's column layout so the column
+   * lands where it was dropped. On a conflict or a refusal the layout is NOT changed.
+   * @param {{ edit: object, layout: object, effect: string, groupId: string }} plan
+   * @param {string} fromGroupId
+   * @param {string} tag
+   * @param {string} how
+   * @returns {Promise<boolean>}
+   */
+  async applyRegroup(plan, fromGroupId, tag, how) {
+    const shown = await this.applyCodebookEdit(plan.edit, this.REGROUP_STATUS_IDS[plan.effect] ?? null);
+    if (!shown) return false;
+    this.columnLayout = plan.layout;
+    this.renderMonitor();
+    this.layoutChanged();
+    // IDs only: tag and group names are library/codebook text and never go to Debug Output.
+    if (plan.effect === "created") this.log(`regroup: group ${plan.groupId} created by a nest (${how})`);
+    this.log(`regroup: a tag moved from block ${fromGroupId} to block ${plan.groupId} (${how})`);
+    // Screen readers: "Temperature moved to group Outcome" / "Heat index is now ungrouped".
+    const group = TabellifyCodebook.findGroup(this.codebook, plan.groupId);
+    this.el("tabellify-table-announce").textContent = plan.groupId === TabellifyCodebook.UNGROUPED_ID || !group
+      ? `${tag} ${this.text("tabellify-regroup-announce-ungrouped")}`
+      : `${tag} ${this.text("tabellify-regroup-announce-moved")} ${group.name}`;
+    return true;
+  },
+
+  /**
+   * F006c (spec Q1): what Alt+Up / Alt+Down on a tag column's grip means, as a drop:
+   * Alt+Up = the super-header row (ungroup); Alt+Down = the body of the column to its
+   * LEFT in the shown order (nest under that tag, or join its group). Nothing for the
+   * first column or when the left column is already in the same group.
+   * @param {string} groupId  The tag's block
+   * @param {string} tag
+   * @param {"ArrowUp" | "ArrowDown"} key
+   * @returns {object | null} a TabellifyRegroup target, or null
+   */
+  keyboardRegroupTarget(groupId, tag, key) {
+    if (key === "ArrowUp") return { zone: "super" };
+    const columns = this.tableGroups.flatMap((g) => g.tags.map((t) => ({ groupId: g.id, tag: t })));
+    const index = columns.findIndex((c) => c.groupId === groupId && c.tag === tag);
+    const left = index > 0 ? columns[index - 1] : null;
+    if (!left) return null;
+    if (left.groupId === groupId && groupId !== TabellifyTagMonitor.UNGROUPED_ID) return null;
+    return { zone: "body", groupId: left.groupId, tag: left.tag };
+  },
+
+  /**
    * Alt+arrow on a focused grip (Option+arrow on macOS): Left/Right moves a tag column
-   * inside its group, or a group among the groups; Up/Down moves a paper. The focus stays on the moved item's grip, and the new position is
-   * announced. Other keys are left alone.
+   * inside its group, or a group among the groups; Up/Down moves a paper. On a tag
+   * column's grip, Up/Down regroup it (F006c: Up = ungroup, Down = nest under the column
+   * to its left). The focus stays on the moved item's grip, and the move is announced.
+   * Other keys are left alone.
    */
   onTableKeydown: (event) => {
     const W = TabellifyWorkspace;
     if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const grip = event.target.closest?.(".tabellify-grip");
     if (!grip || !W.monitorData) return;
+    if (grip.dataset.grip === "tag" && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      // F006c: Alt+Up / Alt+Down regroup the column (the same plans as the mouse drops).
+      const th = grip.closest("th[data-group-id]");
+      if (!th) return;
+      event.preventDefault();
+      const groupId = th.dataset.groupId;
+      const tag = th.dataset.tag;
+      const target = W.keyboardRegroupTarget(groupId, tag, event.key);
+      if (!target) return;
+      const plan = TabellifyRegroup.plan(W.codebook, W.columnLayout, { groupId, tag }, target);
+      if (plan.kind === "regroup" && !W.canRegroup()) return;
+      W.applyTagPlan(plan, groupId, tag, "keyboard").then((shown) => {
+        // The header was rebuilt: put the focus back on the moved column's grip.
+        W.focusColumnGrip(shown ? plan.groupId : groupId, tag);
+      });
+      return;
+    }
     if (grip.dataset.grip === "group" || grip.dataset.grip === "tag") {
       const delta = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
       const th = grip.closest("th[data-group-id]");

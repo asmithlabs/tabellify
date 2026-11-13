@@ -440,6 +440,12 @@
   margin-block: var(--tabellify-space-3);
 }
 
+/* Feature 006c: what the drop of a dragged tag column will do (plain text). */
+#tabellify-drop-hint {
+  color: var(--tabellify-color-text-muted);
+  font-style: italic;
+}
+
 /* "Manual order" while the manual order is shown (aria-pressed is set by workspace.js):
    bold text and an outline, so the pressed state is not colour alone. */
 #tabellify-table-toolbar button[aria-pressed="true"] {
@@ -658,6 +664,28 @@
 
 .tabellify-grid tr.tabellify-drop-after > td {
   box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
+}
+
+/* Feature 006c: marks for regrouping a dragged tag column. They differ by SHAPE (and the
+   toolbar hint names the action), so their meaning never depends on colour alone.
+   - Joining another block sideways: a line under that block's group header. */
+.tabellify-grid th.tabellify-drop-into {
+  box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
+}
+
+/* - Nesting below a tag: lines on both sides of that tag's whole column (header and cells).
+     Two inset shadows, one per side. */
+.tabellify-grid .tabellify-drop-nest {
+  box-shadow:
+    inset var(--tabellify-border-width-strong) 0 0 var(--tabellify-color-action),
+    inset calc(-1 * var(--tabellify-border-width-strong)) 0 0 var(--tabellify-color-action);
+}
+
+/* - Ungrouping: a dashed outline inside every group header (dashed = the design system's
+     "ungrouped" look). A negative outline-offset draws it inside the cell. */
+.tabellify-grid th.tabellify-drop-ungroup {
+  outline: var(--tabellify-border-width-strong) dashed var(--tabellify-color-action);
+  outline-offset: calc(-1 * var(--tabellify-border-width-strong));
 }
 
 /* ---------------------------------------------------------------------------------------
