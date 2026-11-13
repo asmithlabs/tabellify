@@ -16,6 +16,9 @@
   006c also writes `layout.json` after such a drop so the column lands where it was dropped;
   that is an ordinary layout save after a user action (ADR-0014 §4), not a new rule. No new
   storage, file, dependency, UI surface or `Zotero.*` call.
+  **Superseded by Amendment 2:** the mixed top-level order needs a `layout.json` schema 3,
+  proposed in **ADR-0019** (`docs/decisions/0019-layout-mixed-top-level-order.md`,
+  Status: Proposed). Amendment 2 tasks T6–T9 wait for the owner's decision on ADR-0019.
 
 
 ## Amendment 2026-11-13 (owner, smoke test): nest makes B a group name only
@@ -29,6 +32,398 @@ Owner smoke test: after a nest, "alpha" appeared both as the super-header and as
 - The drop hint and status text say B becomes a group name (e.g. "Make alpha a group name").
 - This replaces "B stays first" in the table below and the 006a "B stays as a sub-column of
   itself" choice.
+
+## Amendment 2 (2026-11-13): the cell edge decides; ungrouped tags anywhere at the top level
+
+**Status of Amendment 2:** Approved by the owner 2026-11-13 (all recommendations A2-Q1 to A2-Q12; ADR-0019 accepted).
+- **Status:** rules approved by the owner ("yes", 2026-11-13). The details below (edge
+  geometry, indicators, hint texts, keyboard mapping, storage) are **Proposed**, waiting for
+  the owner's answers to A2-Q1 – A2-Q12 and a decision on **ADR-0019** (`layout.json`
+  schema 3, Status: Proposed).
+- **Where this wins:** where Amendment 2 and older text in this spec disagree, Amendment 2
+  applies. It **replaces**: the super-header row as an "ungroup" zone (rules table row
+  "Super-header cell", Q8), the single ungrouped block and its blank header (ADR-0016 §5
+  view, §6 default position is kept as the home marker, ADR-0019 §1), the Alt+Up / Alt+Down
+  meaning (Q1, "Keyboard"), the dashed "ungroup" indicator, the `tabellify-drop-hint-ungroup`
+  text, and ACs AC3, AC6, AC8, AC13, AC14 (replaced by AC16–AC31 below). Amendment 1 (a nest
+  makes B only a group name) stays and is extended to the flipped case.
+- **Unchanged:** no library write; one codebook save per regroup through
+  `applyCodebookEdit`, codebook first and layout second; whole-group drags never write the
+  codebook; "Reset columns" never undoes grouping; Q2 (reuse a group with the same name,
+  ignoring case), Q3 (an emptied group stays as "G · 0"), Q4 (no undo button), Q7.
+
+### A2.1 Background for a JavaScript learner
+- **Header tree:** the table header has at most two levels: a **super-header** (a group's
+  name, or "Ungrouped") above its **sub-headers** (one per tag column). There is never a third
+  level, so a group can't go inside a group, and a tag inside a group can't get tags under it.
+- **Top level:** the left-to-right list of things directly under the top header row: whole
+  groups, and single ungrouped tags. Ungrouped tags that sit next to each other form a
+  **run**; each run gets its own "Ungrouped" super-header. A run is not stored anywhere: it
+  appears whenever ungrouped tags are neighbours (ADR-0019 §2).
+- **Edge:** while dragging, the browser gives the pointer position (`event.clientX`,
+  `clientY`, in pixels from the window's top-left corner) and the code asks the cell under the
+  pointer for its rectangle (`getBoundingClientRect()`, same coordinate system). Comparing the
+  two tells which part of the cell the pointer is in: near its left, right, top or bottom.
+- **Fallback:** some edges are not allowed on some cells (a tag can't go above a group). Then
+  the drop acts as if the pointer were at the nearer of the cell's left or right edge, and the
+  indicator and hint show that fallback result, so what you see is always what you get.
+
+### A2.2 Rules (owner, 2026-11-13)
+A = the dragged tag column. "Becomes a group name" = Amendment 1: the group with that name
+(ignoring case, Q2) is reused or a new group with exactly that spelling is created, and that
+**tag** leaves the codebook (its column and its k/M count go; nothing changes in Zotero).
+"Top-level position" = ADR-0019 `topOrder`.
+
+**Table 1: A dropped on an ungrouped tag B (its header, or below it, A2.4)**
+| Edge | Result | Writes | Where it lands |
+|---|---|---|---|
+| Bottom | **B becomes a group name**; A goes under it (A leaves its own group if it had one) | codebook, then layout | New group: **B's top-level position**. Reused group: stays where it is, A at its end |
+| Top (flipped) | **A becomes a group name** (A leaves its own group, if any, and the codebook as a tag); B goes under it | codebook, then layout | New group: **B's top-level position**. Reused group (named like A, ignoring case; may be A's own group): stays where it is, B at its end |
+| Left / right | A sits **beside B as an ungrouped tag** (sibling). A already ungrouped: a reorder | A ungrouped: layout only. A in a group: codebook (A ungrouped), then layout | Right before / after B at the top level (same run as B) |
+| any | A = B | nothing (no indicator) | — |
+
+**Table 2: A dropped on a group's super-header G (e.g. "zotero")**
+| Edge | Result | Writes | Where it lands |
+|---|---|---|---|
+| Bottom | A **joins G** (child) | A not in G: codebook, then layout. A already in G: layout only | End of G (A2-Q2) |
+| Left / right | A sits **beside G as an ungrouped top-level tag** (same level as G). This is now how a tag leaves its group by mouse | A ungrouped: layout only. A in any group (G included): codebook, then layout | Right before / after G at the top level |
+| Top | Not allowed (a tag can't be above a group) → **falls back** to the nearer of left / right | as left / right | as left / right |
+
+**Table 3: A dropped on a tag B inside a group G (sub-header)**
+| Edge | Result | Writes | Where it lands |
+|---|---|---|---|
+| Left / right | A **joins G beside B**. A already in G: a reorder inside G (F005c) | A not in G: codebook, then layout. A in G: layout only | Right before / after B inside G |
+| Top / bottom | Not allowed (no third level) → **falls back** to the nearer of left / right | as left / right | as left / right |
+
+**Table 4: A dropped on an "Ungrouped" run super-header R** (not covered by the owner's
+rules; proposed, A2-Q3)
+| Edge | Result | Writes | Where it lands |
+|---|---|---|---|
+| Left | A becomes / stays **ungrouped** | A in a group: codebook, then layout. A ungrouped: layout only | Before R's first tag |
+| Right, bottom | same | same | After R's last tag |
+| Top | Not allowed → falls back to left / right | as left / right | as left / right |
+| any | R holds only A | nothing | — |
+
+**Other places** (unchanged unless stated):
+- **Body cells below tag B** stay an **alias of B's header with the bottom edge** (A2-Q8): below
+  an ungrouped B they nest (Table 1, bottom; as AC4 / Amendment 1); below a B inside a group
+  the bottom edge is not allowed, so they fall back to left / right of B by the pointer's half
+  of the cell (Table 3; today's Q7 "right after B" becomes "before or after B").
+- Title, k/M, the grip column, outside the table: refused (no indicator).
+- **Whole-group drags** (grip on a group's super-header) only reorder the top level, layout
+  only, never the codebook: over any header cell of a group → before / after that group (as
+  F005c); over an ungrouped tag's header → before / after that tag (so a group can be put
+  between ungrouped tags); over a run's super-header → before its first / after its last tag.
+  The pointer's half of the cell decides before / after. Groups can't be dropped into groups.
+- "Ungrouped" run super-headers have **no grip** (A2-Q4): runs are not things that move;
+  move their tags one by one (mouse or Alt+Left / Alt+Right).
+
+### A2.3 Edge geometry (pure: `TabellifyTableLayout.dropEdge(x, y, rect)`)
+The cell is the header cell under the pointer (`event.target.closest(…)`, as today) or, for
+the body alias, the body cell.
+```
+rect  = cell.getBoundingClientRect()            // left, top, width, height in CSS pixels
+fx    = clamp((x - rect.left) / rect.width,  0, 1)   // 0 = left border, 1 = right border
+fy    = clamp((y - rect.top)  / rect.height, 0, 1)   // 0 = top border, 1 = bottom border
+side  = fx < 0.5 ? "left" : "right"             // same split as today's dropSide()
+edge  = fx < BAND      ? "left"
+      : fx > 1 - BAND  ? "right"
+      : fy < 0.5       ? "top" : "bottom"       // BAND = 0.25
+returns { edge, side }   // width or height 0 (hidden cell): edge = side
+```
+So each cell has four zones: its outer quarter on each side (left, right; full height) and
+the middle half split into an upper half (top) and lower half (bottom). On a 120 × 28 px
+header cell that is 30 px of "left", 30 px of "right", and a 60 × 14 px "top" and "bottom".
+Why proportional bands rather than raw pixel distance to the nearest border: header cells are
+wide and short, so with raw distance "left" / "right" would shrink to a thin strip about 14 px
+wide, making a sideways move (the most common one, and harmless) hard, and making top /
+bottom (which remove a tag from the codebook) easy to hit by accident. A2-Q1 offers the
+diagonal ("X") split as the alternative.
+
+**Fallback** (pure, in `TabellifyRegroup`, so Node tests cover it): when `edge` is not allowed
+on that cell (top on a group super-header or run super-header; top or bottom on a sub-header),
+use `side` instead. Body cells always pass `edge: "bottom"` with their own `side`.
+The resolved edge (after fallback) is what the indicator, the hint and the drop all use.
+
+### A2.4 Header rendering
+- `TabellifyTableLayout.orderedGroups` returns the shown blocks in top-level order (ADR-0019
+  §2): groups `{ id, name, tags }` and runs `{ id: "ungrouped", run: k, name: "", tags,
+  ungrouped: true }`, `k` = 0, 1, … from the left.
+- Each run's super-header cell shows the text **"Ungrouped"** (new Fluent ID
+  `tabellify-table-ungrouped-label`, set with `textContent`) in the existing muted style
+  (`.tabellify-col-group-ungrouped`: `--tabellify-color-text-muted`; no new token), spans the
+  run's tags, carries `data-group-id="ungrouped"` and `data-run="<k>"`, and has **no grip**.
+  The blank header and its `aria-label` override go (the visible text names it).
+- Tag headers and body cells of ungrouped tags keep `data-group-id="ungrouped"` (the
+  codebook block, one for all runs; `TabellifyRegroup` needs nothing more). Code that looked up
+  "the" ungrouped header (`columnHeader("ungrouped")`) uses a new `runHeader(k)` instead.
+- **One-row header rule kept:** when no group has a column (only ungrouped tags, which then
+  form one run), the super-header row stays hidden, as in 006a, so no "Ungrouped" label shows.
+  **No conflict:** in that layout the tag headers sit in the first row and keep all four edges
+  (top = flip, bottom = nest, left / right = reorder). The first nest or flip creates a group
+  and the header becomes two rows. (006a's condition "no real group has columns" is kept; an
+  empty group "G · 0" has no column and does not make a second row.)
+- **Pills:** still one "Ungrouped · N" pill (N = all ungrouped tags), at the position of the
+  first run (A2-Q9).
+
+### A2.5 Where things land in `layout.json` (pure, `TabellifyRegroup.plan`)
+`T` = `TabellifyTableLayout.topItems(groupsBefore, columnLayout)`: the shown top-level order as
+`{ group }` / `{ tag }` entries **including the home marker** `{ group: "ungrouped" }` at its
+place (ADR-0019 §2). Every plan writes the full, explicit `{ topOrder: T', tagOrder }`:
+| Result | `topOrder` (T → T') | `tagOrder` |
+|---|---|---|
+| Top-level reorder / A becomes ungrouped beside X | remove `{ tag: A }`; insert it right before / after X (X = `{ tag: B }`, `{ group: G }`, or the first / last tag of run R) | A pruned from every group's list |
+| A joins G (beside B, or at G's end) | remove `{ tag: A }` if present | `tagOrder[G]` = G's shown tags with A inserted (before / after B, or at the end); A pruned elsewhere |
+| Bottom nest, new group N | replace `{ tag: B }` by `{ group: N }`; remove `{ tag: A }` | `tagOrder[N] = [A]`; A and B pruned elsewhere |
+| Flipped nest, new group N | replace `{ tag: B }` by `{ group: N }`; remove `{ tag: A }` | `tagOrder[N] = [B]`; A and B pruned elsewhere |
+| Nest / flip into a reused group R' | remove `{ tag: B }` and `{ tag: A }`; R' keeps its place | `tagOrder[R']` = shown tags + A (bottom) or + B (top); A and B pruned elsewhere |
+
+Kept rules: a plan whose codebook edit changes nothing is `kind: "reorder"` (old rule 7); the
+moved tag's place is computed from what is shown now, so stale saved entries never win (old
+rule 2); the home marker is copied through unchanged.
+
+### A2.6 Pure logic changes
+- **`TabellifyCodebook.tagToGroupName(data, nameTag, childTag)`** (new, `codebook-model.js`):
+  refuse with `ERR_TAG_MISSING` if either tag is missing or they are equal; otherwise reuse the
+  group named like `nameTag` (ignoring case, stored spelling wins) or `pushGroup(next,
+  nameTag)`; remove the `nameTag` record (wherever it was, grouped or not); move `childTag`
+  into the group (end of list) unless already there. Returns `{ ok: true, data, groupId,
+  created }`. `groupUnderTag`'s "anchor ungrouped" branch becomes
+  `tagToGroupName(data, anchor, tag)` (same behaviour; its tests keep passing). The bottom
+  nest calls `groupUnderTag(A, B)`; the flip calls `tagToGroupName(data, A, B)`.
+- **`TabellifyRegroup` target shape** (replaces `zone: header | body | super`):
+  `{ cell: "tag" | "group" | "run", groupId, tag?, run?, edge, side }` (`tag` for tag cells,
+  `run` = k for run headers). `plan` and `describe` apply Tables 1–4 and the fallback;
+  `describe` also returns the **resolved edge** for the indicator, and the hint key.
+  Plan effects: `joined`, `created`, `ungrouped`, plus `named: "below" | "above" | null`
+  (which tag became the group name; replaces the boolean `nest`).
+- **`TabellifyTableLayout`** (ADR-0019): `SCHEMA_VERSION` 3, `emptyColumnLayout()` →
+  `{ topOrder: [], tagOrder: {} }`, `topItems`, run-aware `orderedGroups`, `isCodebookOrder`,
+  `moveTopItem` / `moveTopItemBy` (groups and ungrouped tags among the top level), `moveTag` /
+  `moveTagBy` for tags inside a group only, `dropEdge`, `validateLayout` / `migrateLayout`
+  (1 → 2 → 3), `layoutData`. `withGroupOrder` becomes `withTopOrder`.
+
+### A2.7 Drop indicators (design tokens only, no new colour token, no background)
+Shown for the **resolved** result. They differ by shape, and the hint names the result, so
+meaning never depends on colour (design-system rule). Line width
+`--tabellify-border-width-strong`, colour `--tabellify-color-action`, drawn with inset
+`box-shadow` as today.
+| Result | Classes | Look |
+|---|---|---|
+| Left / right of a tag (sibling, reorder, join beside B) | `tabellify-drop-before` / `-after` on the target header (existing) | vertical line on that side |
+| ... and A changes group (joins G) | plus `tabellify-drop-into` on G's super-header (existing) | line under G's name |
+| Bottom of ungrouped B (nest) | **new** `tabellify-drop-below` on B's header; `tabellify-drop-nest` on B's body cells (existing) | line along the bottom of B's header; lines on both sides of B's cells |
+| Top of ungrouped B (flip) | **new** `tabellify-drop-above` on B's header | line along the top of B's header |
+| Bottom of group G (join at end) | `tabellify-drop-into` on G's super-header, `tabellify-drop-after` on G's last tag header | line under G's name and at G's right end |
+| Left / right of group G or of run R | `tabellify-drop-before` on the super-header and on its first tag header / `tabellify-drop-after` on the super-header and its last tag header | one vertical line through both header rows |
+`tabellify-drop-ungroup` (dashed outline over the whole super-header row) is **retired** with its
+CSS rule, its `DROP_CLASSES` entry and its design-system sample (A2-Q11). `dropKey` includes
+the resolved edge and the run index, so the DOM changes only when the result changes.
+CSS (new rules):
+```css
+.tabellify-grid th.tabellify-drop-above {
+  box-shadow: inset 0 var(--tabellify-border-width-strong) 0 var(--tabellify-color-action);
+}
+.tabellify-grid th.tabellify-drop-below {
+  box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
+}
+```
+
+### A2.8 Drop hint and status texts (Fluent, no arguments; the name is appended as plain text after the text, as the current code does)
+| Result | Fluent ID | Text (en-US, owner may change) | Name appended |
+|---|---|---|---|
+| Any reorder (layout only) | `tabellify-drop-hint-reorder` (existing) | Move column here | — |
+| A joins group G | `tabellify-drop-hint-join` (existing) | Move into group: | G's name |
+| A becomes ungrouped (Tables 1, 2, 4 left / right) | `tabellify-drop-hint-to-ungrouped` (existing) | Move to Ungrouped | — |
+| Bottom nest (B becomes the name) | `tabellify-drop-hint-new-group` (existing) | Turn into a group name: | B (or the reused group's stored spelling) |
+| Flip (A becomes the name) | `tabellify-drop-hint-new-group` (existing) | Turn into a group name: | A (or the reused group's stored spelling) |
+New IDs: `tabellify-table-ungrouped-label` = Ungrouped; `tabellify-regroup-announce-group-name`
+= is now a group name (keyboard flip: "smoker is now a group name" names A).
+Retired: `tabellify-drop-hint-ungroup` (no zone uses it); `tabellify-table-ungrouped-header`
+if nothing references it after T9 (the static Fluent check reports unused IDs either way).
+Status lines unchanged: a flip uses `tabellify-regroup-created` ("The tag is now a group
+name.") like the bottom nest.
+
+### A2.9 Keyboard (Alt only, on a focused tag-column grip; Option on macOS)
+The keys replay the mouse rules; each key equals one drop, through the same `plan`.
+| Key | A inside group G | A ungrouped |
+|---|---|---|
+| Alt+Left / Alt+Right | Move one place inside G; nothing at G's edges (unchanged, layout only) | Move one **top-level** place: past one ungrouped tag or past a whole group (layout only) |
+| Alt+Up | **Leave G**: A becomes ungrouped beside G, **before** G if A is G's first shown tag, otherwise **after** G (= Table 2 left / right), so the column barely moves | Left neighbour is an ungrouped tag B: **flip**, A becomes a group name over B (= Table 1 top on B). Left neighbour is a group, or none: nothing |
+| Alt+Down | Nothing (no third level) | Left neighbour is an ungrouped tag B: **nest**, B becomes a group name, A under it (= Table 1 bottom on B). Left neighbour is a group G: A joins G at its end (= Table 2 bottom). None: nothing |
+- Group grips: Alt+Left / Alt+Right move the group one top-level place (past one ungrouped
+  tag or one group). Row grips: unchanged.
+- After the change focus goes to A's grip; after a flip (A is no column any more) to the new
+  group's grip. Announcements as today ("Temperature moved to group Outcome", "Heat index is
+  now ungrouped"), plus "smoker is now a group name" for a flip.
+- `aria-keyshortcuts` unchanged (tag grips list the four Alt+arrow keys).
+- "Left neighbour" = the top-level item directly left of A in the shown order (A2-Q7 on the
+  choice of the left side for both keys).
+
+### A2.10 Zotero / Mozilla APIs
+No new `Zotero.*` call and no new event. Used: `MouseEvent.clientX` / `clientY` (existing
+F005c `DragEvent` row) and `Element.getBoundingClientRect()` → `DOMRect` (already called in
+`workspace.js`; its own row added to `docs/zotero-api-notes.md` as "Feature 006c Amendment 2",
+Verified (docs), Firefox ESR 140).
+
+### A2.11 Data safety (changes only)
+- Library: **nothing written** (unchanged). A flip removes tag A from the **codebook** only,
+  as the bottom nest removes B (Amendment 1); the Zotero tag and its uses stay.
+- `codebooks.json`: **shape unchanged** (ungrouped tags still `group: null`); written only
+  through `applyCodebookEdit` (revision check, atomic, `.bak`).
+- `layout.json`: schema 3 (ADR-0019), migrated in memory on load, rewritten only by the next
+  save after a user action (version 2 kept as `layout.json.bak`); older builds treat it as
+  "newer" and never overwrite it. No new file, no new write-guard entry.
+- Names stay text-only (`textContent`, `dataset`, `setAttribute`); the run index in
+  `data-run` is a number made by our code. Debug Output: IDs, run indexes, edges and counts
+  only, never tag or group names (e.g. `regroup: tag dropped on the top edge of an ungrouped
+  tag; group g7 created (drag)`).
+
+### A2.12 Acceptance criteria (Amendment 2)
+`[manual]` = owner smoke test in the dev profile (Zotero 10.0.9), collection "F005 test".
+**Setup** (script box, one entry per Enter): `Exposure(Heat index, Temperature),
+Outcome(Hospitalization, Mortality)`, then `age, sex, smoker, bmi, diet`. Expected start: an
+"Ungrouped" super-header over `age`, `sex`, `smoker`, `bmi`, `diet` on the left, then
+"Exposure", "Outcome". Run AC16–AC24 in order (each starts from the previous result). "Top / bottom / left / right of a header" = hold the pointer in that part of the
+cell (outer quarter for left / right, upper / lower half of the middle for top / bottom).
+Kept from above: AC1, AC2, AC5, AC7, AC9, AC10, AC11 (AC4 as amended by Amendment 1).
+
+- [ ] AC16 `[manual]` **"Ungrouped" header.** The super-header over the ungrouped tags reads
+  "Ungrouped" in the muted (grey) text and has no grip. With a codebook that has only
+  ungrouped tags (type `x1, x2` in a fresh codebook, or remove the groups), the header is one
+  row and no "Ungrouped" text shows.
+- [ ] AC17 `[manual]` **Bottom of an ungrouped tag (nest).** Dragging `sex` to the bottom of
+  `age`'s header shows a line along the bottom of `age`'s header and lines beside `age`'s
+  cells, hint "Turn into a group name: age". After the drop: super-header "age" over `sex`
+  only, where `age` was; no `age` column; pill "age · 1"; status "Codebook saved. The tag is
+  now a group name.".
+- [ ] AC18 `[manual]` **Top of an ungrouped tag (flip).** Dragging `bmi` to the top of
+  `smoker`'s header shows a line along the top of `smoker`'s header, hint "Turn into a group
+  name: bmi". After the drop: super-header "bmi" over `smoker`, where `smoker` was; no `bmi`
+  column; pill "bmi · 1".
+- [ ] AC19 `[manual]` **Left / right of an ungrouped tag.** Dragging `Temperature` to the
+  left part of `diet`'s header shows a vertical line on that side, hint "Move to
+  Ungrouped"; after the drop `Temperature` is ungrouped right before `diet`, under the same
+  "Ungrouped" header; "Exposure · 1". Dragging `diet` to the left part of `Temperature`'s
+  header only reorders (hint "Move column here"; `revision` in `codebooks.json` unchanged);
+  drag it back.
+- [ ] AC20 `[manual]` **Group super-header.** Dragging `Heat index` to the bottom of
+  "Outcome" shows a line under "Outcome" and at its right end, hint "Move into group:
+  Outcome", and puts `Heat index` last in "Outcome". Dragging `Mortality` to the right part
+  of "Outcome" shows one vertical line through both header rows, hint "Move to Ungrouped";
+  after the drop `Mortality` sits right of "Outcome" with its own "Ungrouped" header.
+  Holding the pointer at the top of "Outcome" never shows a line above it: it shows the left
+  or right line instead (fallback).
+- [ ] AC21 `[manual]` **Sub-header.** Holding `Temperature` at the top or bottom of
+  `Hospitalization`'s header shows only the left or right line (fallback), hint "Move into
+  group: Outcome"; after the drop `Temperature` is in "Outcome" beside `Hospitalization`.
+  No third header row ever appears.
+- [ ] AC22 `[manual]` **Runs.** Now there are two "Ungrouped" headers (one over `diet`, one
+  over `Mortality` right of "Outcome"). Dragging `Mortality` to the right part of `diet`'s
+  header leaves one "Ungrouped" header (over `diet`, `Mortality`); the pills show one
+  "Ungrouped · 2". Closing and reopening
+  the Tabellify tab keeps groups, runs and positions. "Reset columns" puts all ungrouped tags
+  back in one run at the left and changes no pill count.
+- [ ] AC23 `[manual]` **Below a column (alias).** Dropping on the cells under an ungrouped tag
+  does the same as its bottom edge (AC17). Dropping on the left / right half of the cells
+  under a tag inside a group puts the dragged tag into that group before / after it.
+- [ ] AC24 `[manual]` **Keyboard** (Tab to a column grip; Alt = Option). (a) On
+  `Temperature`'s grip (in "Outcome"): Alt+Down does nothing; Alt+Right stops at the end of
+  "Outcome"; Alt+Up makes it ungrouped right beside "Outcome", focus stays on its grip, and it
+  is announced with VoiceOver on. Alt+Left / Alt+Right on it now step past the whole
+  "Outcome" group in one press. (b) On `Mortality`'s grip (left neighbour `diet`): Alt+Up
+  turns `Mortality` into a group name over `diet`; focus is on the "Mortality" group's grip.
+  (c) Type `x1, x2` in the script box: they appear as one run where the old ungrouped block
+  used to be (far left unless that block had been moved before this build). On `x2`'s grip,
+  Alt+Down turns `x1` into a group name over `x2`.
+- [ ] AC25 `[manual]` **Upgrade of the saved layout.** Before installing this build, note the
+  column order in the dev profile. After installing: same order (the ungrouped block where it
+  was). After the first move, `~/Zotero tabellify-dev/tabellify/layout.json` starts with
+  `"schemaVersion": 3` and `layout.json.bak` holds the previous version 2 file.
+- [ ] AC26 `[manual]` **Safety.** The indicators are visible in Light and Dark. The dev Zotero
+  tag selector shows no new tag and still lists `age`, `bmi` (only the codebook dropped them).
+  Debug Output has no Tabellify errors and no tag or group names in `regroup:` / `layout:`
+  lines.
+- [ ] AC27 `[auto]` **`dropEdge`** (`tests/unit/table-layout-model.test.mjs`): the four
+  zones with BAND 0.25 (corners, middle line, exact borders), `side`, pointer outside the rect
+  (clamped), zero width / height → side.
+- [ ] AC28 `[auto]` **Layout schema 3** (`tests/unit/table-layout-model.test.mjs`,
+  `tests/unit/layout-store.test.mjs`): `topItems` (stale `{ group }` / `{ tag }` skipped;
+  grouped tag listed as `{ tag }` skipped; unlisted ungrouped tags at the marker, or first
+  without one; unlisted groups appended; repeats dropped); `orderedGroups` builds runs with
+  indexes; `validateLayout` v3 frame, v4 → newer; cleaning (bad entries, two keys,
+  `"__proto__"` as tag name and as key, second marker dropped, `tagOrder.ungrouped` dropped);
+  migration 1 → 3 and 2 → 3 for: `"ungrouped"` first / middle / missing with non-empty
+  `groupOrder` (appended) / empty `groupOrder`, with and without `tagOrder.ungrouped`; the
+  migrated layout shows exactly the schema 2 order; `moveTopItem(By)`; `saveData` writes
+  version 3 over a version 2 file with the same revision and refuses a version 4 file.
+- [ ] AC29 `[auto]` **`tagToGroupName`** (`tests/unit/codebook-model.test.mjs`): new group
+  named exactly like the tag, `nextId` + 1, `created: true`; reuse ignoring case (incl. the
+  name tag's own group); name tag removed whether it was grouped or ungrouped; child moved
+  to the end; missing / equal tags refused; input not mutated; result passes `validate`;
+  existing `groupUnderTag` tests unchanged and passing.
+- [ ] AC30 `[auto]` **`TabellifyRegroup`** (`tests/unit/regroup-model.test.mjs`, rewritten):
+  every row of Tables 1–4, the body alias, every fallback (group top, run top, sub-header
+  top / bottom), A = B; the `layout.json` result of every row of A2.5 (positions in
+  `orderedGroups`, home marker kept, pruning); collisions; codebook-unchanged plans are
+  `reorder`; `describe` returns hint, name and resolved edge; inputs not mutated.
+- [ ] AC31 `[auto]` **Workspace** (`tests/unit/workspace-table.test.mjs`, fake DOM): run
+  headers with "Ungrouped" text, `data-run`, no grip; one-row header when no group has a
+  column; `dragover` with `clientX` / `clientY` at each zone of a tag header, group header,
+  run header and body cell gives the right classes and hint (fallbacks included); regroup
+  zones refused while the codebook can't be saved; whole-group drag between ungrouped tags;
+  the keyboard table of A2.9 (plans, focus, announcements); `endDrag` clears
+  `tabellify-drop-above` / `-below`; one "Ungrouped" pill. Static checks as AC15, with
+  `tabellify-drop-ungroup` and `tabellify-drop-hint-ungroup` gone and the new Fluent IDs
+  present; no new Zotero allow-list or write-guard entry.
+
+### A2.13 Task breakdown (Amendment 2)
+| # | Task | Agent | Depends on | File scope |
+|---|---|---|---|---|
+| T5 | Owner answers A2-Q1 – A2-Q12 and decides ADR-0019 | owner / orchestrator | — | — |
+| T6 | `layout.json` schema 3: `topItems`, run-aware `orderedGroups`, top-level moves, `dropEdge`, validation, migration 1 → 2 → 3, `layoutData` + tests (AC27, AC28) | developer | T5 | `src/content/table-layout-model.js`, `src/content/layout-store.js` (comments / JSDoc only), `tests/unit/table-layout-model.test.mjs`, `tests/unit/layout-store.test.mjs` |
+| T7 | `tagToGroupName`; `groupUnderTag` delegates to it + tests (AC29) | developer | T5 (parallel with T6: no shared file) | `src/content/codebook-model.js`, `tests/unit/codebook-model.test.mjs` |
+| T8 | `TabellifyRegroup` for Tables 1–4, fallback, A2.5 placement, `describe` with edge + tests (AC30) | developer | T6, T7 | `src/content/regroup-model.js`, `tests/unit/regroup-model.test.mjs` |
+| T9 | Workspace: run headers ("Ungrouped", `data-run`, no grip), `runHeader`, edge-based `tagDropTarget` with body alias, group drags over the mixed top level, indicators, hints, keyboard table, focus / announcements, pills, `columnLayout` shape in load / save / reset / logs; CSS; Fluent; static checks; design-system samples (AC31) | developer | T8 | `src/content/workspace.js`, `src/content/workspace.css`, `src/locale/en-US/tabellify.ftl`, `tests/unit/workspace-table.test.mjs`, `tests/static/workspace-script.test.mjs`, `tests/static/l10n-and-window.test.mjs` (only if its lists name the retired IDs / classes), `docs/design-system-states.html`, `docs/design-system.md` |
+| T10 | `npm test`, `npm run build`; owner smoke test AC1, AC2, AC5, AC7, AC9–AC11, AC16–AC26 | developer → owner | T9 | — |
+T6 and T7 may run in parallel (worktrees from the branch tip are needed: they build on unmerged
+006c work, so the orchestrator runs them in this branch one after the other if worktrees can't
+start from it). T8 and T9 are separate commits (one concern each). `workspace.xhtml` needs no
+change (script order and the hint element stay).
+
+### A2.14 Open questions (each with the recommendation this amendment assumes)
+1. **A2-Q1 Edge zones.** *Recommended:* proportional bands (outer quarter = left / right,
+   middle half split into top / bottom). Alternative: diagonal "X" split (true nearest edge in
+   proportion; top / bottom then cover most of a wide cell, so sideways moves get harder).
+2. **A2-Q2 Where A lands on a group's bottom edge.** *Recommended:* at the end of the group.
+   Alternative: under the sub-header column the pointer is above (more precise, more code and
+   a less obvious indicator).
+3. **A2-Q3 Drops on an "Ungrouped" run header** (not in the owner's rules). *Recommended:*
+   Table 4 (left = start of the run, right / bottom = end, top falls back). Alternative:
+   refuse drops on run headers.
+4. **A2-Q4 Grip on run headers.** *Recommended:* none (runs form by adjacency; tags move one
+   by one). Alternative: a grip that moves the whole run as a unit.
+5. **A2-Q5 Where new ungrouped tags appear** (script box). *Recommended:* at the home marker
+   (where the old ungrouped block was; far left by default), ADR-0019 Q2.
+6. **A2-Q6 Flip when A is in a group.** *Recommended:* allowed: A leaves its group and becomes
+   a group name at B's place. Alternative: top edge only for an ungrouped A (others fall back).
+7. **A2-Q7 Keyboard.** *Recommended:* A2.9 (Alt+Up on a grouped tag leaves the group;
+   Alt+Up / Alt+Down on an ungrouped tag flip / nest with the **left** neighbour, so the two
+   keys are mirror images on the same pair). Alternative: Alt+Up on an ungrouped tag does
+   nothing (safer: the flip removes the focused tag from the codebook; the mouse and script
+   box can still do it).
+8. **A2-Q8 Body cells.** *Recommended:* keep them as an alias of the bottom edge (a big,
+   easy target for the nest; under a grouped tag they fall back to left / right). Alternative:
+   body cells refused (only header edges count).
+9. **A2-Q9 Pills with several runs.** *Recommended:* one "Ungrouped · N" pill at the first
+   run's position. Alternative: one pill per run.
+10. **A2-Q10 Copy of the old layout.** *Recommended:* no one-time `layout.v2.json`; the `.bak`
+    of the first save is enough (orders only). ADR-0019 Q3.
+11. **A2-Q11 Dashed "ungroup" indicator.** *Recommended:* retire it (no zone ungroups the
+    whole row any more). Alternative: keep it on the target super-header for "Move to
+    Ungrouped" drops.
+12. **A2-Q12 Reset columns with runs.** *Recommended:* reset joins all ungrouped tags into one
+    run at the left (the default order); grouping unchanged.
 
 ## Owner's rules (2026-11-13, verbatim)
 - Sideways drag reorders columns (existing behaviour). Dragging a sub-column into another
