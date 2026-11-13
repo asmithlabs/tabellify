@@ -3,8 +3,10 @@
 <!-- Why global.css: it gives the root <window> its background (the system colour
      -moz-Dialog) and the native window look. Without it the root has no background and
      Gecko makes the native window transparent (the see-through window seen on macOS).
-     System colours follow Zotero's light/dark setting, so workspace.css sets no
-     background-color. Stylesheet processing instructions must come before <window>. -->
+     Stylesheet processing instructions must come before <window>.
+     Feature 005d (ADR-0015): our brand colours come from tokens.css (design tokens,
+     linked in <linkset> below, before workspace.css, which uses them). workspace.css
+     paints the page colour on #tabellify-workspace-main, never on the root <window>. -->
 <!-- Tabellify workspace (Feature 001 window / Feature 002 tab / Feature 003 data browser /
      Feature 004 codebook).
 
@@ -38,6 +40,8 @@
         data-l10n-id="tabellify-workspace-window">
   <linkset>
     <html:link rel="localization" href="tabellify.ftl"/>
+    <!-- tokens.css first: it defines the var(--tabellify-…) values workspace.css uses. -->
+    <html:link rel="stylesheet" href="chrome://tabellify/content/tokens.css"/>
     <html:link rel="stylesheet" href="chrome://tabellify/content/workspace.css"/>
   </linkset>
 
@@ -174,8 +178,11 @@
          Feature 005c: each group and tag header gets a grip (a <span>, not a <button>:
          Firefox does not start a drag from a draggable <button>, Mozilla bug 568313).
          A tag column moves only inside its group; a group header moves the whole group.
-         Title and k/M never move. The first column holds each paper's row grip. -->
-    <html:table id="tabellify-items-table" hidden="hidden">
+         Title and k/M never move. The first column holds each paper's row grip.
+
+         Feature 005d: class="tabellify-grid" carries the shared table style
+         (workspace.css), so a later table (F006) can reuse it. -->
+    <html:table id="tabellify-items-table" class="tabellify-grid" hidden="hidden">
       <html:colgroup id="tabellify-items-cols"></html:colgroup>
       <html:thead>
         <html:tr id="tabellify-items-group-row" class="tabellify-group-row">
