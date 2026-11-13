@@ -115,3 +115,23 @@ tabellify-monitor-hide-remaining = Hide remaining
 tabellify-column-codebook = Codebook tags
 tabellify-column-in = In
 tabellify-column-details = Details
+
+## Item pane / reader section "Tabellify tags" (Feature 005b).
+## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
+## messages use attributes: `.label` (header text) and `.tooltiptext` (icon tooltip), like
+## Zotero's own sections. reader-tags.js reads `tabellify-reader-summary` with
+## document.l10n.formatValue(); the other messages are set on <p> elements with
+## data-l10n-id / data-l10n-args. `$used` and `$total` are numbers.
+
+tabellify-reader-section-header =
+    .label = Tabellify tags
+tabellify-reader-section-sidenav =
+    .tooltiptext = Tabellify tags
+# Header summary, also shown when the section is collapsed: "2 / 3".
+tabellify-reader-summary = { $used } / { $total }
+tabellify-reader-used = { $used } of { $total } codebook tags used on this paper
+tabellify-reader-remaining = Remaining:
+tabellify-reader-all-used = All { $total } codebook tags used on this paper.
+tabellify-reader-no-codebook = No codebook yet. Create one in Tools → Tabellify…
+tabellify-reader-codebook-error = Could not read the codebook.
+tabellify-reader-counting = Counting…
