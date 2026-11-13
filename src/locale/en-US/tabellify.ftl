@@ -119,6 +119,26 @@ tabellify-column-codebook = Codebook tags
 tabellify-column-in = In
 tabellify-column-details = Details
 
+## Workspace: per-paper table layout (Feature 005c).
+## `tabellify-column-move` and `tabellify-column-grip` only set the screen-reader name
+## (`.aria-label`) of the grip column header and of each column's grip; the visible "⠿"
+## comes from workspace.css. The toolbar buttons are set in workspace.xhtml with
+## data-l10n-id. The other messages are read from JavaScript with
+## document.l10n.formatValue() (no arguments) and put on the page as plain text, with the
+## paper title, column name and numbers added by workspace.js:
+## "Move paper:" + " <title>", "<title>" + " moved to position" + " 2 " + "of" + " 12".
+
+tabellify-column-move =
+    .aria-label = Move
+tabellify-column-grip =
+    .aria-label = Move column
+tabellify-table-move-paper = Move paper:
+tabellify-table-manual-order = Manual order
+tabellify-table-clear-manual = Clear manual order
+tabellify-table-reset-columns = Reset columns
+tabellify-table-moved-to = moved to position
+tabellify-table-of = of
+
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
 ## messages use attributes: `.label` (header text) and `.tooltiptext` (icon tooltip), like

@@ -16,6 +16,11 @@
  *   "Also count tags on the paper itself" checkbox is ticked. The checkbox is stored in the
  *   Zotero pref extensions.tabellify.countItemTags (a setting, not library data); this is
  *   the only place in Tabellify that writes it.
+ * - F005c: formats the per-paper table and lets the user rearrange it: drag a column's grip
+ *   (or Alt+Left/Right on it) to move the column, drag a paper's grip (or Alt+Up/Down) to
+ *   put the papers in a hand-made "manual order" per collection. The rules are pure logic
+ *   in table-layout-model.js (TabellifyTableLayout). Only Tabellify's own arrays change:
+ *   nothing is written to the library.
  * - F004: shows and edits the codebook (super-tag groups and their planned tags). The rules
  *   live in codebook-model.js (TabellifyCodebook); the file is read and written by
  *   codebook-store.js (TabellifyCodebookStore): Tabellify's own codebooks.json in
@@ -179,7 +184,18 @@ var TabellifyWorkspace = {
     // F005: "Refresh", and one delegated click listener on the per-paper table (sort
     // buttons in the header, "Show remaining" toggles in the rows). Removed in onUnload.
     this.el("tabellify-monitor-refresh").addEventListener("click", this.onRefreshClick);
-    this.el("tabellify-items-table").addEventListener("click", this.onTableClick);
+    const table = this.el("tabellify-items-table");
+    table.addEventListener("click", this.onTableClick);
+    // F005c: drag-and-drop and Alt+arrow moves, delegated on the table like the clicks, and
+    // one click listener on the table toolbar. All removed in onUnload.
+    table.addEventListener("dragstart", this.onTableDragStart);
+    table.addEventListener("dragover", this.onTableDragOver);
+    table.addEventListener("dragleave", this.onTableDragLeave);
+    table.addEventListener("drop", this.onTableDrop);
+    table.addEventListener("dragend", this.onTableDragEnd);
+    table.addEventListener("keydown", this.onTableKeydown);
+    this.el("tabellify-table-toolbar").addEventListener("click", this.onToolbarClick);
+    this.columnOrder = [...TabellifyTableLayout.COLUMN_IDS];
     // Owner decision 2026-11-13: the "count item tags" checkbox (removed in onUnload).
     const countBox = this.el("tabellify-monitor-count-item-tags");
     this.countItemTags = this.readCountItemTags();
@@ -194,6 +210,7 @@ var TabellifyWorkspace = {
       this.untitledText = (await document.l10n?.formatValue("tabellify-untitled")) ?? "";
       // F005: the tag monitor's texts, formatted once (see MONITOR_STRINGS).
       await this.formatStrings(this.MONITOR_STRINGS);
+      await this.formatStrings(this.LAYOUT_STRINGS);
       this.monitorReady = true;
       this.renderMonitor();
 
@@ -201,6 +218,7 @@ var TabellifyWorkspace = {
       // Synchronous: collections are kept in memory from start-up. `true` = include
       // subcollections, flattened depth-first, each with a `level` for indentation.
       const collections = Zotero.Collections.getByLibrary(libraryID, true);
+      this.collectionKeys = this.collectionKeyMap(collections);
       this.log(`listing ${collections.length} collection(s) in My Library`);
 
       if (collections.length === 0) {
@@ -228,9 +246,16 @@ var TabellifyWorkspace = {
    */
   onCollectionChange: (event) => {
     const W = TabellifyWorkspace;
-    // A newly chosen collection starts in the default order, with every paper collapsed.
-    W.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
-    W.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
+    // A newly chosen collection starts with every paper collapsed, in its manual order if
+    // it has one (F005c, spec Q2), otherwise in the default order.
+    const key = W.collectionKeys.get(Number(event.target.value));
+    if (key && W.manualOrders.has(key)) {
+      W.sortKey = TabellifyTableLayout.MANUAL;
+      W.sortDirection = "asc";
+    } else {
+      W.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
+      W.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
+    }
     W.expandedPaperIds.clear();
     W.showCollection(event.target.value, "collection chosen");
   },
@@ -252,7 +277,7 @@ var TabellifyWorkspace = {
     this.currentCollection = value;
     if (!recompute || value === "") {
       this.monitorData = null;
-      this.el("tabellify-items-table").hidden = true;
+      this.setTableHidden(true);
       this.el("tabellify-items-body").replaceChildren(); // remove old rows (no markup involved)
       this.renderMonitor();
     }
@@ -265,6 +290,7 @@ var TabellifyWorkspace = {
       const data = await this.gatherMonitorData(Number(value));
       if (request !== this.requestCounter) return; // a newer choice or recompute started
       this.monitorData = data;
+      this.collectionKeys = data.collectionKeys;
       const result = this.renderMonitor();
       this.log(
         `tag monitor: recomputed for collection ${data.rootId} (${reason}): ` +
@@ -276,7 +302,7 @@ var TabellifyWorkspace = {
     } catch (e) {
       if (request !== this.requestCounter) return;
       this.monitorData = null;
-      this.el("tabellify-items-table").hidden = true;
+      this.setTableHidden(true);
       this.el("tabellify-items-body").replaceChildren();
       this.renderMonitor();
       this.showStatus("tabellify-load-error");
@@ -409,13 +435,16 @@ var TabellifyWorkspace = {
 
     // A fresh snapshot of the collection tree (synchronous, in memory, no trashed
     // collections), so subcollections created since the last read are included.
-    const collections = Zotero.Collections.getByLibrary(root.libraryID, true)
-      .map((c) => ({ id: c.id, parentID: c.parentID, name: c.name }));
+    const snapshot = Zotero.Collections.getByLibrary(root.libraryID, true);
+    const collections = snapshot.map((c) => ({ id: c.id, parentID: c.parentID, name: c.name }));
+    // F005c: stable collection keys, for the manual orders (they survive a restart).
+    const collectionKeys = this.collectionKeyMap(snapshot);
     const scope = TabellifyTagMonitor.descendantIds(collections, rootId);
 
     const papers = [];
     const read = new Map(); // item ID → what we read, so a paper in two collections is read once
     const allTags = new Map(); // item ID → "All tags" column text (F003)
+    const keys = new Map(); // item ID → item key (F005c: manual orders are kept by key)
     let annotationErrors = 0;
     for (const collectionId of scope) {
       const collection = Zotero.Collections.get(collectionId);
@@ -439,11 +468,14 @@ var TabellifyWorkspace = {
           entry = { title: item.getDisplayTitle(), itemTags, annotationTags };
           read.set(item.id, entry);
           allTags.set(item.id, this.joinTags(itemTags));
+          // `key`: read-only getter, 8 characters, the same on every computer and after
+          // sync (docs/zotero-api-notes.md, F005c `item.key` row).
+          keys.set(item.id, item.key);
         }
         papers.push({ id: item.id, title: entry.title, collectionId, itemTags: entry.itemTags, annotationTags: entry.annotationTags });
       }
     }
-    return { rootId, collections, papers, allTags, annotationErrors, scopeSize: scope.length };
+    return { rootId, collections, collectionKeys, papers, allTags, keys, annotationErrors, scopeSize: scope.length };
   },
 
   /**
@@ -511,7 +543,6 @@ var TabellifyWorkspace = {
     const summary = this.el("tabellify-monitor-summary");
     const warning = this.el("tabellify-monitor-warning");
     const groupsEl = this.el("tabellify-monitor-groups");
-    const table = this.el("tabellify-items-table");
     groupsEl.replaceChildren();
 
     const setMessage = (id) => {
@@ -567,10 +598,10 @@ var TabellifyWorkspace = {
 
     this.renderPaperTable(result, counting);
     if (result.paperCount === 0) {
-      table.hidden = true;
+      this.setTableHidden(true);
       this.showStatus("tabellify-no-items");
     } else {
-      table.hidden = false;
+      this.setTableHidden(false);
       this.showStatus(null);
     }
     return result;
@@ -584,6 +615,8 @@ var TabellifyWorkspace = {
   renderPaperTable(result, counting) {
     const body = this.el("tabellify-items-body");
     body.replaceChildren();
+    this.applyColumnOrder();
+    this.updateTableToolbar();
     // aria-sort tells screen readers (and our CSS arrow) which column sorts the table.
     for (const button of this.el("tabellify-items-table").querySelectorAll("button[data-sort]")) {
       const th = button.closest("th");
@@ -594,9 +627,12 @@ var TabellifyWorkspace = {
       }
     }
 
-    const columns = 5;
-    for (const paper of TabellifyTagMonitor.sortPapers(result.papers, this.sortKey, this.sortDirection)) {
+    const columns = 1 + this.columnOrder.length; // row grip + data columns
+    const shown = this.displayedPapers(result.papers);
+    this.displayedPaperIds = shown.map((p) => p.id);
+    for (const paper of shown) {
       const tr = this.html("tr");
+      tr.dataset.paperId = String(paper.id);
       // F005c: each cell carries its column class (tabellify-col-<id>), which sets its
       // width and wrapping in workspace.css.
       const title = this.html("td", "tabellify-col-title");
@@ -621,12 +657,16 @@ var TabellifyWorkspace = {
         toggle.textContent = this.text(expanded ? "tabellify-monitor-hide-remaining" : "tabellify-monitor-show-remaining");
         toggleCell.append(toggle);
       }
-      tr.append(title, count, inCell, tags, toggleCell);
+      // F005c: the row grip first, then the data cells in the current column order.
+      const cells = { title, count, collections: inCell, tags, details: toggleCell };
+      tr.append(this.rowGripCell(paper), ...this.columnOrder.map((id) => cells[id]));
       body.append(tr);
 
       if (expanded) {
         const detail = this.html("tr", "tabellify-monitor-detail");
         detail.id = detailId;
+        // Same data-paper-id as its paper: a drop on the detail row counts as on the paper.
+        detail.dataset.paperId = String(paper.id);
         const cell = this.html("td");
         cell.colSpan = columns;
         for (const group of paper.groups) {
@@ -652,6 +692,429 @@ var TabellifyWorkspace = {
       rows.map((row) => (row.classList.contains("tabellify-monitor-detail") ? "detail" : "paper")),
     );
     rows.forEach((row, i) => row.classList.toggle("tabellify-row-alt", flags[i]));
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // Feature 005c: table layout (column order, manual paper order, drag-and-drop, keyboard).
+  // The rules are in table-layout-model.js (TabellifyTableLayout, unit-tested). Everything
+  // here only rearranges Tabellify's own arrays and the table on screen: no library write.
+  //
+  // How HTML drag-and-drop works (built into Gecko, the engine Zotero runs on): an element
+  // with draggable="true" (our grips) fires "dragstart" when the user starts dragging it;
+  // then "dragover" fires again and again on whatever is under the pointer, "drop" where
+  // the mouse is released, and "dragend" on the dragged element (also when the drag was
+  // cancelled, e.g. with Escape). A drop is only allowed where a dragover handler calls
+  // event.preventDefault(). Each event carries event.dataTransfer, a small "clipboard"
+  // for the drag. All handlers are delegated on the table (one listener for every row).
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * Private drag data types. Firefox starts a drag only if dragstart calls setData
+   * (docs/zotero-api-notes.md, DataTransfer row), so we set one of these. No Zotero drop
+   * target accepts them, so dropping our drag elsewhere does nothing.
+   * SAFETY: the drop handler NEVER reads the drag data back. It uses `dragging` (set by our
+   * own dragstart); the type only decides whether a drop is allowed. Text, files or items
+   * dragged in from elsewhere are refused and never parsed or shown.
+   */
+  ROW_DRAG_TYPE: "application/x-tabellify-row",
+  COLUMN_DRAG_TYPE: "application/x-tabellify-column",
+
+  /** Fluent IDs used from JavaScript by the layout code (formatted once in init()). */
+  LAYOUT_STRINGS: [
+    "tabellify-table-move-paper",
+    "tabellify-table-moved-to",
+    "tabellify-table-of",
+  ],
+
+  /** Order of the five data columns: one order for the whole tab (not per collection). */
+  columnOrder: [],
+
+  /**
+   * Hand-made paper orders: collection key ("<libraryID>/<collectionKey>") → item keys.
+   * Keys, not numeric IDs, so a saved order stays valid on another computer (ADR-0014).
+   * @type {Map<string, string[]>}
+   */
+  manualOrders: new Map(),
+
+  /** Collection ID → collection key, from the latest read of the collection tree. */
+  collectionKeys: new Map(),
+
+  /** IDs of the papers in the order they are shown now (the seed of a manual order). */
+  displayedPaperIds: [],
+
+  /** The drag that started in this table: `{ kind: "column" | "row", id }`, or null. */
+  dragging: null,
+
+  /**
+   * Collection ID → "<libraryID>/<key>" (the shape of Zotero's own `libraryKey`). `key` and
+   * `libraryID` are read-only getters (docs/zotero-api-notes.md, F003 and F005c rows).
+   * @param {Array<{ id: number, libraryID: number, key: string }>} collections
+   * @returns {Map<number, string>}
+   */
+  collectionKeyMap(collections) {
+    return new Map(collections.map((c) => [c.id, `${c.libraryID}/${c.key}`]));
+  },
+
+  /** @returns {string | null} key of the chosen collection */
+  currentCollectionKey() {
+    return this.collectionKeys.get(Number(this.currentCollection)) ?? null;
+  },
+
+  /** @returns {string[] | null} the chosen collection's manual order, if it has one */
+  currentManualOrder() {
+    const key = this.currentCollectionKey();
+    return key ? this.manualOrders.get(key) ?? null : null;
+  },
+
+  /**
+   * The papers in the order to show: the manual order (new papers after it, in default
+   * order), or sorted by the chosen column.
+   * @template {{ id: number }} P
+   * @param {P[]} papers
+   * @returns {P[]}
+   */
+  displayedPapers(papers) {
+    const manual = this.currentManualOrder();
+    if (this.sortKey === TabellifyTableLayout.MANUAL) {
+      const { key, direction } = TabellifyTagMonitor.DEFAULT_SORT;
+      const fallback = TabellifyTagMonitor.sortPapers(papers, key, direction);
+      if (!manual) return fallback;
+      const keys = this.monitorData.keys;
+      return TabellifyTableLayout.applyManualOrder(papers, manual, fallback, (p) => keys.get(p.id));
+    }
+    return TabellifyTagMonitor.sortPapers(papers, this.sortKey, this.sortDirection);
+  },
+
+  /** Show or hide the per-paper table and its toolbar together. */
+  setTableHidden(hidden) {
+    this.el("tabellify-items-table").hidden = hidden;
+    this.el("tabellify-table-toolbar").hidden = hidden;
+  },
+
+  /**
+   * Put the header cells in `columnOrder`. Moving an existing <th> keeps its Fluent text.
+   * Only touches the DOM when the order differs (moving a focused element drops focus).
+   */
+  applyColumnOrder() {
+    const headRow = this.el("tabellify-items-table").querySelector("thead tr");
+    if (!headRow) return;
+    const current = [...headRow.querySelectorAll("th[data-column]")].map((th) => th.dataset.column);
+    if (current.join(",") === this.columnOrder.join(",")) return;
+    for (const id of this.columnOrder) {
+      // `id` is one of the fixed COLUMN_IDS (normalized), never library text.
+      const th = headRow.querySelector(`th[data-column="${id}"]`);
+      if (th) headRow.append(th);
+    }
+  },
+
+  /** "Manual order" / "Clear manual order" exist only when there is a manual order. */
+  updateTableToolbar() {
+    const hasManual = Boolean(this.currentManualOrder());
+    const manualButton = this.el("tabellify-table-manual-order");
+    manualButton.hidden = !hasManual;
+    manualButton.setAttribute("aria-pressed", String(hasManual && this.sortKey === TabellifyTableLayout.MANUAL));
+    this.el("tabellify-table-clear-manual").hidden = !hasManual;
+  },
+
+  /**
+   * The first cell of a paper row: its grip. A <span>, not a <button> (Firefox does not
+   * start a drag from a draggable button). The row itself is not draggable, so text in
+   * the other cells can still be selected with the mouse.
+   * @param {{ id: number, title: string, untitled: boolean }} paper
+   */
+  rowGripCell(paper) {
+    const cell = this.html("td", "tabellify-col-grip");
+    const grip = this.html("span", "tabellify-grip");
+    grip.dataset.grip = "row";
+    grip.dataset.paperId = String(paper.id);
+    grip.setAttribute("draggable", "true");
+    grip.setAttribute("tabindex", "0");
+    grip.setAttribute("role", "button");
+    grip.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
+    // An attribute value is plain text, never parsed as markup (see SECURITY above).
+    const title = paper.untitled ? this.untitledText : paper.title;
+    grip.setAttribute("aria-label", `${this.text("tabellify-table-move-paper")} ${title}`);
+    cell.append(grip);
+    return cell;
+  },
+
+  /**
+   * Use a new column order (if it differs) and re-render.
+   * @param {string[]} order
+   * @param {string} movedId
+   * @param {string} how  "drag" or "keyboard", for Debug Output
+   * @returns {boolean} true if the order changed
+   */
+  setColumnOrder(order, movedId, how) {
+    if (order.join(",") === this.columnOrder.join(",")) return false;
+    this.columnOrder = order;
+    this.renderMonitor();
+    this.log(`layout: column ${movedId} moved to position ${order.indexOf(movedId) + 1} of ${order.length} (${how})`);
+    return true;
+  },
+
+  /**
+   * Move one paper in the chosen collection's manual order and show that order. The order
+   * shown NOW is the starting point (spec Q5: a move while sorted by a column starts from
+   * what the user sees); this also drops papers that have gone and adds new ones.
+   * @param {number} paperId
+   * @param {(seed: string[], key: string) => string[]} computeOrder  e.g. a moveRow call
+   * @param {string} how  "drag" or "keyboard", for Debug Output
+   * @returns {boolean} true if something changed
+   */
+  movePaper(paperId, computeOrder, how) {
+    const collectionKey = this.currentCollectionKey();
+    const keys = this.monitorData?.keys;
+    const key = keys?.get(paperId);
+    if (!collectionKey || !key) return false;
+    const seed = this.displayedPaperIds.map((id) => keys.get(id)).filter(Boolean);
+    const next = computeOrder(seed, key);
+    if (next.join(",") === seed.join(",")) return false; // e.g. Alt+Up on the first paper
+    this.manualOrders.set(collectionKey, next);
+    this.sortKey = TabellifyTableLayout.MANUAL;
+    this.sortDirection = "asc";
+    this.renderMonitor();
+    this.log(
+      `layout: paper ${paperId} moved to position ${next.indexOf(key) + 1} of ${next.length} ` +
+      `in collection ${this.currentCollection} (${how}); showing manual order`,
+    );
+    return true;
+  },
+
+  /**
+   * Where a drag over the table would land, or null when it may not drop there (not our
+   * drag, wrong kind, or no target under the pointer).
+   * @param {DragEvent} event
+   */
+  dropTarget(event) {
+    const drag = this.dragging;
+    if (!drag) return null;
+    // `types` lists the data types of the drag (here only to check it is ours).
+    const types = Array.from(event.dataTransfer?.types ?? []);
+    if (drag.kind === "column") {
+      if (!types.includes(this.COLUMN_DRAG_TYPE)) return null;
+      const th = event.target.closest?.("th[data-column]");
+      if (!th) return null;
+      const rect = th.getBoundingClientRect();
+      const side = TabellifyTableLayout.dropSide(event.clientX, rect.left, rect.width);
+      return { kind: "column", id: th.dataset.column, side, first: th, last: th };
+    }
+    if (!types.includes(this.ROW_DRAG_TYPE)) return null;
+    const row = event.target.closest?.("tbody tr[data-paper-id]");
+    if (!row) return null;
+    const id = Number(row.dataset.paperId);
+    // The paper row and, if open, its detail row count as one block.
+    const rows = [...this.el("tabellify-items-body").querySelectorAll(`tr[data-paper-id="${id}"]`)];
+    const top = rows[0].getBoundingClientRect().top;
+    const bottom = rows[rows.length - 1].getBoundingClientRect().bottom;
+    const side = TabellifyTableLayout.dropSide(event.clientY, top, bottom - top);
+    return { kind: "row", id, side, first: rows[0], last: rows[rows.length - 1] };
+  },
+
+  /** Remove every drop line. */
+  clearDropIndicator() {
+    for (const node of this.el("tabellify-items-table").querySelectorAll(".tabellify-drop-before, .tabellify-drop-after")) {
+      node.classList.remove("tabellify-drop-before", "tabellify-drop-after");
+    }
+  },
+
+  /** Show the line where the dragged column or paper would land. */
+  showDropIndicator(target) {
+    this.clearDropIndicator();
+    if (target.side === "before") target.first.classList.add("tabellify-drop-before");
+    else target.last.classList.add("tabellify-drop-after");
+  },
+
+  /** Forget the drag and remove its marks (after a drop, or when it was cancelled). */
+  endDrag() {
+    this.dragging = null;
+    this.clearDropIndicator();
+    for (const node of this.el("tabellify-items-table").querySelectorAll(".tabellify-dragging")) {
+      node.classList.remove("tabellify-dragging");
+    }
+  },
+
+  /**
+   * While dragging near the top or bottom edge of the scrolling area, scroll it a little
+   * on each dragover (as Zotero's own tables do). No timer is needed.
+   * @param {number} clientY
+   */
+  autoScroll(clientY) {
+    const main = this.el("tabellify-workspace-main");
+    const rect = main.getBoundingClientRect();
+    const delta = TabellifyTableLayout.autoScrollDelta(clientY, rect.top, rect.bottom);
+    if (delta !== 0) main.scrollBy(0, delta);
+  },
+
+  /**
+   * Tell screen-reader users what a keyboard move did ("Title moved to position 2 of 5").
+   * The status element is visually hidden; role="status" makes it read out. Plain text.
+   * @param {string} name  Column name or paper title
+   * @param {number} position  1-based
+   * @param {number} total
+   */
+  announce(name, position, total) {
+    this.el("tabellify-table-announce").textContent =
+      `${name} ${this.text("tabellify-table-moved-to")} ${position} ${this.text("tabellify-table-of")} ${total}`;
+  },
+
+  /** Put the keyboard focus on a column's grip (after the header was rearranged). */
+  focusColumnGrip(id) {
+    this.el("tabellify-items-table").querySelector(`th[data-column="${id}"] .tabellify-grip`)?.focus();
+  },
+
+  /** Put the keyboard focus on a paper's grip (after the body was rebuilt). */
+  focusRowGrip(paperId) {
+    this.el("tabellify-items-body").querySelector(`.tabellify-grip[data-paper-id="${Number(paperId)}"]`)?.focus();
+  },
+
+  /** A grip in this table started a drag: remember what is dragged. */
+  onTableDragStart: (event) => {
+    const W = TabellifyWorkspace;
+    W.dragging = null;
+    const grip = event.target.closest?.(".tabellify-grip");
+    // Not one of our grips (e.g. dragging selected text): leave the browser's default.
+    if (!grip || !W.monitorData || !event.dataTransfer) return;
+    const dt = event.dataTransfer;
+    if (grip.dataset.grip === "column") {
+      const th = grip.closest("th[data-column]");
+      if (!th) return;
+      W.dragging = { kind: "column", id: th.dataset.column };
+      dt.setData(W.COLUMN_DRAG_TYPE, th.dataset.column);
+      th.classList.add("tabellify-dragging");
+    } else if (grip.dataset.grip === "row") {
+      const tr = grip.closest("tr");
+      W.dragging = { kind: "row", id: Number(grip.dataset.paperId) };
+      dt.setData(W.ROW_DRAG_TYPE, grip.dataset.paperId);
+      // Show the whole row under the pointer while dragging, held where it was grabbed.
+      const rect = tr.getBoundingClientRect();
+      dt.setDragImage(tr, event.clientX - rect.left, event.clientY - rect.top);
+      tr.classList.add("tabellify-dragging");
+    } else {
+      return;
+    }
+    dt.effectAllowed = "move";
+  },
+
+  /** Allow the drop (preventDefault) only for our own drag over a valid target. */
+  onTableDragOver: (event) => {
+    const W = TabellifyWorkspace;
+    if (!W.dragging) return; // not our drag: no preventDefault, so the drop is refused
+    W.autoScroll(event.clientY);
+    const target = W.dropTarget(event);
+    if (!target) {
+      W.clearDropIndicator();
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    W.showDropIndicator(target);
+  },
+
+  /** The pointer left the table during a drag: hide the drop line. */
+  onTableDragLeave: (event) => {
+    const W = TabellifyWorkspace;
+    if (!W.dragging) return;
+    const table = W.el("tabellify-items-table");
+    if (!event.relatedTarget || !table.contains(event.relatedTarget)) W.clearDropIndicator();
+  },
+
+  /** Our drag was dropped on a column header or a paper row: apply the move. */
+  onTableDrop: (event) => {
+    const W = TabellifyWorkspace;
+    const target = W.dropTarget(event);
+    if (!target) return;
+    event.preventDefault(); // handled here; no default drop action
+    const drag = W.dragging;
+    W.endDrag();
+    if (drag.id === target.id) return; // dropped onto itself
+    if (target.kind === "column") {
+      const rest = W.columnOrder.filter((c) => c !== drag.id);
+      const index = rest.indexOf(target.id) + (target.side === "after" ? 1 : 0);
+      W.setColumnOrder(TabellifyTableLayout.moveColumn(W.columnOrder, drag.id, index), drag.id, "drag");
+    } else {
+      const keys = W.monitorData.keys;
+      let beforeId = target.id;
+      if (target.side === "after") {
+        const rest = W.displayedPaperIds.filter((id) => id !== drag.id);
+        beforeId = rest[rest.indexOf(target.id) + 1] ?? null;
+      }
+      const beforeKey = beforeId === null ? null : keys.get(beforeId) ?? null;
+      W.movePaper(drag.id, (seed, key) => TabellifyTableLayout.moveRow(seed, key, beforeKey), "drag");
+    }
+  },
+
+  /** The drag ended (dropped anywhere, or cancelled): clean up. */
+  onTableDragEnd: () => {
+    TabellifyWorkspace.endDrag();
+  },
+
+  /**
+   * Alt+arrow on a focused grip (Option+arrow on macOS): Left/Right moves a column, Up/Down
+   * moves a paper. The focus stays on the moved item's grip, and the new position is
+   * announced. Other keys are left alone.
+   */
+  onTableKeydown: (event) => {
+    const W = TabellifyWorkspace;
+    if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const grip = event.target.closest?.(".tabellify-grip");
+    if (!grip || !W.monitorData) return;
+    if (grip.dataset.grip === "column") {
+      const delta = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+      const th = grip.closest("th[data-column]");
+      if (!delta || !th) return;
+      event.preventDefault();
+      const id = th.dataset.column;
+      if (W.setColumnOrder(TabellifyTableLayout.moveColumnBy(W.columnOrder, id, delta), id, "keyboard")) {
+        const name = th.querySelector(".tabellify-sort, .tabellify-column-label")?.textContent ?? id;
+        W.announce(name, W.columnOrder.indexOf(id) + 1, W.columnOrder.length);
+      }
+      W.focusColumnGrip(id);
+    } else if (grip.dataset.grip === "row") {
+      const delta = { ArrowUp: -1, ArrowDown: 1 }[event.key];
+      if (!delta) return;
+      event.preventDefault();
+      const id = Number(grip.dataset.paperId);
+      if (W.movePaper(id, (seed, key) => TabellifyTableLayout.moveRowBy(seed, key, delta), "keyboard")) {
+        const title = W.el("tabellify-items-body")
+          .querySelector(`tr[data-paper-id="${id}"] td.tabellify-col-title`)?.textContent ?? "";
+        W.announce(title, W.displayedPaperIds.indexOf(id) + 1, W.displayedPaperIds.length);
+      }
+      W.focusRowGrip(id);
+    }
+  },
+
+  /** Toolbar buttons: "Manual order", "Clear manual order", "Reset columns". */
+  onToolbarClick: (event) => {
+    const W = TabellifyWorkspace;
+    const button = event.target.closest?.("button[data-action]");
+    if (!button) return;
+    switch (button.dataset.action) {
+      case "manual-order":
+        if (!W.currentManualOrder()) return;
+        W.sortKey = TabellifyTableLayout.MANUAL;
+        W.sortDirection = "asc";
+        W.renderMonitor();
+        W.log(`layout: manual order shown for collection ${W.currentCollection}`);
+        break;
+      case "clear-manual": {
+        const key = W.currentCollectionKey();
+        if (!key || !W.manualOrders.delete(key)) return;
+        W.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
+        W.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
+        W.renderMonitor();
+        // The two manual-order buttons are now hidden: keep the focus in the toolbar.
+        W.el("tabellify-table-reset-columns").focus();
+        W.log(`layout: manual order cleared for collection ${W.currentCollection}`);
+        break;
+      }
+      case "reset-columns":
+        if (W.columnOrder.join(",") === TabellifyTableLayout.COLUMN_IDS.join(",")) return;
+        W.columnOrder = [...TabellifyTableLayout.COLUMN_IDS];
+        W.renderMonitor();
+        W.log("layout: columns reset to the default order");
+        break;
+    }
   },
 
   // ---------------------------------------------------------------------------------------
@@ -769,12 +1232,11 @@ var TabellifyWorkspace = {
     if (!button || !W.monitorData) return;
     if (button.dataset.sort) {
       const key = button.dataset.sort;
-      if (key === W.sortKey) {
-        W.sortDirection = W.sortDirection === "asc" ? "desc" : "asc";
-      } else {
-        W.sortKey = key;
-        W.sortDirection = "asc";
-      }
+      // A new column sorts ascending, the active one reverses. A manual order is KEPT
+      // (F005c): "Manual order" in the toolbar shows it again.
+      const next = TabellifyTableLayout.nextSortState({ key: W.sortKey, direction: W.sortDirection }, key);
+      W.sortKey = next.key;
+      W.sortDirection = next.direction;
       W.renderMonitor();
       W.el("tabellify-items-table").querySelector(`button[data-sort="${key}"]`)?.focus();
     } else if (button.dataset.action === "toggle-paper") {
@@ -1267,8 +1729,16 @@ var TabellifyWorkspace = {
       ?.removeEventListener("change", TabellifyWorkspace.onCollectionChange);
     TabellifyWorkspace.el("tabellify-monitor-refresh")
       ?.removeEventListener("click", TabellifyWorkspace.onRefreshClick);
-    TabellifyWorkspace.el("tabellify-items-table")
-      ?.removeEventListener("click", TabellifyWorkspace.onTableClick);
+    const table = TabellifyWorkspace.el("tabellify-items-table");
+    table?.removeEventListener("click", TabellifyWorkspace.onTableClick);
+    table?.removeEventListener("dragstart", TabellifyWorkspace.onTableDragStart);
+    table?.removeEventListener("dragover", TabellifyWorkspace.onTableDragOver);
+    table?.removeEventListener("dragleave", TabellifyWorkspace.onTableDragLeave);
+    table?.removeEventListener("drop", TabellifyWorkspace.onTableDrop);
+    table?.removeEventListener("dragend", TabellifyWorkspace.onTableDragEnd);
+    table?.removeEventListener("keydown", TabellifyWorkspace.onTableKeydown);
+    TabellifyWorkspace.el("tabellify-table-toolbar")
+      ?.removeEventListener("click", TabellifyWorkspace.onToolbarClick);
     TabellifyWorkspace.el("tabellify-monitor-count-item-tags")
       ?.removeEventListener("change", TabellifyWorkspace.onCountItemTagsChange);
     const section = TabellifyWorkspace.el("tabellify-codebook");
