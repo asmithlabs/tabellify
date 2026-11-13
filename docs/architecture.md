@@ -38,8 +38,15 @@ src/
 ├── reader-tags.js         F005b: "Tabellify tags" item pane section (bootstrap scope, read-only)
 ├── modules/               PURE logic (no Zotero globals) — table model, CSV, codebook
 ├── content/               workspace page: workspace.xhtml / .css (shown in the main-window tab; F001 window as fallback)
+│   └── tokens.css         F005d: design tokens, linked before workspace.css (ADR-0015)
 └── locale/en-US/          Fluent strings (tabellify.ftl)
 ```
+
+`src/content/tokens.css` is the single source of Tabellify's colours (ADR-0015):
+`--tabellify-palette-*` primitives (the only colour literals in `src/`) and
+`--tabellify-color-*` semantic tokens (light in `:root`, dark in
+`@media (prefers-color-scheme: dark)`), plus non-colour tokens. `workspace.xhtml` links it
+before `workspace.css`; components use only the semantic tokens.
 
 Layering rule: `modules/` knows nothing about Zotero. A future thin **data-access layer**
 (F003) will be the only code that reads from `Zotero.*`; UI talks to it, and it hands plain
@@ -61,6 +68,10 @@ contains a tab type it doesn't know, and then skips every later tab, so a Tabell
 never be saved. Tabellify closes its tabs on `quit-application-granted` (before Zotero saves
 the session; ordering UNVERIFIED until F002 AC6), in `onMainWindowUnload`, and in `shutdown()`
 before `chromeHandle.destruct()`. The tab is not restored after a restart.
+
+**Look (ADR-0015).** The workspace document (tab and fallback window) uses the Tabellify brand
+palette through `tokens.css`. The "Tabellify tags" item pane section lives inside Zotero's own
+pane and stays Zotero-native (no Tabellify stylesheet is injected into the main window).
 
 ## 5. Data
 
