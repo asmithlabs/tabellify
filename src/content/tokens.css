@@ -1,0 +1,138 @@
+/* Tabellify design tokens (Feature 005d, ADR-0015).
+
+   A "design token" is a named value stored as a CSS custom property (a variable such as
+   --tabellify-color-surface). workspace.css writes var(--tabellify-color-surface) instead
+   of a hex value, so the look changes in one place.
+
+   Three layers:
+   1. Primitives (--tabellify-palette-*): raw colours. The ONLY colour literals in src/.
+   2. Semantic colour tokens (--tabellify-color-*): a job ("surface", "focus-ring") that
+      points at a primitive. Light mode in :root; dark mode in the one
+      @media (prefers-color-scheme: dark) block, which follows Zotero Settings → General →
+      Color Scheme in this chrome document (docs/zotero-api-notes.md, "F005d" rows).
+   3. Non-colour tokens (spacing, radii, font sizes, row padding, borders, motion).
+
+   Parsing contract (tests/static/design-tokens.test.mjs reads this file with regular
+   expressions, so keep it simple):
+   - one declaration per line: `--name: value;`
+   - primitives: `--tabellify-palette-<name>: #rrggbb;` (lower-case 6-digit hex), only in
+     the first :root block
+   - semantic light: `--tabellify-color-<name>: var(--tabellify-palette-<name>);` in the
+     second :root block; semantic dark: the same names inside exactly one
+     `@media (prefers-color-scheme: dark) { :root { … } }` block
+   - non-colour tokens anywhere in :root. No nesting, no @import.
+   To add a colour: see docs/design-system.md. */
+
+/* 1. Primitives: the eight brand colours, then derived shades (ADR-0015 table). */
+:root {
+  --tabellify-palette-dark: #243036;
+  --tabellify-palette-gold: #bfa76f;
+  --tabellify-palette-sage: #6e9075;
+  --tabellify-palette-white: #ffffff;
+  --tabellify-palette-bg: #f5f7fa;
+  --tabellify-palette-teal: #004d43;
+  --tabellify-palette-cyan: #00eaff;
+  --tabellify-palette-lime: #00e676;
+  --tabellify-palette-slate-800: #2d3b42;
+  --tabellify-palette-slate-700: #33424a;
+  --tabellify-palette-slate-600: #3a4a52;
+  --tabellify-palette-slate-500: #3f4f57;
+  --tabellify-palette-slate-200: #b8c4ca;
+  --tabellify-palette-gray-100: #edf1f4;
+  --tabellify-palette-gray-200: #e9edf1;
+  --tabellify-palette-gray-300: #d5dce2;
+  --tabellify-palette-gray-600: #56646c;
+  --tabellify-palette-gold-700: #7a6630;
+  --tabellify-palette-sage-700: #4f6b55;
+  --tabellify-palette-sage-300: #a8c4ae;
+  --tabellify-palette-teal-300: #4db6a8;
+  --tabellify-palette-teal-50: #e3f0ee;
+  --tabellify-palette-cyan-700: #00788a;
+  --tabellify-palette-lime-800: #00703a;
+  --tabellify-palette-red-700: #b3261e;
+  --tabellify-palette-red-200: #ff8a80;
+}
+
+/* 2. Semantic colour tokens, light mode (the default). */
+:root {
+  --tabellify-color-page: var(--tabellify-palette-bg);
+  --tabellify-color-surface: var(--tabellify-palette-white);
+  --tabellify-color-surface-alt: var(--tabellify-palette-bg);
+  --tabellify-color-surface-hover: var(--tabellify-palette-gray-100);
+  --tabellify-color-header: var(--tabellify-palette-gray-200);
+  --tabellify-color-text: var(--tabellify-palette-dark);
+  --tabellify-color-text-muted: var(--tabellify-palette-gray-600);
+  --tabellify-color-heading-accent: var(--tabellify-palette-gold-700);
+  --tabellify-color-header-rule: var(--tabellify-palette-teal);
+  --tabellify-color-border: var(--tabellify-palette-gray-300);
+  --tabellify-color-border-strong: var(--tabellify-palette-sage-700);
+  --tabellify-color-action: var(--tabellify-palette-teal);
+  --tabellify-color-selected-bg: var(--tabellify-palette-teal-50);
+  --tabellify-color-selected-text: var(--tabellify-palette-dark);
+  --tabellify-color-selected-bar: var(--tabellify-palette-teal);
+  --tabellify-color-focus-ring: var(--tabellify-palette-cyan-700);
+  --tabellify-color-status-info: var(--tabellify-palette-teal);
+  --tabellify-color-status-positive: var(--tabellify-palette-lime-800);
+  --tabellify-color-status-caution: var(--tabellify-palette-gold-700);
+  --tabellify-color-status-error: var(--tabellify-palette-red-700);
+}
+
+/* 2b. Semantic colour tokens, dark mode: the same names, pointed at other primitives.
+   Components never need to know which mode is on. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tabellify-color-page: var(--tabellify-palette-dark);
+    --tabellify-color-surface: var(--tabellify-palette-slate-800);
+    --tabellify-color-surface-alt: var(--tabellify-palette-slate-700);
+    --tabellify-color-surface-hover: var(--tabellify-palette-slate-600);
+    --tabellify-color-header: var(--tabellify-palette-dark);
+    --tabellify-color-text: var(--tabellify-palette-bg);
+    --tabellify-color-text-muted: var(--tabellify-palette-slate-200);
+    --tabellify-color-heading-accent: var(--tabellify-palette-gold);
+    --tabellify-color-header-rule: var(--tabellify-palette-gold);
+    --tabellify-color-border: var(--tabellify-palette-slate-500);
+    --tabellify-color-border-strong: var(--tabellify-palette-sage);
+    --tabellify-color-action: var(--tabellify-palette-teal-300);
+    --tabellify-color-selected-bg: var(--tabellify-palette-teal);
+    --tabellify-color-selected-text: var(--tabellify-palette-bg);
+    --tabellify-color-selected-bar: var(--tabellify-palette-teal-300);
+    --tabellify-color-focus-ring: var(--tabellify-palette-cyan);
+    --tabellify-color-status-info: var(--tabellify-palette-sage-300);
+    --tabellify-color-status-positive: var(--tabellify-palette-lime);
+    --tabellify-color-status-caution: var(--tabellify-palette-gold);
+    --tabellify-color-status-error: var(--tabellify-palette-red-200);
+  }
+}
+
+/* 3. Non-colour tokens (no mode switch). Font sizes are em-based, relative to Zotero's
+   system UI font (global.css); Tabellify has no brand font (spec Q9). */
+:root {
+  --tabellify-space-1: 2px;
+  --tabellify-space-2: 4px;
+  --tabellify-space-3: 8px;
+  --tabellify-space-4: 12px;
+  --tabellify-space-5: 16px;
+  --tabellify-space-6: 24px;
+  --tabellify-radius-sm: 4px;
+  --tabellify-radius-md: 6px;
+  --tabellify-radius-pill: 12px;
+  --tabellify-font-size-sm: 0.9em;
+  --tabellify-font-size-md: 1em;
+  --tabellify-font-size-lg: 1.1em;
+  --tabellify-row-pad-block: 4px;
+  --tabellify-row-pad-inline: 8px;
+  --tabellify-border-width: 1px;
+  --tabellify-border-width-strong: 2px;
+  --tabellify-focus-width: 2px;
+  --tabellify-focus-offset: 2px;
+  --tabellify-selected-bar-width: 3px;
+  --tabellify-duration-fast: 120ms;
+}
+
+/* Users who ask the OS for less motion (macOS: Accessibility → Display → Reduce motion)
+   get instant changes: every transition that uses this token takes 0 ms. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tabellify-duration-fast: 0ms;
+  }
+}

@@ -78,7 +78,10 @@ with this mapping:
   unless a later spec explicitly authorizes it and the owner approves.
 - **Traceable synthesis.** Every table cell should be traceable to its source paper (and,
   where relevant, annotation).
-- **Native feel.** Follow Zotero UI conventions; use documented plugin APIs.
+- **Native behaviour, Tabellify look.** Follow Zotero's interaction conventions (menus,
+  tabs, item pane sections, keyboard use, Fluent strings, the Color Scheme setting) and use
+  documented plugin APIs. Inside its own workspace, Tabellify uses its brand palette and
+  design tokens (ADR-0015). Anything shown inside Zotero's own panes stays Zotero-native.
 - **Open and community-friendly.** AGPL-3.0-or-later, clear contribution guide.
 
 ## 7. Product decisions (2026-11-11)

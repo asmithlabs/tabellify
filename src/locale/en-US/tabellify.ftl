@@ -107,6 +107,9 @@ tabellify-monitor-all-used = All codebook tags are used.
 tabellify-monitor-papers = Papers:
 tabellify-monitor-used = Used:
 tabellify-monitor-remaining = Remaining:
+# Summary card (Feature 005d): followed by the number of codebook tags not used yet,
+# e.g. "Remaining" + " 2".
+tabellify-monitor-remaining-count = Remaining
 tabellify-monitor-none = none
 # Follows a number: "1 paper", "3 papers".
 tabellify-monitor-paper-one = paper
