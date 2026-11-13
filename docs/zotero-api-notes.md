@@ -74,6 +74,13 @@ source at tag **`10.0.9`** and Firefox **ESR 140**. `layout.json` reuses the F00
 `PathUtils` / `Zotero.DataDirectory.dir` rows (no new file API). Runtime check: R12 (at the
 end of this file).
 
+The Feature 005d rows (brand design tokens, ADR-0015 **Proposed**; how light/dark mode
+reaches the workspace document) were checked on 2026-11-12 against Zotero source at tag
+**`10.0.9`** and Firefox **ESR 140**. No new `Zotero.*` call; `Services.prefs.getIntPref` and
+`matchMedia` appear only in the runtime checks RT-D1/RT-D2 (end of this file), never in
+`src/`. If ADR-0015 is accepted, the "System colours" row's advice "The plugin should not set
+`background-color` itself" applies only to `:root`/`window` (ADR-0015 §5, §7).
+
 Abbreviations used in the Source column:
 `Z7`/`Z8`/`Z10` = the dev guides above; `src:` = `https://github.com/zotero/zotero/blob/10.0.8/`;
 `src10:` = `https://github.com/zotero/zotero/blob/10.0.9/`;
@@ -169,6 +176,13 @@ Abbreviations used in the Source column:
 | `<button draggable="true">` does not start a drag in Firefox | F005c: why grips are `<span>`, not `<button>` | Known limitation (Mozilla Bugzilla) | Firefox (status at ESR 140 not re-checked) | [bug 568313 "Impossible to make <button>s draggable"](https://bugzilla.mozilla.org/show_bug.cgi?id=568313); [bug 646823](https://bugzilla.mozilla.org/show_bug.cgi?id=646823) (duplicate report) | Design avoids the issue regardless of its current status |
 | CSS `position: sticky` on `th`, `border-collapse: separate`, `table-layout: fixed`, `overflow-wrap: anywhere` | F005c: sticky header, stable widths, wrapping | Verified (docs) | Firefox ESR 140 | MDN: [`position`](https://developer.mozilla.org/en-US/docs/Web/CSS/position), [`table-layout`](https://developer.mozilla.org/en-US/docs/Web/CSS/table-layout), [`overflow-wrap`](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-wrap) | Standard CSS, all supported in Firefox for years. Sticky cells need an opaque background (`-moz-Dialog`, existing row "System colours") |
 | `collection.key`, `item.key` (and `libraryKey` = `"<libraryID>/<key>"`) getters | F005c (Q1 = C, ADR-0014 Accepted): stable keys for saved row orders in `layout.json` | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/data/dataObject.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/dataObject.js) (`Zotero.defineProperty(Zotero.DataObject.prototype, 'key', { get: function () { return this._key; } …`; `'libraryKey'` returns `this._libraryID + "/" + this._key`) | Read-only getters on every data object (items and collections). Keys are 8-character strings that stay the same across sync and on other computers; numeric IDs are local to one database. Not in any dev guide |
+| Zotero Settings → General → **Color Scheme:** (Automatic / Light / Dark) = Mozilla pref `browser.theme.toolbar-theme` (2 / 1 / 0) | F005d: what decides light/dark for the workspace | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/preferences/preferences_general.xhtml` L40–44](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/preferences/preferences_general.xhtml#L40-L44) (`<radiogroup orient="horizontal" id="color-scheme" preference="browser.theme.toolbar-theme">`, radios `value="2"` auto, `"1"` light, `"0"` dark); [src10:`chrome/locale/en-US/zotero/preferences.ftl`](https://github.com/zotero/zotero/blob/10.0.9/chrome/locale/en-US/zotero/preferences.ftl) (`preferences-color-scheme = Color Scheme:`, `.label = Automatic` / `Light` / `Dark`) | Same mapping as the "System colours" row. Tabellify never reads or writes this pref in `src/` (RT-D1 reads it) |
+| `@media (prefers-color-scheme: dark)` in a **chrome** document follows that pref (Light/Dark forced; Automatic = OS) | F005d (ADR-0015 M-1): light/dark tokens in `src/content/tokens.css` | Verified (source, by composition; **one link not read**); **UNVERIFIED (runtime) for our tab iframe: RT-D1** | ESR 140; Zotero 10.0.9 | moz:[`layout/style/nsMediaFeatures.cpp`](https://searchfox.org/mozilla-esr140/source/layout/style/nsMediaFeatures.cpp) (`Gecko_MediaFeatures_PrefersColorScheme(const Document* aDocument, bool aUseContent)`: `aUseContent ? PreferenceSheet::ContentPrefs().mColorScheme : aDocument->PreferredColorScheme()`); moz:[`layout/style/PreferenceSheet.cpp`](https://searchfox.org/mozilla-esr140/source/layout/style/PreferenceSheet.cpp) (`ColorSchemeSettingForChrome()`: `switch (StaticPrefs::browser_theme_toolbar_theme())` 0 → Dark, 1 → Light, default → System; `Prefs::Load`: `if (aIsChrome) { switch (ColorSchemeSettingForChrome()) … return LookAndFeel::SystemColorScheme(); }`; `PrefsKindFor`: `if (aDoc.IsInChromeDocShell()) return PrefsKind::Chrome;`); moz:[`layout/style/PreferenceSheet.h`](https://searchfox.org/mozilla-esr140/source/layout/style/PreferenceSheet.h) (`PrefsFor(const dom::Document&)` → `ChromePrefs()` for `PrefsKind::Chrome`); Zotero's own use: [src10:`scss/themes/_dark.scss` ~L55–59](https://github.com/zotero/zotero/blob/10.0.9/scss/themes/_dark.scss) (`@media (prefers-color-scheme: dark) { :root { @include derive-colors($-colors); } }`), [src10:`scss/abstracts/_mixins.scss` ~L95–112](https://github.com/zotero/zotero/blob/10.0.9/scss/abstracts/_mixins.scss) (`@mixin light-dark`, `@mixin color-scheme` with `prefers-color-scheme: light` / `dark`); [MDN `prefers-color-scheme`](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme) | **Not read:** the body of `Document::PreferredColorScheme()` in moz:`dom/base/Document.cpp` (file too large for the fetch tool). Assumed to return `PreferenceSheet::PrefsFor(*this).mColorScheme`; to verify, search that file for `Document::PreferredColorScheme`. Our workspace is a `chrome://` document in an HTML `<iframe>` (no `type="content"`) in the main window, system principal (RT2), so it should be in a chrome docshell; RT-D1 compares the media query in the main window and in our iframe with the pref. Zotero's Color Scheme setting visibly works in Zotero's own windows, which use the same media query |
+| Live update of `prefers-color-scheme` when the Color Scheme setting changes while the Tabellify tab is open | F005d AC3 | **UNVERIFIED (runtime): RT-D2** (same question as R7 part 2) | 10.0.9 | — | If it does not update live, reopening the tab is the documented workaround (spec F005d AC3) |
+| CSS `light-dark()` with `color-scheme` | **Not used** (ADR-0015 option M-2) | Verified (docs) for the function; behaviour in our chrome document **UNVERIFIED** | ESR 140 | [MDN `light-dark()`](https://developer.mozilla.org/en-US/docs/Web/CSS/color_value/light-dark); Firefox uses it in chrome: moz:[`toolkit/themes/shared/global-shared.css`](https://searchfox.org/mozilla-esr140/source/toolkit/themes/shared/global-shared.css) (`--toolbar-field-background-color: light-dark(…)` ~L42, `--toolbar-color-scheme` ~L80–86) | Picks a value by the element's *used* `color-scheme`, which was not traced for our document. Recorded so it is not adopted without a check |
+| Standard CSS for the design tokens: custom properties + `var()`, `:focus-visible`, `:focus-within`, `font-variant-numeric: tabular-nums`, `@media (prefers-reduced-motion: reduce)`, `transition`, `@keyframes` | F005d: `tokens.css` and the workspace restyle | Verified (docs) | Firefox ESR 140 (Zotero 10.0.9) | MDN: [Using CSS custom properties](https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties), [`:focus-visible`](https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible), [`:focus-within`](https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-within), [`font-variant-numeric`](https://developer.mozilla.org/en-US/docs/Web/CSS/font-variant-numeric), [`prefers-reduced-motion`](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion), [`transition`](https://developer.mozilla.org/en-US/docs/Web/CSS/transition), [`@keyframes`](https://developer.mozilla.org/en-US/docs/Web/CSS/@keyframes) | All long supported in Firefox. `:focus-visible` and `tabular-nums` are already used in `workspace.css`. Zotero's own SCSS compiles to custom properties on `:root` (row above), so custom properties in chrome documents are Zotero's own practice. Whether `prefers-reduced-motion` follows the macOS "Reduce motion" setting in a chrome document is checked in spec F005d AC5 |
+| `Services.prefs.getIntPref(name, defaultValue)` | **Runtime check RT-D1 only**, never in `src/` | Verified (source) | ESR 140 | moz:[`modules/libpref/nsIPrefBranch.idl`](https://searchfox.org/mozilla-esr140/source/modules/libpref/nsIPrefBranch.idl) (`[optional_argc,binaryname(GetIntPrefWithDefault)] long getIntPref(in string aPrefName, [optional] in long aDefaultValue);`, "@param aDefaultValue The value to return if the preference is not set.") | Read-only |
+| `window.matchMedia(query).matches` | **Runtime checks RT-D1/RT-D2 only**, never in `src/` | Verified (docs) | ESR 140 | [MDN `Window.matchMedia()`](https://developer.mozilla.org/en-US/docs/Web/API/Window/matchMedia) | Standard DOM; read-only |
 
 ## Runtime checks for owner
 
@@ -489,3 +503,36 @@ nothing is saved.)
 mouse drag is needed). Pass = spec F005c AC4 (column drag) and AC5 (row drag) pass. Record
 the result here and change the status of the first F005c row (HTML `draggable` drag-and-drop) (owner).
 If R12 fails, follow the spec's "Fallback if R12 fails".
+
+### F005d runtime checks (ADR-0015; owner, dev profile, read-only)
+Tools → Developer → Run JavaScript. Neither check writes anything (they read a pref, a media
+query and a computed style).
+
+**RT-D1: Does our tab follow Zotero's Color Scheme? (works with the current build, before
+005d).** Open the Tabellify tab (Tools → Tabellify…), then in Zotero Settings → General →
+Color Scheme: choose **Light**, run the snippet, then choose **Dark** and run it again, then
+**Automatic** and run it again.
+```js
+const win = Zotero.getMainWindow();
+const frame = win.document.querySelector('iframe[src="chrome://tabellify/content/workspace.xhtml"]');
+JSON.stringify({
+  colorSchemePref: Services.prefs.getIntPref("browser.theme.toolbar-theme", -1),
+  mainWindowDark: win.matchMedia("(prefers-color-scheme: dark)").matches,
+  tabellifyTabDark: frame ? frame.contentWindow.matchMedia("(prefers-color-scheme: dark)").matches : "Tabellify tab not open",
+  systemPrincipal: frame?.contentDocument.nodePrincipal.isSystemPrincipal,
+});
+```
+Expect: Light → `colorSchemePref: 1`, both `…Dark: false`; Dark → `0`, both `true`;
+Automatic → `2`, both equal to the macOS appearance. `systemPrincipal: true`. **Pass** =
+`tabellifyTabDark` always equals `mainWindowDark`. If they differ, ADR-0015 option M-1 is not
+safe; report the three results.
+
+**RT-D2: Live switch (after the 005d build).** With the Tabellify tab open, run, switch Color
+Scheme Light ↔ Dark **without** reopening the tab, and run again.
+```js
+const frame = Zotero.getMainWindow().document.querySelector('iframe[src="chrome://tabellify/content/workspace.xhtml"]');
+frame.contentWindow.getComputedStyle(frame.contentDocument.getElementById("tabellify-workspace-main")).backgroundColor
+```
+Expect `"rgb(245, 247, 250)"` in Light and `"rgb(36, 48, 54)"` in Dark (the proposed
+`--tabellify-color-page`). Same value both times = no live update (spec F005d AC3 then records
+"reopen needed").
