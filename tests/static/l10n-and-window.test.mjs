@@ -6,8 +6,9 @@
 //   - the workspace window's `windowtype` matches what tabellify.js looks for
 //   - the chrome:// URL that tabellify.js opens maps to a real file in src/content/
 //   - workspace.xhtml loads chrome://global/skin/global.css before <window> (opaque window
-//     background), and workspace.css sets no background of its own (docs/zotero-api-notes.md),
-//     except on the per-paper table (F005c, narrowed rule below)
+//     background), then tokens.css before workspace.css (F005d AC9)
+//   - workspace.css uses only semantic colour tokens (F005d AC11, ADR-0015 §7; replaces the
+//     F005c background rule), and the reader item pane section stays unbranded
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -22,6 +23,7 @@ const ftl = read("locale/en-US/tabellify.ftl");
 const tabellifyJs = read("tabellify.js");
 const workspace = read("content/workspace.xhtml");
 const workspaceCss = read("content/workspace.css");
+const tokensCss = read("content/tokens.css");
 
 /** Map of Fluent message ID → { value: boolean, attributes: string[] }. */
 function parseFtl(text) {
@@ -99,76 +101,175 @@ test("AC4 (static): workspace.xhtml loads global.css via <?xml-stylesheet?> befo
 });
 
 /**
- * F005c (docs/features/005c-table-layout.md, "The no-background test", option A, owner-
- * approved as Q4): a background is allowed in workspace.css ONLY
- *   1. on rules whose every selector starts with `#tabellify-items-table`, and
- *   2. with a value that is a translucent text-colour tint
- *      `color-mix(in srgb, currentColor <N>%, transparent)` or the system colour
- *      `-moz-Dialog` / `Canvas`.
- * Everything else stays forbidden: a background on :root, window, #tabellify-workspace-main
- * or anywhere else (the window background comes from global.css; a hard-coded colour breaks
- * dark mode or makes the window see-through), and any literal colour (hex, rgb(), hsl(),
- * named colours).
+ * Semantic colour tokens from tokens.css, per mode, resolved to their primitive's hex.
+ * tokens.css follows a simple parsing contract (stated at its top); its own checks are in
+ * tests/static/design-tokens.test.mjs.
  * @param {string} cssText
- * @returns {string[]}  One message per forbidden background declaration
+ * @returns {{ light: Map<string, string|null>, dark: Map<string, string|null>, other: Set<string> }}
  */
-function backgroundViolations(cssText) {
+function tokenTable(cssText) {
   const css = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
-  const declRe = /(^|[;{\s])background(?:-color)?\s*:\s*([^;}]*)/gi;
-  const allowedValue = /^(?:color-mix\(\s*in\s+srgb\s*,\s*currentColor\s+\d{1,3}(?:\.\d+)?%\s*,\s*transparent\s*\)|-moz-Dialog|Canvas)$/i;
-  const allowedSelector = /^#tabellify-items-table(?![\w-])/;
+  const darkRe = /@media\s*\(\s*prefers-color-scheme:\s*dark\s*\)\s*\{\s*:root\s*\{([^{}]*)\}\s*\}/;
+  const darkBlock = darkRe.exec(css)?.[1] ?? "";
+  const lightCss = css.replace(darkRe, "");
+  const decls = (text) => [...text.matchAll(/(--tabellify-[\w-]+)\s*:\s*([^;]*);/g)].map((m) => [m[1], m[2].trim()]);
+  const primitives = new Map(decls(lightCss).filter(([n]) => n.startsWith("--tabellify-palette-")));
+  const resolveAll = (pairs) => new Map(pairs.filter(([n]) => n.startsWith("--tabellify-color-")).map(([n, v]) => {
+    const prim = /^var\(\s*(--tabellify-palette-[\w-]+)\s*\)$/.exec(v)?.[1];
+    return [n, prim ? primitives.get(prim) ?? null : null];
+  }));
+  const other = new Set(decls(lightCss).map(([n]) => n).filter((n) => !n.startsWith("--tabellify-palette-") && !n.startsWith("--tabellify-color-")));
+  return { light: resolveAll(decls(lightCss)), dark: resolveAll(decls(darkBlock)), other };
+}
+const tokenInfo = tokenTable(tokensCss);
+
+/** Custom properties set from JavaScript, not in tokens.css (workspace.js, F005c). */
+const SCRIPT_PROPERTIES = new Set(["--tabellify-tag-columns"]);
+
+/** Properties that can carry a colour (ADR-0015 §7). */
+const COLOUR_PROPERTY = /^(?:color|background(?:-[\w-]+)?|border(?:-[\w-]+)?|outline(?:-[\w-]+)?|box-shadow|text-decoration-color|caret-color|accent-color|fill|stroke)$/i;
+/** Layout-only properties that the pattern above would catch by name. */
+const NOT_COLOUR_PROPERTY = new Set(["border-collapse", "border-spacing", "background-clip", "background-origin", "background-repeat", "background-size", "background-position", "background-attachment"]);
+/** Words allowed in a colour-bearing value besides tokens and lengths. Anything else
+ *  (for example a named colour like `red` or a system colour like `Canvas`) is rejected. */
+const ALLOWED_WORDS = new Set([
+  "transparent", "currentcolor", "inherit", "initial", "unset", "none", "inset",
+  "solid", "dashed", "dotted", "double", "hidden", "groove", "ridge", "outset", "auto",
+]);
+/** Colour literals that are never allowed outside tokens.css. */
+const COLOUR_LITERAL = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\s*\(/i;
+
+/**
+ * F005d AC11 (ADR-0015 §7), replacing the F005c Q4 background rule. In a component
+ * stylesheet:
+ *   - no colour literal (hex, rgb(), hsl(), hwb(), lab(), lch(), oklab(), oklch(), color(),
+ *     named or system colours) and no --tabellify-palette-… primitive anywhere;
+ *   - colour-bearing properties use only var(--tabellify-color-…), transparent,
+ *     currentColor, inherit, none, lengths and style words (solid, dashed, inset, …);
+ *   - no background on :root or window (global.css paints the window); elsewhere a
+ *     background is only var(--tabellify-color-…), transparent or none, and that token is
+ *     an opaque hex in BOTH modes;
+ *   - every var(--tabellify-…) used is defined in tokens.css (or set by workspace.js).
+ * @param {string} cssText
+ * @param {ReturnType<typeof tokenTable>} tokens
+ * @returns {string[]}  One message per violation
+ */
+function colourViolations(cssText, tokens = tokenInfo) {
+  const css = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
   const violations = [];
+  if (/--tabellify-palette-/.test(css)) violations.push("--tabellify-palette-… used outside tokens.css");
+  // Every token reference must exist.
+  for (const m of css.matchAll(/var\(\s*(--[\w-]+)/g)) {
+    const name = m[1];
+    const known = name.startsWith("--tabellify-color-")
+      ? tokens.light.has(name) && tokens.dark.has(name)
+      : tokens.other.has(name) || SCRIPT_PROPERTIES.has(name);
+    if (!known && !name.startsWith("--tabellify-palette-")) violations.push(`undefined token: ${name}`);
+  }
+  const declRe = /(^|[;{\s])([a-z-]+)\s*:\s*([^;{}]*)/gi;
   let seen = 0;
   // Innermost rules only ("selectors { declarations }"); inside @media this still finds
-  // the inner rule with its own selectors.
+  // the inner rule with its own selectors. @keyframes steps (from/to) are rules too.
   for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
-    const selectors = rule[1].trim().split(",").map((x) => x.trim());
+    const selectors = rule[1].trim();
     for (const decl of rule[2].matchAll(declRe)) {
       seen++;
-      const value = decl[2].trim();
-      if (!selectors.every((x) => allowedSelector.test(x))) {
-        violations.push(`background outside #tabellify-items-table: ${rule[1].trim()}`);
-      } else if (!allowedValue.test(value)) {
-        violations.push(`background value not allowed: ${value}`);
+      const prop = decl[2].toLowerCase();
+      const value = decl[3].trim();
+      if (COLOUR_LITERAL.test(value)) violations.push(`colour literal: ${prop}: ${value}`);
+      if (!COLOUR_PROPERTY.test(prop) || NOT_COLOUR_PROPERTY.has(prop)) continue;
+      // What is left after removing allowed tokens, calc(), lengths and numbers must be
+      // allowed words only.
+      const words = value
+        .replace(/var\(\s*--tabellify-color-[\w-]+\s*\)/g, " ")
+        .replace(/var\(\s*--tabellify-(?!palette-|color-)[\w-]+\s*\)/g, " 0 ")
+        .replace(/calc\(/g, " ").replace(/[()*,/+]/g, " ")
+        .split(/\s+/).filter(Boolean)
+        .filter((w) => !/^-?\d*\.?\d+(?:px|em|rem|%|ms|s)?$/.test(w));
+      for (const w of words) {
+        if (!ALLOWED_WORDS.has(w.toLowerCase())) violations.push(`not allowed in ${prop}: ${w}`);
+      }
+      if (prop.startsWith("background")) {
+        if (selectors.split(",").some((x) => /(^|[\s>+~(])(?::root|window)(?![\w-])/.test(x.trim()))) {
+          violations.push(`background on :root or window: ${selectors}`);
+        }
+        const token = /^var\(\s*(--tabellify-color-[\w-]+)\s*\)$/.exec(value)?.[1];
+        if (token) {
+          for (const mode of ["light", "dark"]) {
+            if (!/^#[0-9a-f]{6}$/.test(tokens[mode].get(token) ?? "")) violations.push(`background token not opaque in ${mode} mode: ${token}`);
+          }
+        } else if (!/^(?:transparent|none)$/i.test(value)) {
+          violations.push(`background value not allowed: ${value}`);
+        }
       }
     }
   }
-  // A declaration outside any rule (broken CSS) must not slip through.
-  const total = [...css.matchAll(declRe)].length;
-  if (total !== seen) violations.push(`${total - seen} background declaration(s) outside a rule`);
+  // A declaration outside any rule (broken CSS) must not slip through: remove every
+  // {…} block (innermost first, then @media wrappers); only selectors may be left, and a
+  // selector never contains ";".
+  let outside = css;
+  for (let prev = ""; prev !== outside;) {
+    prev = outside;
+    outside = outside.replace(/\{[^{}]*\}/g, "");
+  }
+  if (outside.includes(";") || outside.includes("}")) violations.push(`declaration(s) outside a rule: ${outside.trim()}`);
+  if (seen === 0 && css.trim() !== "") violations.push("no declarations found (check is vacuous)");
   return violations;
 }
 
-test("AC4 / F005c AC12 (static): workspace.css backgrounds only on table cells, tints/system colours only", () => {
-  assert.deepEqual(backgroundViolations(workspaceCss), []);
-  // The F005c rules really are there (otherwise this test proves nothing new).
-  assert.match(workspaceCss, /#tabellify-items-table thead th\s*\{[^}]*background-color:\s*-moz-Dialog/);
-  assert.match(workspaceCss, /tr\.tabellify-row-alt\s*\{[^}]*background-color:\s*color-mix\(in srgb, currentColor 6%, transparent\)/);
+test("F005d AC11 (static): workspace.css uses only semantic colour tokens (ADR-0015 §7)", () => {
+  assert.deepEqual(colourViolations(workspaceCss), []);
+  // The rule is not vacuous: the page colour and the table surfaces really are tokens.
+  assert.match(workspaceCss, /#tabellify-workspace-main\s*\{[^}]*background-color:\s*var\(--tabellify-color-page\)/);
+  assert.match(workspaceCss, /tr\.tabellify-row-alt\s*\{[^}]*background-color:\s*var\(--tabellify-color-surface-alt\)/);
+  assert.ok(tokenInfo.light.size >= 20 && tokenInfo.dark.size === tokenInfo.light.size, "tokens.css not parsed");
 });
 
-test("F005c AC12: self-check — the background rule still rejects what it was written for", () => {
+test("F005d AC11: self-check — the colour rule rejects what it was written for", () => {
   const bad = [
-    "#tabellify-items-table td { background: #fff; }",
-    "#tabellify-items-table td { background-color: rgb(255, 255, 255); }",
-    "#tabellify-items-table td { background-color: hsl(0 0% 100%); }",
-    "#tabellify-items-table td { background-color: white; }",
-    "#tabellify-items-table td { background: color-mix(in srgb, red 10%, transparent); }",
-    "#tabellify-items-table td { background: color-mix(in srgb, currentColor 6%, white); }",
-    ":root { background-color: -moz-Dialog; }",
-    "window { background: Canvas; }",
-    "#tabellify-workspace-main { background-color: color-mix(in srgb, currentColor 6%, transparent); }",
-    "#tabellify-items-table td, .other { background-color: Canvas; }",
-    "#tabellify-items-tablex td { background-color: Canvas; }",
-    "@media (prefers-color-scheme: dark) { :root { background: #000; } }",
+    ".x { background: #fff; }",
+    ".x { color: red; }",
+    ".x { border-color: rgb(0 0 0); }",
+    ".x { background: var(--tabellify-palette-teal); }",
+    ":root { background: var(--tabellify-color-page); }",
+    "window { background-color: var(--tabellify-color-surface); }",
+    ".x { color: var(--tabellify-color-does-not-exist); }",
+    ".x { background-color: Canvas; }",
+    ".x { background-color: -moz-Dialog; }",
+    ".x { border: 1px solid color-mix(in srgb, currentColor 20%, transparent); }",
+    ".x { outline: 2px solid hsl(0 0% 0%); }",
+    ".x { box-shadow: inset 2px 0 0 navy; }",
+    ".x { background: var(--tabellify-space-2); }",
+    "@media (prefers-color-scheme: dark) { :root { background: var(--tabellify-color-page); } }",
+    ".x { --my-colour: #123456; }",
+    "color: red; .x { color: inherit; }",
   ];
-  for (const css of bad) assert.ok(backgroundViolations(css).length > 0, `not rejected: ${css}`);
+  for (const css of bad) assert.ok(colourViolations(css).length > 0, `not rejected: ${css}`);
   const good = [
-    "#tabellify-items-table thead th { background-color: -moz-Dialog; }",
-    "#tabellify-items-table td { background: Canvas; }",
-    "#tabellify-items-table tbody tr:hover { background-color: color-mix(in srgb, currentColor 10%, transparent); }",
-    "/* background: red; */ #tabellify-items-table td { color: inherit; }",
+    ".x { background-color: var(--tabellify-color-surface); }",
+    ".x { border: var(--tabellify-border-width) solid var(--tabellify-color-border); }",
+    ".x { box-shadow: inset calc(-1 * var(--tabellify-border-width-strong)) 0 0 var(--tabellify-color-action); }",
+    ".x { color: inherit; background-color: transparent; border: 0; outline: none; }",
+    ".x { border-collapse: separate; border-spacing: 0; border-radius: var(--tabellify-radius-md); }",
+    "/* background: red; */ .x { color: currentColor; }",
   ];
-  for (const css of good) assert.deepEqual(backgroundViolations(css), [], `wrongly rejected: ${css}`);
+  for (const css of good) assert.deepEqual(colourViolations(css), [], `wrongly rejected: ${css}`);
+});
+
+test("F005d AC9 (static): tokens.css loads before workspace.css; the table has class tabellify-grid", () => {
+  const code = workspace.replace(/<!--[\s\S]*?-->/g, "");
+  const tokens = code.search(/<html:link rel="stylesheet" href="chrome:\/\/tabellify\/content\/tokens\.css"\s*\/>/);
+  const css = code.search(/<html:link rel="stylesheet" href="chrome:\/\/tabellify\/content\/workspace\.css"\s*\/>/);
+  assert.ok(tokens >= 0, "tokens.css is not linked");
+  assert.ok(css >= 0, "workspace.css is not linked");
+  assert.ok(tokens < css, "tokens.css must be linked before workspace.css");
+  assert.match(code, /<html:table id="tabellify-items-table"[^>]*\bclass="(?:[^"]*\s)?tabellify-grid(?:\s[^"]*)?"/);
+});
+
+test("F005d AC9 (static): the reader item pane section stays Zotero-native (no brand tokens)", () => {
+  const reader = readFileSync(join(srcDir, "reader-tags.js"), "utf8");
+  assert.doesNotMatch(reader, /tokens\.css/);
+  assert.doesNotMatch(reader, /--tabellify-palette-|--tabellify-color-/);
 });
 
 test("F005b AC12: the reader section's Fluent IDs exist (header .label, side-nav .tooltiptext)", () => {
