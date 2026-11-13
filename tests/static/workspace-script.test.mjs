@@ -16,6 +16,10 @@
 //     `Zotero.Items.get` (attachments → items) and the two Notifier methods
 //   - lifecycle symmetry for the Notifier observer: exactly one registerObserver( call, at
 //     least one unregisterObserver( call, and onUnload unregisters it
+// Owner decision 2026-11-13 (count item tags switch) adds:
+//   - the checkbox exists, its Fluent ID exists, its change listener is removed on unload
+//   - workspace.js reads and writes only the pref extensions.tabellify.countItemTags, global,
+//     through TabellifyTagMonitor.COUNT_ITEM_TAGS_PREF; no other file in src/ sets a pref
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -109,6 +113,9 @@ test("F003: workspace.js uses only the Zotero APIs recorded for F003", () => {
     // F005: live updates (an observer only listens; registered and unregistered here).
     "Zotero.Notifier.registerObserver",
     "Zotero.Notifier.unregisterObserver",
+    // Owner decision 2026-11-13: the "Also count tags on the paper itself" switch (a pref).
+    "Zotero.Prefs.get",
+    "Zotero.Prefs.set",
   ]);
   const used = new Set([...js.matchAll(/\bZotero(?:\.[A-Za-z_$][\w$]*)+/g)].map((m) => m[0]));
   assert.ok(used.size > 0, "no Zotero calls found (check is vacuous)");
@@ -167,4 +174,30 @@ test("F005: Notifier observer symmetry (one register, unregister on unload, debo
   const onNotify = /onNotify:\s*\([^)]*\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
   assert.match(onNotify, /document\.defaultView/);
   assert.match(onNotify, /unregisterMonitorObserver\(/);
+});
+
+test("Count-item-tags switch: checkbox, Fluent ID and listener symmetry", () => {
+  assert.match(xhtml, /<html:input id="tabellify-monitor-count-item-tags" type="checkbox"\/>/);
+  assert.match(xhtml, /data-l10n-id="tabellify-monitor-count-item-tags"/);
+  assert.ok(ftlIds.has("tabellify-monitor-count-item-tags"), "Fluent ID missing from tabellify.ftl");
+  assert.match(js, /\.addEventListener\("change", this\.onCountItemTagsChange\)/);
+  const onUnload = /onUnload:\s*\(\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  assert.match(onUnload, /removeEventListener\("change", TabellifyWorkspace\.onCountItemTagsChange\)/);
+  // The recount passes the switch to the model.
+  assert.match(js, /summarize\([^)]*\{\s*countItemTags: this\.countItemTags,?\s*\}\)/);
+});
+
+test("Count-item-tags switch: only this pref, global, by the model's name; only workspace.js sets it", () => {
+  assert.match(monitorJs, /COUNT_ITEM_TAGS_PREF:\s*"extensions\.tabellify\.countItemTags"/);
+  const calls = [...js.matchAll(/Zotero\.Prefs\.(get|set)\(([^)]*)\)/g)].map((m) => `${m[1]}(${m[2]})`);
+  assert.deepEqual(calls, [
+    "get(TabellifyTagMonitor.COUNT_ITEM_TAGS_PREF, true)",
+    "set(TabellifyTagMonitor.COUNT_ITEM_TAGS_PREF, W.countItemTags, true)",
+  ]);
+  assert.doesNotMatch(js, /Zotero\.Prefs\.clear\b/);
+  // No other source file writes a pref.
+  for (const f of ["tabellify.js", "bootstrap.js", "reader-tags.js", "content/codebook-model.js",
+    "content/codebook-store.js", "content/tag-monitor-model.js"]) {
+    assert.doesNotMatch(code(f), /Prefs\.(?:set|clear)\b|setBoolPref|setStringPref|setIntPref/, f);
+  }
 });

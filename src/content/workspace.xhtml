@@ -98,6 +98,14 @@
         <html:h2 data-l10n-id="tabellify-monitor-heading"></html:h2>
         <html:button id="tabellify-monitor-refresh"
                      data-l10n-id="tabellify-monitor-refresh"></html:button>
+        <!-- Owner decision 2026-11-13: by default only highlight tags count. Ticking this
+             box also counts tags on the paper item itself. workspace.js sets `checked`
+             from the pref extensions.tabellify.countItemTags and saves every change.
+             Wrapping the input in the <label> makes the text clickable too. -->
+        <html:label id="tabellify-monitor-count-item-tags-label">
+          <html:input id="tabellify-monitor-count-item-tags" type="checkbox"/>
+          <html:span data-l10n-id="tabellify-monitor-count-item-tags"></html:span>
+        </html:label>
       </html:div>
       <html:p id="tabellify-monitor-message"></html:p>
       <html:p id="tabellify-monitor-summary" role="status" hidden="hidden">

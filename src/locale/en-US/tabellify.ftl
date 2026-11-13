@@ -96,6 +96,9 @@ tabellify-codebook-error-tag-missing = This tag is no longer in the group.
 
 tabellify-monitor-heading = Tag monitor
 tabellify-monitor-refresh = Refresh
+# Checkbox next to "Refresh". Off (default): only tags on highlights count. On: tags on the
+# paper item itself count too. The reader's "Tabellify tags" section follows the same setting.
+tabellify-monitor-count-item-tags = Also count tags on the paper itself
 tabellify-monitor-choose = Choose a collection to see which codebook tags its papers use.
 tabellify-monitor-codebook-empty = The codebook has no tags yet. Add tags to the codebook to see which ones are used.
 tabellify-monitor-unavailable = The tag monitor is unavailable because the codebook could not be loaded.
