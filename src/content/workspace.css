@@ -148,3 +148,115 @@
 .tabellify-codebook-error {
   font-weight: bold;
 }
+
+/* Feature 005: Tag monitor and per-paper table. No colours or backgrounds (light/dark). */
+
+#tabellify-tag-monitor {
+  margin-block: 0 16px;
+}
+
+#tabellify-monitor-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+#tabellify-monitor-header h2 {
+  margin-block: 0;
+}
+
+#tabellify-monitor-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-weight: bold;
+}
+
+#tabellify-monitor-warning {
+  font-style: italic;
+}
+
+.tabellify-monitor-group {
+  margin-block: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 6px;
+}
+
+.tabellify-monitor-group-name {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 1.05em;
+}
+
+.tabellify-monitor-count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* "Remaining: a, b" / "Used: c · 2 papers": label followed by an inline list. */
+.tabellify-monitor-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-block: 4px;
+}
+
+.tabellify-monitor-list-label {
+  font-weight: bold;
+}
+
+.tabellify-monitor-list ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tabellify-monitor-list li {
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 12px;
+}
+
+/* Remaining tags are what still needs work: dashed outline, so the difference does not
+   rely on colour alone. */
+.tabellify-monitor-remaining li {
+  border-style: dashed;
+}
+
+.tabellify-monitor-list li.tabellify-monitor-none {
+  border: 0;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* Sortable column headers: native buttons (so they clearly look clickable; their
+   background comes from the system theme), with an arrow on the active column
+   (aria-sort is set by workspace.js). */
+#tabellify-items-table th button.tabellify-sort {
+  margin: 0;
+  min-width: 0;
+  font-weight: bold;
+}
+
+#tabellify-items-table th[aria-sort="ascending"] button.tabellify-sort::after {
+  content: " ▲";
+}
+
+#tabellify-items-table th[aria-sort="descending"] button.tabellify-sort::after {
+  content: " ▼";
+}
+
+.tabellify-monitor-detail td {
+  padding-inline-start: 24px;
+}
+
+.tabellify-monitor-detail-group {
+  margin-block: 4px 8px;
+}

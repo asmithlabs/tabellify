@@ -38,10 +38,10 @@ tabellify-collection-label = Collection
 tabellify-collection-placeholder = Choose a collection
 tabellify-no-collections = My Library has no collections yet.
 tabellify-loading-items = Loading items…
-tabellify-no-items = No items in this collection.
+tabellify-no-items = No papers in this collection.
 tabellify-load-error = Could not load this collection. See Help → Debug Output Logging for details.
 tabellify-column-title = Title
-tabellify-column-tags = Tags
+tabellify-column-tags = All tags
 tabellify-untitled = (untitled)
 
 ## Workspace: codebook (Feature 004).
@@ -86,3 +86,32 @@ tabellify-codebook-error-group-missing = This group no longer exists.
 tabellify-codebook-error-tag-empty = Enter a tag name.
 tabellify-codebook-error-tag-duplicate = This tag is already in the codebook.
 tabellify-codebook-error-tag-missing = This tag is no longer in the group.
+
+## Workspace: tag monitor (Feature 005).
+## The heading, the "Refresh" button and the new table headers are set in workspace.xhtml
+## with data-l10n-id. All other messages are read from JavaScript with
+## document.l10n.formatValue() (no arguments) and put on the page as plain text.
+## Numbers are added by workspace.js after the text, e.g. "Tags used" + " 2/4",
+## "Papers:" + " 3", "Heat index · 3" + " papers".
+
+tabellify-monitor-heading = Tag monitor
+tabellify-monitor-refresh = Refresh
+tabellify-monitor-choose = Choose a collection to see which codebook tags its papers use.
+tabellify-monitor-codebook-empty = The codebook has no tags yet. Add tags to the codebook to see which ones are used.
+tabellify-monitor-unavailable = The tag monitor is unavailable because the codebook could not be loaded.
+tabellify-monitor-annotations-error = Some highlights could not be read, so their tags are not counted. See Help → Debug Output Logging for details.
+tabellify-monitor-tags-used = Tags used
+tabellify-monitor-all-used = All codebook tags are used.
+tabellify-monitor-papers = Papers:
+tabellify-monitor-used = Used:
+tabellify-monitor-remaining = Remaining:
+tabellify-monitor-present = Present:
+tabellify-monitor-none = none
+# Follows a number: "1 paper", "3 papers".
+tabellify-monitor-paper-one = paper
+tabellify-monitor-paper-other = papers
+tabellify-monitor-show-remaining = Show remaining
+tabellify-monitor-hide-remaining = Hide remaining
+tabellify-column-codebook = Codebook tags
+tabellify-column-in = In
+tabellify-column-details = Details
