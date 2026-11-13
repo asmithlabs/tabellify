@@ -10,6 +10,26 @@
   pass; owner runs one smoke test (the `[manual]` ACs) with Debug Output captured to
   `build/debug-N.txt`.
 
+## Owner decisions (2026-11-13, after the first smoke test)
+These change the approved spec; the sections below are updated to match.
+1. **Counting rule: highlight (annotation) tags only by default, with a switch for paper
+   (item) tags.** A codebook tag counts as used on a paper only if it is a manual tag on one of
+   the paper's non-trashed highlights. Tags on the paper item itself count only when the switch
+   is on. Automatic tags never count. The switch is a checkbox in the Tabellify tab next to the
+   tag monitor's "Refresh" button, "Also count tags on the paper itself", stored in the global
+   Zotero pref `extensions.tabellify.countItemTags` (boolean, default false; a setting, not
+   library data). Only the workspace checkbox writes it; this section only reads it. The rule
+   lives in the shared pure model (`TabellifyTagMonitor.countedTagNames`), so the F005 tab and
+   this section always agree. This section reads the pref on every render, so a change shows
+   up on its **next render** (switching item or tab, or any tag change); there is no pref
+   observer (it would need an unverified API) and the workspace cannot reach the section's
+   refresh functions (different scope).
+2. **The section shows a checklist** instead of only the remaining tags: every codebook tag,
+   grouped by super-tag in codebook order, each with ✓ (used) or ☐ (not yet). The header keeps
+   "k / M" (also when collapsed); the body starts with one line "k of M codebook tags used on
+   this paper". The "Remaining:" heading and the special "All N codebook tags used" text are
+   removed.
+
 ## Problem / objective
 While reading a paper in Zotero's reader, the researcher wants to see, without leaving the
 page and without a big window covering it, **how many codebook tags this paper already has**
@@ -25,10 +45,12 @@ popup (ADR-0013 option B) instead, this spec must be redrafted.
 **In scope:**
 - One item pane section, registered at startup and removed at shutdown, shown in reader tabs
   (and, per Q2, in the library item pane).
-- Count for the paper shown in the pane: manual tags on the item + manual tags on all
-  annotations of its file attachments, compared with the one codebook (F004).
-- Collapsed header summary "k / M"; body with the remaining tags grouped by super-tag.
-- Messages for: no codebook / empty codebook, codebook unreadable or newer, nothing remaining.
+- Count for the paper shown in the pane: manual tags on all annotations of its file
+  attachments, plus manual tags on the item itself only when the switch is on (owner decision
+  1), compared with the one codebook (F004).
+- Collapsed header summary "k / M"; body with "k of M used" and the checklist of every
+  codebook tag grouped by super-tag (owner decision 2).
+- Messages for: no codebook / empty codebook, codebook unreadable or newer.
 - Refresh when tags change (Notifier observer) while the section is shown.
 
 **Out of scope (non-goals):**
@@ -41,8 +63,8 @@ popup (ADR-0013 option B) instead, this spec must be redrafted.
 ## User stories
 - As a researcher reading a PDF, I glance at the right-hand pane and see "4 / 15" for this
   paper, so I know how much of my codebook I have applied.
-- As a researcher, I expand the section and see the 11 tags still missing, grouped by
-  super-tag, so I know what to look for in the text.
+- As a researcher, I expand the section and see every codebook tag grouped by super-tag, the
+  4 I have applied ticked and the 11 still missing unticked, so I know what to look for.
 - As a researcher, I collapse the section (or the whole pane) when I just want to read.
 - As a researcher, I add a tag to a highlight and the count goes up without reopening anything.
 
@@ -54,49 +76,59 @@ Collapsed:
 ```
 ▸ [icon] Tabellify tags                                   4 / 15
 ```
-Expanded:
+Expanded (checklist, owner decision 2):
 ```
 ▾ [icon] Tabellify tags                                   4 / 15
   4 of 15 codebook tags used on this paper
-  Remaining:
   Exposure
-    Temperature
-    Humidity
+    ✓ Heat index
+    ☐ Temperature
+    ☐ Humidity
   Health outcome
-    Hospitalization
-    Mortality
+    ✓ Hospitalization
+    ☐ Mortality
   …
 ```
 Other states (body text; header summary in brackets):
 - No codebook or codebook without tags: "No codebook yet. Create one in Tools → Tabellify…" [—]
 - Codebook unreadable / made by a newer Tabellify: "Could not read the codebook." [—]
-- Everything used: "All 15 codebook tags used on this paper." [15 / 15]
+- Everything used: "15 of 15 codebook tags used on this paper" and every line ticked [15 / 15]
 - Loading (while async reads run): "Counting…" [no summary]
 
-Plain list elements, no buttons. All names via `textContent`.
+Plain list elements, no buttons. All names via `textContent`. The marks ✓ / ☐ are Fluent
+messages (`tabellify-reader-mark-used` / `-unused`, with a `.title` tooltip) on a `<span>`
+before the name.
 
 ## Acceptance criteria
 `[manual]` = owner smoke test in the dev profile (Zotero 10.0.9). `[auto]` = `npm test`.
 Setup for the smoke test: the dev codebook has groups "Exposure" (`Heat index`,
 `Temperature`) and "Health outcome" (`Hospitalization`); the dev library has a paper with a PDF
-whose item carries `Heat index` and one of whose highlights carries `Hospitalization`.
+whose item carries `Heat index` and one of whose highlights carries `Hospitalization`. The
+switch "Also count tags on the paper itself" in the Tabellify tab starts **off**.
 
 - [ ] AC1 `[manual]` **Beside the reader, not over it.** Given Tabellify is installed and the
   PDF is opened in a reader tab with the right-hand pane shown, then a "Tabellify tags" section
   with the Tabellify icon is in that pane and in the side-nav strip; the page itself is not
   covered by anything Tabellify adds.
-- [ ] AC2 `[manual]` **Count and remaining.** The section header shows `2 / 3`; the body says
-  2 of 3 used and lists `Temperature` under "Exposure" only ("Health outcome" is not listed,
-  nothing left there).
+- [ ] AC2 `[manual]` **Count and checklist (highlights only).** With the switch off, the
+  section header shows `1 / 3`; the body says "1 of 3 codebook tags used on this paper", then
+  "Exposure" with `☐ Heat index` and `☐ Temperature`, then "Health outcome" with
+  `✓ Hospitalization` (the item tag `Heat index` does not count).
+- [ ] AC2b `[manual]` **Switch on.** In the Tabellify tab, tick "Also count tags on the paper
+  itself"; the tab's tag monitor recounts at once. Back in the reader tab, after switching to
+  another item and back (or any tag change), the section shows `2 / 3` with `✓ Heat index`.
+  Untick it again: the next render shows `1 / 3`. The tick survives closing and reopening the
+  Tabellify tab.
 - [ ] AC3 `[manual]` **Compact.** Clicking the section header collapses it to one line that
-  still shows `2 / 3`; clicking again expands it. After reopening the PDF the collapsed/open
+  still shows `1 / 3`; clicking again expands it. After reopening the PDF the collapsed/open
   state is kept (Zotero remembers it).
-- [ ] AC4 `[manual]` **Live update.** With the section visible, the owner adds the tag
-  `Temperature` to a highlight in the reader's annotation popup; within a moment the section
-  shows `3 / 3` and "All 3 codebook tags used on this paper." Removing that tag brings back
-  `2 / 3`. (This is the owner's own tag edit in the dev library; Tabellify writes nothing.)
+- [ ] AC4 `[manual]` **Live update.** With the section visible and the switch off, the owner
+  adds the tags `Heat index` and `Temperature` to a highlight in the reader's annotation popup;
+  within a moment the section shows `3 / 3` and every line ticked. Removing `Temperature`
+  brings back `2 / 3` with `☐ Temperature`. (This is the owner's own tag edit in the dev
+  library; Tabellify writes nothing to the library.)
 - [ ] AC5 `[manual]` **Automatic tags ignored.** A paper whose only codebook-named tag is an
-  automatic tag (orange in the tag selector) shows `0 / 3`. *(Skip if no such paper exists in
+  automatic tag (orange in the tag selector) shows `0 / 3`, with the switch off and on. *(Skip if no such paper exists in
   the dev library; say so in the result.)*
 - [ ] AC6 `[manual]` **Lifecycle.** With the PDF tab open: disable Tabellify (Tools → Plugins)
   → the section and its side-nav icon disappear from the open reader tab without reopening it;
@@ -109,15 +141,21 @@ whose item carries `Heat index` and one of whose highlights carries `Hospitaliza
   restores the counts (after reopening the PDF or switching items).
 - [ ] AC8 `[manual]` **Library and codebook unchanged.** After AC1–AC7, the tag selector shows
   no new tags and `codebooks.json` has the same `revision` as before the test (the section
-  never saves).
-- [ ] AC9 `[auto]` **Per-paper summary (pure).** Unit tests of the pure function (F005's, or
-  the one added in T1): codebook × tag names → `{ used, total, remainingByGroup }`; exact,
-  case-sensitive match after trim; groups in codebook order; groups with nothing remaining
-  omitted; empty codebook → `total 0`; input not mutated.
+  never saves; the only thing Tabellify writes is the switch's pref, from the Tabellify tab).
+- [ ] AC9 `[auto]` **Per-paper checklist (pure).** Unit tests of
+  `TabellifyTagMonitor.countedTagNames` and `paperChecklist`: codebook × `{ itemTags,
+  annotationTags }` × `{ countItemTags }` → `{ used, total, allUsed, groups: [{ name, tags:
+  [{ tag, used }] }] }`; **both counting modes** (default highlights only; switch adds item
+  tags; only exactly `true` turns it on); automatic tags never count; exact, case-sensitive
+  match after trim; every codebook tag listed in codebook order; groups without tags omitted;
+  empty codebook → `total 0`; input not mutated. `summarize` tested in both modes too.
 - [ ] AC10 `[auto]` **Tag collection with fakes.** Unit tests of `collectPaperTags(item)` with
-  fake items: item tags + annotation tags of file attachments; automatic (`type: 1`) excluded;
-  linked-URL attachments skipped (no `getAnnotations` call); standalone file attachment counts
-  its own tags and annotations; notes → "not applicable" (section disabled).
+  fake items: item tags and annotation tags of file attachments returned **separately**;
+  automatic (`type: 1`) never counted; linked-URL attachments skipped (no `getAnnotations`
+  call); standalone file attachment: its own tags are item tags, its annotations' tags are
+  annotation tags; notes → "not applicable" (section disabled). Rendering: the checklist lines
+  (✓ / ☐) in both modes, the pref read on every render (`Zotero.Prefs.get(name, true)`), an
+  unreadable pref → highlights only, never `Prefs.set`.
 - [ ] AC11 `[auto]` **Registration symmetry with fakes.** With a fake `Zotero.ItemPaneManager`
   and `Zotero.Notifier` (`tests/helpers/zotero-mock.mjs`): `init` registers one section (with
   `paneID`, `pluginID`, header/sidenav `l10nID` + `icon`, `onRender`) and one observer for
@@ -127,9 +165,14 @@ whose item carries `Heat index` and one of whose highlights carries `Hospitaliza
 - [ ] AC12 `[auto]` **Static guards.** `symmetry.test.mjs` passes (generic
   `Zotero.X.registerY` ↔ `unregisterY`) and is non-vacuous for `registerSection` and
   `registerObserver`; `write-guard.test.mjs` passes with **no new allow-list entry** (the new
-  file never writes; `saveData` is not referenced outside the workspace); `no-html-sinks`
+  file never writes; `saveData` is not referenced outside the workspace; `Zotero.Prefs.set` is
+  not matched by the library-write denylist, and a pref is not library data); `no-html-sinks`
   passes for the new file; every Fluent id used exists in `tabellify.ftl`; an allow-list test
-  for `src/reader-tags.js` permits only the Zotero APIs listed in "Zotero APIs used".
+  for `src/reader-tags.js` permits only the Zotero APIs listed in "Zotero APIs used"
+  (including `Zotero.Prefs.get`, read only; `set`/`clear` banned). Workspace static checks:
+  the checkbox, its Fluent ID `tabellify-monitor-count-item-tags`, its change listener removed
+  on unload, the pref name `extensions.tabellify.countItemTags` (model constant
+  `COUNT_ITEM_TAGS_PREF`), and no other file sets a pref.
 
 ## Design
 
@@ -174,9 +217,11 @@ whose item carries `Heat index` and one of whose highlights carries `Hospitaliza
   `rootURI + "content/icons/…"`).
 - **Fluent** (`src/locale/en-US/tabellify.ftl`): `tabellify-reader-section-header` (`.label`),
   `tabellify-reader-section-sidenav` (`.tooltiptext`), `tabellify-reader-summary` (value with
-  `$used`, `$total`), `tabellify-reader-used` (sentence), `tabellify-reader-remaining`,
-  `tabellify-reader-all-used`, `tabellify-reader-no-codebook`, `tabellify-reader-codebook-error`,
-  `tabellify-reader-counting`.
+  `$used`, `$total`), `tabellify-reader-used` (sentence), `tabellify-reader-mark-used` /
+  `tabellify-reader-mark-unused` (✓ / ☐ with `.title`), `tabellify-reader-no-codebook`,
+  `tabellify-reader-codebook-error`, `tabellify-reader-counting`; workspace:
+  `tabellify-monitor-count-item-tags` (owner decisions 2026-11-13; `tabellify-reader-remaining`
+  and `tabellify-reader-all-used` removed).
 - **CSS:** none in v1 (Zotero's section styling; lists and headings only). Revisit after the
   smoke test if it looks cramped.
 
@@ -207,14 +252,19 @@ All listed with sources in **ADR-0013, "Appendix: API notes to merge"** (to be m
 | `item.getAttachments()`, `attachment.getAnnotations()`, `isFileAttachment`, `isAttachment`, `isNote`, `isAnnotation`, `parentItem`, `Zotero.Items.get(ids)` | Verified (source; `getAttachments` also docs) |
 | `Zotero.Notifier.registerObserver` / `unregisterObserver` | Verified (source); `item-tag` id format UNVERIFIED (RT-R3, not relied on) |
 | `Services.scriptloader.loadSubScript(rootURI + …)` into the bootstrap scope | Verified (existing use) |
+| `Zotero.Prefs.get(name, true)` (read the switch; missing pref → `undefined`, read as off); `Zotero.Prefs.set(name, value, true)` in the workspace only | Verified (source), api-notes Prefs row |
 | Already verified: `item.getTags()`, `Zotero.Libraries.get`, `library.waitForDataLoad("item")`, `IOUtils.readJSON`, `PathUtils.join`, `Zotero.DataDirectory.dir` (internal), `insertFTLIfNeeded`, `document.l10n.formatValue`, `Zotero.debug`, `Zotero.logError` | see api-notes |
 
 ## Data safety
 - **Read from the library:** the shown item, its attachments, their annotations, and the tags
   of all of these (in-memory reads after `waitForDataLoad`, which only fills Zotero's cache).
-- **Read from Tabellify data:** `codebooks.json` via `TabellifyCodebookStore.load` only.
-- **Written by Tabellify:** **nothing.** No items, tags, annotations, prefs or files. The
-  section never calls `saveData`; no new write-guard allow-list entry.
+- **Read from Tabellify data:** `codebooks.json` via `TabellifyCodebookStore.load` only, and
+  the pref `extensions.tabellify.countItemTags`.
+- **Written by the section:** **nothing.** No items, tags, annotations, prefs or files. The
+  section never calls `saveData` or `Zotero.Prefs.set`; no new write-guard allow-list entry.
+- **Written by the workspace (owner decision 1):** only the boolean pref
+  `extensions.tabellify.countItemTags` when the owner ticks or unticks the checkbox. A pref is
+  a Tabellify setting, not library data.
 - **Written by Zotero on the user's behalf:** the pref `panes.<namespaced id>.open` when the
   user collapses/expands the section (Zotero's normal behaviour for every section).
 - **Untrusted input:** tag names and codebook names are shown with `textContent` / Fluent args

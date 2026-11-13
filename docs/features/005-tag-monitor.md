@@ -42,6 +42,21 @@ in its subcollections and tags on their highlights (used).
   paper's remaining codebook tags. That is **F005b**, scheduled next, with ADR-0013 drafted
   in parallel with this build.
 
+### Counting rule change (owner decision 2026-11-13, during F005b)
+Replaces decision 2 and the "item tags + annotation tags" union in "How 'used' is computed":
+- **Default: highlight (annotation) tags only.** A codebook tag counts as used on a paper only
+  if it is a manual tag on one of the paper's non-trashed highlights. Item-level tags do not
+  count.
+- **Switch:** a checkbox in the Tabellify tab next to "Refresh", "Also count tags on the paper
+  itself", adds the manual tags on the paper item. Stored in the global pref
+  `extensions.tabellify.countItemTags` (boolean, default false) with
+  `Zotero.Prefs.get(name, true)` / `Zotero.Prefs.set(name, value, true)`; only the workspace
+  writes it (a setting, not library data). Changing it recounts at once from the data already
+  read.
+- **Automatic tags still never count** (decision 4).
+- The rule lives in the pure model (`countedTagNames`; `summarize(…, { countItemTags })`), so
+  the F005 monitor and the F005b reader section always agree. Unit-tested in both modes.
+
 ## Scope
 **In scope:**
 - A **"Tag monitor"** section in the workspace tab, under the F003 collection dropdown, driven
@@ -100,7 +115,10 @@ tag in a group, My Library only.
    keeping **only manual tags**: `(t.type ?? 0) === 0`. (`getTags()` omits `type` for manual
    tags and sets `1` for automatic ones; Zotero allows only 0 and 1. Highlights tagged in the
    reader are saved without a type, i.e. manual.) Tag names are trimmed before comparing.
-5. A codebook tag is **used** if at least one paper in scope carries it (item or highlight).
+   **Counting (2026-11-13):** only the annotation tags count by default; the item tags count
+   only with the "Also count tags on the paper itself" switch (see "Counting rule change").
+5. A codebook tag is **used** if at least one paper in scope carries it (on a highlight, or on
+   the item with the switch on).
    **Paper count** = number of distinct papers carrying it (a paper with the tag on the item
    and on three highlights counts once).
 6. **Per paper:** `k` = number of codebook tags the paper carries; **remaining** = the other
@@ -211,6 +229,12 @@ panel). Neither is in F005.
     only** (PDF attached).
   - Paper 3 in "Phenotype B": an **automatic** tag named `Temperature` (e.g. imported with the
     metadata) and no manual codebook tags. If no automatic tag is at hand, skip AC3.
+
+**Note (counting rule change 2026-11-13):** AC1–AC12 were written for the original rule
+(item + highlight tags). They now hold with **"Also count tags on the paper itself" ticked**.
+With it unticked (the default), Paper 1's item tag `Heat index` does not count: "Tags used
+1/4", "Exposure 0/2", Paper 1 shows 0/4, and AC6's new item tag `Mortality` does not change
+the counts. Re-checked in the F005b smoke test (F005b AC2b).
 
 - [ ] AC1 `[manual]` **Summary with subcollections.** Choosing "F005 test" shows "Tags used
   2/4" and "Papers: 3" (Paper 2 counted once).
