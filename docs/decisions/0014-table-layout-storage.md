@@ -88,6 +88,41 @@ under every rule of ADR-0012.**
    F005 per-paper (monitor) table only. If F007's design makes `layout.json` redundant, F007's
    spec migrates it.
 
+## Amendment (2026-11-13, owner-approved)
+
+The owner changed the per-paper table's columns after the first F005c smoke test (spec
+F005c, "Owner decisions 2026-11-13 #2"): the five summary columns are replaced by Title,
+one column per codebook tag grouped under its super-tag, and k/M. The decision above
+stands (same file, same rules); only the shape of the column order changes:
+
+- **schemaVersion 2.** `perPaperTable.columnOrder` is replaced by `groupOrder` (codebook
+  group IDs, e.g. `"g3"`) and `tagOrder` (an object keyed by codebook group ID, each listing
+  tag names in the user's order). `manualOrders` is unchanged.
+  ```json
+  {
+    "schemaVersion": 2,
+    "revision": 8,
+    "perPaperTable": {
+      "groupOrder": ["g3", "g2"],
+      "tagOrder": { "g2": ["Temperature", "Heat index"] },
+      "manualOrders": { "1/ABCD2345": ["EFGH6789", "JKLM2345"] }
+    }
+  }
+  ```
+- **Separate from the codebook.** Moving a column never changes `codebooks.json`; the
+  codebook stays the source of which groups and tags exist.
+- **Validation (§3) for version 2:** unknown or removed group IDs and tag names are ignored
+  when shown; groups and tags the layout does not know are appended in codebook order; a tag
+  can only be ordered inside its own group. Keys are copied as ordinary own properties
+  (a hand-edited `"__proto__"` key cannot change an object's prototype).
+- **Migration 1 → 2** (pure `migrateLayout`, in memory on load): the version 1
+  `columnOrder` named the removed columns, so it is dropped (columns start in codebook
+  order); `manualOrders` are kept. The file is rewritten as version 2 only by the next save
+  after a user action, with the version 1 file kept as `layout.json.bak`. A file newer than
+  version 2 still gives the default layout and is never overwritten.
+- **Not pruned on save:** saved tag orders of groups or tags that left the codebook are
+  ignored but stay in the file until that group is moved again (open question in the spec).
+
 ## Alternatives considered
 
 | Option | Pros | Cons |

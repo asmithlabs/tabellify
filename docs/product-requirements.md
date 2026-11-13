@@ -49,7 +49,7 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 | F003 | Read-only data access: list collections, items, and tags of a chosen collection | |
 | F004 | Curated tag list (codebook) with super-tag groups, stored by Tabellify | |
 | F005 | Tag monitor: used / remaining curated tags for a collection | |
-| F006 | Table builder: rows = papers, columns = (super-)tags, preview grid | |
+| F006 | Table builder: rows = papers, columns = (super-)tags, preview grid | Preview grid (papers × codebook tags grouped by super-tag, ✓ cells) already exists in F005c's per-paper table (owner, 2026-11-13); F006 adds highlight text in cells |
 | F007 | Save / list / edit / delete table configurations (persistent) | |
 | F008 | CSV export (then optional XLSX) | |
 | F009 | Column customization: user-created columns, drag-and-drop reorder, column types | |

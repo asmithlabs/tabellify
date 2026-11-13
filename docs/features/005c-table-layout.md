@@ -1,6 +1,8 @@
 # Feature 005c: Per-paper table layout (formatting, column and row drag-and-drop)
 
-- **Status:** Approved (owner, 2026-11-13: Q1 = C — layout saved via ADR-0014; Q2–Q6 recommended answers accepted)
+- **Status:** Approved (owner, 2026-11-13: Q1 = C — layout saved via ADR-0014; Q2–Q6 recommended answers accepted).
+  Scope change approved by the owner 2026-11-13 after the first smoke test: see
+  "Owner decisions 2026-11-13 #2" (codebook tag columns).
 - **Branch:** `feat/005c-table-layout`
 - **Related ADRs:** 0009 (workspace tab), 0003 (no bundler, no dependency), 0011 (security),
   0012 (data storage; **not touched** under the recommended option), **0014 (Proposed, only
@@ -23,6 +25,65 @@ F005c makes the table readable (borders, shading, sticky header, sensible widths
 titles, light/dark mode) and lets the user arrange columns and rows by mouse **and** by
 keyboard. Everything stays inside the existing workspace document. Nothing is written to
 the library.
+
+## Owner decisions 2026-11-13 #2 (codebook tag columns)
+After the first smoke test (mouse drag and saving worked), the owner changed the table's
+columns. These decisions **supersede** the five summary columns described below in
+"Scope", "Columns" and "Pure model" (kept for history); the ACs are updated.
+
+1. **Columns.** Grip column, then **Title**, then **one column per codebook tag, grouped
+   under its super-tag** (two-row header: a group header row whose cells span their tags,
+   and a tag header row), then a narrow **k/M** count column at the end. The "In",
+   "All tags" and "Details / Show remaining" columns and the expandable detail rows are
+   **removed** (the reader section now shows the per-paper checklists). Columns follow the
+   codebook: tags and groups added or removed in the codebook appear or disappear at once.
+   A group without tags has no column.
+2. **Cells.** ✓ when the paper has that tag under the current counting rule (highlight tags
+   only by default; the "Also count tags on the paper itself" checkbox adds item tags), from
+   the shared model (`TabellifyTagMonitor.summarize` → `countedTagNames`); otherwise empty.
+   Each tag cell has an accessible text and tooltip from Fluent: "<tag>: Used" /
+   "<tag>: Not used" (`tabellify-table-tag-used`, `tabellify-table-tag-not-used`). Highlight
+   text in cells is F006, not now.
+3. **Column drag.** A tag column moves **only within its super-tag group**; dragging a
+   **group header** moves the whole group among the groups. Title stays first and k/M stays
+   last (not draggable). Alt+Left / Alt+Right does the same (within the group for tags,
+   among groups for group headers). "Reset columns" restores the codebook order.
+4. **Column order does not change the codebook.** It is saved separately in
+   `layout.json`. Schema: the column order becomes `groupOrder` (codebook group IDs) plus a
+   per-group `tagOrder` (keyed by codebook group ID, listing tag names); unknown or removed
+   IDs are ignored, new groups/tags are appended in codebook order. `schemaVersion` 2, with a
+   pure `migrateLayout` from 1 (version 1 column orders are for the old columns: dropped;
+   manual paper orders kept). A newer-than-known version still gives the default layout and
+   is never overwritten. See the amendment in ADR-0014.
+5. **Sorting.** Clickable headers: Title, k/M and each tag column (✓ first; a second click
+   puts ✓ last). Default stays fewest-k first, then title. A sort by a tag that leaves the
+   codebook falls back to the default sort. Manual row order, "Manual order" and "Clear
+   manual order" are unchanged. Row stripes unchanged (every other paper row; there are no
+   detail rows any more).
+
+**Implementation notes (developer, 2026-11-13).**
+- Pure model (`table-layout-model.js`): `orderedGroups(groups, columnLayout)` merges the
+  saved order with the codebook; `moveTag`/`moveTagBy` (within a group),
+  `moveGroup`/`moveGroupBy`; `isCodebookOrder`; `emptyColumnLayout`; the generic list moves
+  `moveColumn`/`moveColumnBy` stay. `COLUMN_IDS` and `normalizeColumnOrder` are removed.
+- Sorting (`tag-monitor-model.js`): `sortPapers` accepts `tagSortKey(tag)` = `"tag:" + tag`;
+  the "In" (`collections`) sort is removed with its column.
+- Header: `workspace.xhtml` keeps the fixed cells (grip, Title, k/M; `rowspan="2"`) and an
+  empty tag row and `<colgroup>`; `workspace.js` builds the group/tag headers and `<col>`
+  elements as plain text, only when the columns change (rebuilding drops keyboard focus).
+  With `table-layout: fixed` the widths come from the `<col>` classes (tag 5.5em, k/M 4.5em,
+  Title the rest); the table is at least as wide as the tab and grows sideways with many tag
+  columns (CSS variable `--tabellify-tag-columns`, set by `workspace.js` with
+  `element.style.setProperty`, standard CSSOM).
+- Safety: tag names are never put into a CSS selector (header cells are found by comparing
+  attribute values); the column drag's data is only its kind (`group` / `tag`).
+- Removed Fluent IDs: `tabellify-column-tags`, `-in`, `-details`, `-codebook`, `-grip`,
+  `tabellify-monitor-show-remaining`, `-hide-remaining`, `-present`. New:
+  `tabellify-column-count` ("k/M", with tooltip/aria-label), `tabellify-table-move-group`,
+  `tabellify-table-move-tag`, `tabellify-table-tag-used`, `tabellify-table-tag-not-used`.
+- Open question (not blocking): a saved `tagOrder` for a group or tag that was removed from
+  the codebook stays in `layout.json` until that group is moved again (it is ignored when
+  shown). Pruning it on save would need the codebook in the save path; not done.
 
 ## Relation to F009 (and F006/F007)
 - **F005c pulls "drag-and-drop column reorder" forward from F009**, for the F005 per-paper
@@ -262,18 +323,22 @@ collection with about 20+ papers (or a short Zotero window) works. `[auto]` = `n
 
 - [ ] AC1 `[manual]` **Formatting.** In the Tabellify tab, the per-paper table has thin
   borders around every cell, every other paper row is lightly shaded, and long titles wrap
-  inside the Title column (no sideways scrolling at a normal window width). A paper's open
-  "Show remaining" row has the same shading as its paper.
+  inside the Title column. With only a few tag columns there is no sideways scrolling at a
+  normal window width; with many, the table scrolls sideways (updated 2026-11-13 #2).
 - [ ] AC2 `[manual]` **Light and dark.** After switching Zotero's colour scheme (Zotero
   Settings → General, colour-scheme choice: Light, then Dark) and reopening the Tabellify tab,
   text, borders, shading and header stay readable in both; no white or black blocks.
-- [ ] AC3 `[manual]` **Sticky header.** Scrolling down a long table keeps the header row
-  visible at the top; rows do not show through the header.
-- [ ] AC4 `[manual]` **Column drag (also runtime check R12).** Dragging the grip of "Codebook
-  tags" and dropping it on the left half of "Title" moves that column (header and every
-  cell) to the first data position, with a drop line shown during the drag. Clicking the
-  "Title" header button still sorts by title. Choosing another collection keeps the new
-  column order. "Reset columns" restores the original order.
+- [ ] AC3 `[manual]` **Sticky header.** Scrolling down a long table keeps both header rows
+  (group headers and tag headers) visible at the top; rows do not show through the header
+  and no gap opens between the two header rows.
+- [ ] AC4 `[manual]` **Column drag (also runtime check R12; updated 2026-11-13 #2).**
+  Dragging a tag header's grip and dropping it on the left half of another tag header of
+  the **same** group moves that tag column (header and every cell) there, with a drop line
+  during the drag; over a tag of **another** group no drop line shows and the drop does
+  nothing. Dragging a group header's grip onto another group moves the whole group with
+  its tags. Title stays first and k/M last. Clicking the "Title" header button still sorts
+  by title. Choosing another collection keeps the new column order. "Reset columns"
+  restores the codebook order. The Codebook section above is unchanged by any of this.
 - [ ] AC5 `[manual]` **Row drag (also R12).** With "F005 test" in the default order (Paper 3
   first), dragging Paper 1's grip above Paper 3 shows Paper 1 first; the toolbar shows
   "Manual order" (pressed) and no header shows ▲ or ▼. Text in a cell can still be selected
@@ -284,12 +349,14 @@ collection with about 20+ papers (or a short Zotero window) works. `[auto]` = `n
   default order.
 - [ ] AC7 `[manual]` **Keyboard.** Using only Tab and Alt+arrow keys (Option+arrow on macOS):
   Alt+Down on a paper's grip moves it one row down and the focus stays on its grip; Alt+Right
-  on a column grip moves that column one place right. Each move logs nothing to Error Console
+  on a tag header's grip moves that tag one place right inside its group (and does nothing
+  on the group's last tag); Alt+Right on a group header's grip moves the whole group. Each move logs nothing to Error Console
   and VoiceOver (if on) announces the new position.
-- [ ] AC8 `[manual]` **Detail rows and live updates.** With Paper 1's "Show remaining" open,
-  moving Paper 1 moves its detail row with it. Adding a tag to Paper 2 in the library view
-  (live update) keeps the manual order; a paper newly added to "F005 test" appears after the
-  hand-ordered papers.
+- [ ] AC8 `[manual]` **Live updates (updated 2026-11-13 #2: no detail rows any more).**
+  Adding a codebook tag to a highlight of Paper 2 (live update) shows ✓ in that tag's column
+  and keeps the manual order; a paper newly added to "F005 test" appears after the
+  hand-ordered papers. Adding a tag to a codebook group adds a column at the end of that
+  group; removing it removes the column.
 - [ ] AC9 `[manual]` **Nothing written, nothing dropped in.** After AC1–AC8: the tag selector
   and the collections are unchanged; `~/Zotero tabellify-dev/tabellify/` contains no new file
   (only `codebooks.json` and its `.bak`); dropping a paper grip outside the table, or dragging
@@ -303,7 +370,10 @@ collection with about 20+ papers (or a short Zotero window) works. `[auto]` = `n
   skipped, empty manual order = fallback); `seedManualOrder`; `moveRow` (before an id, to end,
   onto itself no-op) and `moveRowBy` (edges); `nextSortState` (new key, same key reverses,
   from manual); `dropSide`; `autoScrollDelta` (inside, near top, near bottom, capped);
-  `stripeFlags` (detail rows copy their paper); **inputs not mutated**.
+  `stripeFlags`; **inputs not mutated**. Since 2026-11-13 #2 also: `orderedGroups` (codebook
+  order, saved order applied, unknown IDs ignored, new groups/tags appended, groups without
+  tags left out), `moveTag`/`moveTagBy` (only within the group, edges no-op),
+  `moveGroup`/`moveGroupBy`, `isCodebookOrder`, `"__proto__"` keys stay ordinary keys.
 - [ ] AC11 `[auto]` **Static checks:** `table-layout-model.js` uses no Zotero / DOM / IOUtils
   globals and loads after `tag-monitor-model.js` and before `workspace.js`; every
   `addEventListener` added to the table and the toolbar has a matching `removeEventListener`
@@ -315,6 +385,31 @@ collection with about 20+ papers (or a short Zotero window) works. `[auto]` = `n
   "The no-background test", option A): passes for the new CSS; a unit-style self-check in the
   same test shows it still rejects `background: #fff`, `background-color: rgb(…)` / named
   colours, and any background outside `#tabellify-items-table` selectors.
+- [ ] AC13 `[manual]` **Tag columns and cells (2026-11-13 #2).** With the codebook of the F005
+  smoke test, the table shows Title, then one group header per super-tag spanning its tags
+  with the tag headers below, then k/M. A paper's cell shows ✓ exactly for the codebook tags
+  on its highlights; ticking "Also count tags on the paper itself" adds ✓ for tags on the
+  paper item. Hovering a cell shows "<tag>: Used" or "<tag>: Not used". There is no "In",
+  "All tags" or "Show remaining" column.
+- [ ] AC14 `[manual]` **Sort by tag (2026-11-13 #2).** Clicking a tag header puts the papers
+  with ✓ first (▲); clicking it again puts them last (▼). Title and k/M still sort; the
+  default is fewest k first.
+- [ ] AC15 `[manual]` **Saved order, schema 2 (2026-11-13 #2).** After moving a tag column,
+  closing the Tabellify tab and opening it again, the tag column is where it was put;
+  `~/Zotero tabellify-dev/tabellify/layout.json` has `"schemaVersion": 2`, `groupOrder` and
+  `tagOrder`, and the manual paper orders made before this change are still there (the old
+  version 1 file is kept as `layout.json.bak` after the first save).
+- [ ] AC16 `[auto]` **Rendering and schema 2 (2026-11-13 #2).**
+  `tests/unit/workspace-table.test.mjs` runs the real `workspace.js` table code against a
+  small fake DOM: header order and spans, `<col>` elements, ✓ cells and their Used/Not used
+  text under both counting rules, codebook additions/removals, no tags, markup characters
+  stay text, Alt+arrow moves (within group / whole group, focus kept, announcements, log
+  lines), "Reset columns", tag sorting and the fallback when the sorted tag leaves the
+  codebook. `tests/unit/table-layout-model.test.mjs` and `layout-store.test.mjs`: schema 2
+  frames, `migrateLayout` 1 → 2, newer = never overwritten, a save over a version 1 file
+  writes version 2. `tests/unit/tag-monitor-model.test.mjs`: tag-column sorting, also under
+  the counting rule. Static checks: removed columns and strings are gone, Title first / k/M
+  last in the markup, only numeric paper IDs in CSS selectors.
 
 ## Test plan
 | AC | How |
@@ -323,6 +418,8 @@ collection with about 20+ papers (or a short Zotero window) works. `[auto]` = `n
 | AC10 | `tests/unit/table-layout-model.test.mjs` (Node `vm` sandbox, like `tag-monitor-model.test.mjs`) |
 | AC11 | `tests/static/workspace-script.test.mjs`, `write-guard`, `no-html-sinks`, `l10n-and-window` |
 | AC12 | `tests/static/l10n-and-window.test.mjs` |
+| AC13–AC15 | Owner smoke test (manual), 2026-11-13 #2 re-test |
+| AC16 | `tests/unit/workspace-table.test.mjs`, `table-layout-model.test.mjs`, `layout-store.test.mjs`, `tag-monitor-model.test.mjs`, `tests/static/workspace-script.test.mjs` |
 
 **Fallback if R12 fails** (drag events don't fire, or the drop is refused, in the tab iframe):
 ship the keyboard moves plus small "Move up / Move down" and "Move left / Move right" buttons,
