@@ -45,9 +45,13 @@
      borders on the table, not on the sticky header cells, so the header's borders would
      scroll away. Each cell draws its right and bottom border; the table draws the outer
      top and left edge, so lines are never doubled.
-   - `table-layout: fixed`: column widths come from the header cells' classes (below) and
-     do not jump when the rows change. Widths follow the column CLASS, not its position,
-     so they move with a column that is dragged elsewhere.
+   - `table-layout: fixed`: column widths come from the <col> elements workspace.js builds
+     (one per column, with a class per kind: grip, title, tag, count) and do not jump when
+     the rows change. <col> and not the header cells, because the first header row has
+     group cells that span several columns.
+   - Width: at least the tab's width, and wider when there are many tag columns
+     (--tabellify-tag-columns is set by workspace.js); the page then scrolls sideways
+     instead of squeezing each tag column below 5.5em. The Title column takes the rest.
    - Colours: borders and tints are the text colour mixed with transparency
      (`color-mix(in srgb, currentColor N%, transparent)`), so they work in light and dark
      mode without a hard-coded colour. */
@@ -55,7 +59,7 @@
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  width: 100%;
+  width: max(100%, calc(24em + var(--tabellify-tag-columns, 0) * 5.5em));
   border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
@@ -82,8 +86,24 @@
   border-bottom: 2px solid color-mix(in srgb, currentColor 40%, transparent);
 }
 
-/* Every other paper row is lightly tinted (workspace.js sets the class; a paper's
-   "Show remaining" row gets the same class as its paper). */
+/* Two header rows (owner decision 2026-11-13): group (super-tag) headers, then tag
+   headers. The group row has a fixed minimum height and its names stay on one line (cut
+   with "…", full name in the tooltip), so the tag row can stick right below it. The tag
+   row sticks 1px higher and lies above the group row, so no gap can open between them. */
+#tabellify-items-table thead th.tabellify-col-group {
+  height: 2em;
+  border-bottom-width: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tabellify-items-table thead tr.tabellify-tag-row th {
+  top: calc(2em - 1px);
+  z-index: 2;
+}
+
+/* Every other paper row is lightly tinted (workspace.js sets the class). */
 #tabellify-items-table tbody tr.tabellify-row-alt {
   background-color: color-mix(in srgb, currentColor 6%, transparent);
 }
@@ -93,30 +113,46 @@
   background-color: color-mix(in srgb, currentColor 10%, transparent);
 }
 
-/* Column widths by column class. The Codebook-tags count is short; the title gets the
-   most room; "All tags" takes what is left. */
+/* Column widths by <col> class. The title gets what the fixed columns leave. */
+#tabellify-items-table col.tabellify-col-grip { width: 2.5em; }
+#tabellify-items-table col.tabellify-col-title { width: auto; }
+#tabellify-items-table col.tabellify-col-tag { width: 5.5em; }
+#tabellify-items-table col.tabellify-col-count { width: 4.5em; }
+
 #tabellify-items-table .tabellify-col-grip {
-  width: 2.5em;
   padding-inline: 2px;
   text-align: center;
 }
-#tabellify-items-table .tabellify-col-title { width: 38%; }
-#tabellify-items-table .tabellify-col-count { width: 7em; }
-#tabellify-items-table .tabellify-col-collections { width: 18%; }
-#tabellify-items-table .tabellify-col-tags { width: auto; }
-#tabellify-items-table .tabellify-col-details { width: 10em; }
 
-/* Long titles, collection lists and tag lists (and unbroken strings such as DOIs or URLs)
-   wrap inside their column instead of widening the table. */
+/* Long titles and tag names (and unbroken strings such as DOIs or URLs) wrap inside their
+   column instead of widening the table. */
 #tabellify-items-table td.tabellify-col-title,
-#tabellify-items-table td.tabellify-col-collections,
-#tabellify-items-table td.tabellify-col-tags {
+#tabellify-items-table th.tabellify-col-tag button.tabellify-sort {
   overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: start;
 }
 
 #tabellify-items-table td.tabellify-col-count {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* Tag cells: centred ✓ when the paper has the tag. The glyph comes from CSS (like the
+   grip and the sort arrows); the cell's text for screen readers and its tooltip come from
+   Fluent ("Heat index: Used" / "Not used"), set by workspace.js. */
+#tabellify-items-table td.tabellify-col-tag {
+  text-align: center;
+}
+
+#tabellify-items-table td.tabellify-tag-used::before {
+  content: "✓";
+  font-weight: bold;
+}
+
+/* A stronger line where a new group (super-tag) starts. */
+#tabellify-items-table .tabellify-group-start {
+  border-left: 2px solid color-mix(in srgb, currentColor 40%, transparent);
 }
 
 .tabellify-untitled {
@@ -326,14 +362,6 @@
 
 #tabellify-items-table th[aria-sort="descending"] button.tabellify-sort::after {
   content: " ▼";
-}
-
-.tabellify-monitor-detail td {
-  padding-inline-start: 24px;
-}
-
-.tabellify-monitor-detail-group {
-  margin-block: 4px 8px;
 }
 
 /* Feature 005c: table toolbar, grips and drag-and-drop marks. No colours: lines and

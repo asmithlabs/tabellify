@@ -41,7 +41,6 @@ tabellify-loading-items = Loading items…
 tabellify-no-items = No papers in this collection.
 tabellify-load-error = Could not load this collection. See Help → Debug Output Logging for details.
 tabellify-column-title = Title
-tabellify-column-tags = All tags
 tabellify-untitled = (untitled)
 
 ## Workspace: codebook (Feature 004).
@@ -108,31 +107,35 @@ tabellify-monitor-all-used = All codebook tags are used.
 tabellify-monitor-papers = Papers:
 tabellify-monitor-used = Used:
 tabellify-monitor-remaining = Remaining:
-tabellify-monitor-present = Present:
 tabellify-monitor-none = none
 # Follows a number: "1 paper", "3 papers".
 tabellify-monitor-paper-one = paper
 tabellify-monitor-paper-other = papers
-tabellify-monitor-show-remaining = Show remaining
-tabellify-monitor-hide-remaining = Hide remaining
-tabellify-column-codebook = Codebook tags
-tabellify-column-in = In
-tabellify-column-details = Details
+# Last column of the per-paper table: k codebook tags used on the paper, of M in the
+# codebook (owner decision 2026-11-13). The short header keeps the column narrow; the
+# tooltip and the screen-reader name say what it means.
+tabellify-column-count = k/M
+    .title = Codebook tags used on the paper (k of M)
+    .aria-label = Codebook tags used on the paper (k of M)
 
-## Workspace: per-paper table layout (Feature 005c).
-## `tabellify-column-move` and `tabellify-column-grip` only set the screen-reader name
-## (`.aria-label`) of the grip column header and of each column's grip; the visible "⠿"
-## comes from workspace.css. The toolbar buttons are set in workspace.xhtml with
-## data-l10n-id. The other messages are read from JavaScript with
-## document.l10n.formatValue() (no arguments) and put on the page as plain text, with the
-## paper title, column name and numbers added by workspace.js:
-## "Move paper:" + " <title>", "<title>" + " moved to position" + " 2 " + "of" + " 12".
+## Workspace: per-paper table layout (Feature 005c; codebook tag columns since the
+## owner's 2026-11-13 change).
+## `tabellify-column-move` only sets the screen-reader name (`.aria-label`) of the grip
+## column header; the visible "⠿" of every grip comes from workspace.css. The toolbar
+## buttons are set in workspace.xhtml with data-l10n-id. The other messages are read from
+## JavaScript with document.l10n.formatValue() (no arguments) and put on the page as plain
+## text, with the paper title, group or tag name and numbers added by workspace.js:
+## "Move paper:" + " <title>", "Move group:" + " <group>", "Move column:" + " <tag>",
+## "<title>" + " moved to position" + " 2 " + "of" + " 12", "<tag>: " + "Used".
 
 tabellify-column-move =
     .aria-label = Move
-tabellify-column-grip =
-    .aria-label = Move column
 tabellify-table-move-paper = Move paper:
+tabellify-table-move-group = Move group:
+tabellify-table-move-tag = Move column:
+# Tooltip and screen-reader text of a tag cell: ✓ (the paper has the tag) or empty.
+tabellify-table-tag-used = Used
+tabellify-table-tag-not-used = Not used
 tabellify-table-manual-order = Manual order
 tabellify-table-clear-manual = Clear manual order
 tabellify-table-reset-columns = Reset columns

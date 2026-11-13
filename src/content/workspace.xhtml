@@ -28,8 +28,9 @@
      - Feature 005: the "Tag monitor" section under the collection row compares the
        codebook with the manual tags on the chosen collection's papers (subcollections and
        highlights included). The items table became the per-paper table: its column
-       headers are buttons that sort it, and each paper row has a "Show remaining" toggle
-       that adds a detail row (built by workspace.js with plain text only). -->
+       headers are buttons that sort it. Since the owner's 2026-11-13 change its columns
+       are the codebook tags (a ✓ where a paper has the tag), built by workspace.js with
+       plain text only. -->
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         id="tabellify-workspace"
@@ -158,58 +159,39 @@
                  role="status" aria-live="polite"></html:span>
     </html:div>
 
-    <!-- Per-paper table (F005; replaces the F003 item list). The header buttons carry
-         data-sort (a TabellifyTagMonitor.SORT_KEYS value); workspace.js sets aria-sort
-         on the <th> of the active column. The Fluent ID sits on the button (or a label
-         span), not on the <th>, because Fluent replaces the children of the element it
-         translates, which would remove the grip.
+    <!-- Per-paper table (F005; replaces the F003 item list). Owner decision 2026-11-13:
+         columns are grip, Title, one column per codebook tag grouped under its super-tag,
+         then k/M. The header has two rows: the first holds the group headers (each spans
+         its tags), the second the tag headers. workspace.js builds the group and tag
+         header cells and the <col> elements (which set the column widths) from the
+         codebook, as plain text; the fixed cells below span both rows.
 
-         Feature 005c: each movable <th> has data-column (a TabellifyTableLayout.COLUMN_IDS
-         value) and a grip before its label. A grip is a <span>, not a <button>: Firefox
-         does not start a drag from a draggable <button> (Mozilla bug 568313). The grip's
-         Fluent message only sets its aria-label (screen-reader name); the visible "⠿"
-         comes from workspace.css. Alt+Left / Alt+Right on a focused grip moves the column
-         (aria-keyshortcuts tells screen readers). The first column (no data-column) holds
-         each paper's row grip and is not movable. -->
+         Header buttons carry data-sort (TabellifyTagMonitor.SORT_KEYS, or a tag column's
+         key); workspace.js sets aria-sort on the <th> of the active column. The Fluent ID
+         sits on the button, not on the <th>, because Fluent replaces the children of the
+         element it translates.
+
+         Feature 005c: each group and tag header gets a grip (a <span>, not a <button>:
+         Firefox does not start a drag from a draggable <button>, Mozilla bug 568313).
+         A tag column moves only inside its group; a group header moves the whole group.
+         Title and k/M never move. The first column holds each paper's row grip. -->
     <html:table id="tabellify-items-table" hidden="hidden">
+      <html:colgroup id="tabellify-items-cols"></html:colgroup>
       <html:thead>
-        <html:tr>
-          <html:th scope="col" class="tabellify-col-grip"
+        <html:tr id="tabellify-items-group-row" class="tabellify-group-row">
+          <html:th scope="col" rowspan="2" class="tabellify-col-grip tabellify-fixed-header"
                    data-l10n-id="tabellify-column-move"></html:th>
-          <html:th scope="col" class="tabellify-col-title" data-column="title">
-            <html:span class="tabellify-grip" data-grip="column" draggable="true" tabindex="0"
-                       role="button" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-                       data-l10n-id="tabellify-column-grip"></html:span>
+          <html:th scope="col" rowspan="2" class="tabellify-col-title tabellify-fixed-header">
             <html:button class="tabellify-sort" data-sort="title"
                          data-l10n-id="tabellify-column-title"></html:button>
           </html:th>
-          <html:th scope="col" class="tabellify-col-count" data-column="count">
-            <html:span class="tabellify-grip" data-grip="column" draggable="true" tabindex="0"
-                       role="button" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-                       data-l10n-id="tabellify-column-grip"></html:span>
+          <html:th id="tabellify-items-count-header" scope="col" rowspan="2"
+                   class="tabellify-col-count tabellify-fixed-header">
             <html:button class="tabellify-sort" data-sort="count"
-                         data-l10n-id="tabellify-column-codebook"></html:button>
-          </html:th>
-          <html:th scope="col" class="tabellify-col-collections" data-column="collections">
-            <html:span class="tabellify-grip" data-grip="column" draggable="true" tabindex="0"
-                       role="button" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-                       data-l10n-id="tabellify-column-grip"></html:span>
-            <html:button class="tabellify-sort" data-sort="collections"
-                         data-l10n-id="tabellify-column-in"></html:button>
-          </html:th>
-          <html:th scope="col" class="tabellify-col-tags" data-column="tags">
-            <html:span class="tabellify-grip" data-grip="column" draggable="true" tabindex="0"
-                       role="button" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-                       data-l10n-id="tabellify-column-grip"></html:span>
-            <html:span class="tabellify-column-label" data-l10n-id="tabellify-column-tags"></html:span>
-          </html:th>
-          <html:th scope="col" class="tabellify-col-details" data-column="details">
-            <html:span class="tabellify-grip" data-grip="column" draggable="true" tabindex="0"
-                       role="button" aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-                       data-l10n-id="tabellify-column-grip"></html:span>
-            <html:span class="tabellify-column-label" data-l10n-id="tabellify-column-details"></html:span>
+                         data-l10n-id="tabellify-column-count"></html:button>
           </html:th>
         </html:tr>
+        <html:tr id="tabellify-items-tag-row" class="tabellify-tag-row"></html:tr>
       </html:thead>
       <html:tbody id="tabellify-items-body"></html:tbody>
     </html:table>

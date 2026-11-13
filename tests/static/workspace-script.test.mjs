@@ -27,6 +27,11 @@
 //   - every listener added to the table and the table toolbar is removed in onUnload
 //   - workspace.js never reads drag data back (no `getData(`), and sets only the private
 //     application/x-tabellify-* drag types
+// Owner decision 2026-11-13 (codebook tag columns) adds:
+//   - the old summary columns (In, All tags, Details / Show remaining) and their Fluent IDs
+//     are gone; the header has a fixed Title first and k/M last, and a second row for tags
+//   - tag names never go into a CSS selector (only numeric paper IDs are interpolated)
+//   - the drag data of a column is only its kind, never a codebook name
 // Feature 005c T6 (ADR-0014) adds:
 //   - layout-store.js loads after table-layout-model.js and before workspace.js, and uses
 //     no Zotero global at all (workspace.js passes it the folder from the codebook store)
@@ -239,8 +244,8 @@ test("F005c AC11: every LAYOUT_STRINGS ID exists in tabellify.ftl and starts wit
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   }
   // The new header/toolbar IDs set in workspace.xhtml exist too.
-  for (const id of ["tabellify-column-move", "tabellify-column-grip", "tabellify-table-manual-order",
-    "tabellify-table-clear-manual", "tabellify-table-reset-columns"]) {
+  for (const id of ["tabellify-column-move", "tabellify-column-title", "tabellify-column-count",
+    "tabellify-table-manual-order", "tabellify-table-clear-manual", "tabellify-table-reset-columns"]) {
     assert.match(xhtml, new RegExp(`data-l10n-id="${id}"`), `${id} not used in workspace.xhtml`);
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   }
@@ -307,4 +312,42 @@ test("F005c T6: the layout-save timer is cleared on unload; layout messages are 
   for (const id of shown) assert.ok(ids.has(id), `${id} is not in LAYOUT_STRINGS`);
   // Ternary IDs passed through a variable are listed too.
   for (const id of ["tabellify-table-layout-newer", "tabellify-table-layout-load-error"]) assert.ok(ids.has(id), id);
+});
+
+test("Owner 2026-11-13: old summary columns and detail rows are gone (markup, code, Fluent)", () => {
+  const ftl = read("locale/en-US/tabellify.ftl");
+  for (const id of ["tabellify-column-tags", "tabellify-column-in", "tabellify-column-details",
+    "tabellify-column-codebook", "tabellify-column-grip", "tabellify-monitor-show-remaining",
+    "tabellify-monitor-hide-remaining", "tabellify-monitor-present"]) {
+    assert.ok(!ftlIds.has(id), `${id} is still in tabellify.ftl`);
+    assert.ok(!ftl.includes(id), `${id} is still mentioned in tabellify.ftl`);
+    assert.ok(!js.includes(id), `${id} is still used in workspace.js`);
+    assert.ok(!xhtml.includes(id), `${id} is still used in workspace.xhtml`);
+  }
+  assert.doesNotMatch(xhtml, /data-column=/);
+  assert.doesNotMatch(js, /toggle-paper|expandedPaperIds|tabellify-monitor-detail|allTags/);
+  assert.doesNotMatch(js, /COLUMN_IDS|normalizeColumnOrder|columnOrder\b/);
+});
+
+test("Owner 2026-11-13: header = grip, Title, (tag groups), k/M; tag row and <colgroup> exist", () => {
+  const groupRow = /<html:tr id="tabellify-items-group-row"[^>]*>([\s\S]*?)<\/html:tr>/.exec(xhtml)?.[1] ?? "";
+  const order = [...groupRow.matchAll(/class="(tabellify-col-[\w-]+)/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["tabellify-col-grip", "tabellify-col-title", "tabellify-col-count"]);
+  assert.match(groupRow, /id="tabellify-items-count-header"/);
+  assert.match(groupRow, /data-sort="title"/);
+  assert.match(groupRow, /data-sort="count"/);
+  assert.match(xhtml, /<html:tr id="tabellify-items-tag-row"/);
+  assert.match(xhtml, /<html:colgroup id="tabellify-items-cols">/);
+  // Group headers are inserted before k/M, so k/M stays last.
+  assert.match(js, /groupRow\.insertBefore\(th, countHeader\)/);
+  assert.match(js, /tr\.append\(this\.rowGripCell\(paper\), title, \.\.\.tagCells, count\)/);
+});
+
+test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never tag names)", () => {
+  const interpolated = [...js.matchAll(/querySelector(?:All)?\(\s*`([^`]*)`/g)]
+    .flatMap((m) => [...m[1].matchAll(/\$\{([^}]*)\}/g)].map((x) => x[1].trim()));
+  assert.ok(interpolated.length >= 1, "no interpolated selectors found (check is vacuous)");
+  for (const expr of interpolated) assert.match(expr, /^(?:id|Number\(paperId\))$/, `selector built from ${expr}`);
+  // The column drag carries only its kind.
+  assert.match(js, /dt\.setData\(W\.COLUMN_DRAG_TYPE, grip\.dataset\.grip\)/);
 });
