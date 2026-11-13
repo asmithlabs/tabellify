@@ -1,0 +1,197 @@
+<!doctype html>
+<!-- Tabellify states gallery (Feature 005d, spec Q8). NOT shipped in the .xpi.
+     Open this file in any web browser. It loads the real token and workspace stylesheets
+     from src/content/, so what you see is what the Tabellify tab uses. It follows the
+     OPERATING SYSTEM's light/dark setting (a browser page), not Zotero's Color Scheme.
+     The text here is sample text for reviewers, not user-visible plugin text, so it is
+     not in Fluent. The small inline style block below only (a) lays out the gallery and
+     (b) shows static copies of states a page cannot hold on its own (keyboard focus,
+     focused row, editing); it uses semantic tokens only, like workspace.css. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tabellify states gallery</title>
+  <link rel="stylesheet" href="../src/content/tokens.css">
+  <link rel="stylesheet" href="../src/content/workspace.css">
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body {
+      display: flex;
+      flex-direction: column;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 14px;
+      background-color: var(--tabellify-color-page);
+      color: var(--tabellify-color-text);
+    }
+    .gallery-note { color: var(--tabellify-color-text-muted); max-width: 70ch; }
+    .gallery-label {
+      margin-block: var(--tabellify-space-5) var(--tabellify-space-2);
+      font-size: var(--tabellify-font-size-sm);
+      font-weight: bold;
+      text-transform: uppercase;
+      color: var(--tabellify-color-text-muted);
+    }
+    .gallery-scroll { max-height: 22em; overflow: auto; }
+    /* Static copies of :focus-visible and tr:focus-within (same tokens as workspace.css). */
+    .gallery-focus {
+      outline: var(--tabellify-focus-width) solid var(--tabellify-color-focus-ring);
+      outline-offset: var(--tabellify-focus-offset);
+    }
+    .tabellify-grid tbody tr.gallery-selected {
+      background-color: var(--tabellify-color-selected-bg);
+      color: var(--tabellify-color-selected-text);
+    }
+    .tabellify-grid tbody tr.gallery-selected > td:first-child {
+      box-shadow: inset var(--tabellify-selected-bar-width) 0 0 var(--tabellify-color-selected-bar);
+    }
+    /* Editing sample (planned, not built): an input in a cell with a validation error. */
+    .gallery-edit input {
+      width: 100%;
+      box-sizing: border-box;
+      font: inherit;
+    }
+    .gallery-edit input[aria-invalid="true"] {
+      outline: var(--tabellify-focus-width) solid var(--tabellify-color-status-error);
+      outline-offset: 0;
+    }
+    .gallery-edit .gallery-error {
+      margin: var(--tabellify-space-1) 0 0;
+      color: var(--tabellify-color-status-error);
+      font-weight: bold;
+    }
+    .gallery-edit .gallery-error::before { content: "! "; }
+    #gallery-loading-static::before { animation: none; }
+  </style>
+</head>
+<body>
+<main id="tabellify-workspace-main">
+  <h1>Tabellify states gallery</h1>
+  <p class="gallery-note">Every state of the workspace styles, using the real
+  <code>tokens.css</code> and <code>workspace.css</code>. Switch your operating system between
+  light and dark mode to see both. Hover the table rows; press Tab to move the real focus
+  ring through the grips and buttons.</p>
+
+  <h2>Summary cards</h2>
+  <p id="tabellify-monitor-summary">
+    <span id="tabellify-monitor-used">Tags used 4/6</span>
+    <span id="tabellify-monitor-remaining-total">Remaining 2</span>
+    <span id="tabellify-monitor-papers">Papers: 12</span>
+    <span id="tabellify-monitor-all-used">All codebook tags are used.</span>
+  </p>
+  <p id="tabellify-monitor-warning">Some highlights could not be read, so their tags are not counted.</p>
+
+  <h2>Cards and chips</h2>
+  <div class="tabellify-codebook-group">
+    <h3 class="tabellify-codebook-group-name">Exposure (codebook group)</h3>
+    <ul class="tabellify-codebook-tags">
+      <li>Heat index <button type="button">×</button></li>
+      <li>Temperature <button type="button">×</button></li>
+    </ul>
+  </div>
+  <div class="tabellify-monitor-group">
+    <h3 class="tabellify-monitor-group-name"><span>Outcome (monitor group)</span><span class="tabellify-monitor-count">1/3</span></h3>
+    <div class="tabellify-monitor-list tabellify-monitor-remaining">
+      <span class="tabellify-monitor-list-label">Remaining:</span>
+      <ul><li>Morbidity</li><li>Hospital admissions</li></ul>
+    </div>
+    <div class="tabellify-monitor-list tabellify-monitor-used">
+      <span class="tabellify-monitor-list-label">Used:</span>
+      <ul><li>Mortality · 2 papers</li></ul>
+    </div>
+  </div>
+
+  <h2>Grid table</h2>
+  <p class="gallery-label">Default, stripes, hover (live), sorted header (Title ▲), ✓ cells, complete k/M, current row (static copy), keyboard focus (static copy on a grip)</p>
+  <div class="gallery-scroll">
+    <table id="tabellify-items-table" class="tabellify-grid" style="--tabellify-tag-columns: 3">
+      <colgroup>
+        <col class="tabellify-col-grip"><col class="tabellify-col-title">
+        <col class="tabellify-col-tag"><col class="tabellify-col-tag"><col class="tabellify-col-tag">
+        <col class="tabellify-col-count">
+      </colgroup>
+      <thead>
+        <tr class="tabellify-group-row">
+          <th scope="col" rowspan="2" class="tabellify-col-grip"></th>
+          <th scope="col" rowspan="2" class="tabellify-col-title" aria-sort="ascending"><button type="button" class="tabellify-sort">Title</button></th>
+          <th scope="colgroup" colspan="2" class="tabellify-col-group tabellify-group-start"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move group: Exposure"></span><span>Exposure</span></th>
+          <th scope="colgroup" colspan="1" class="tabellify-col-group tabellify-group-start"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move group: Outcome"></span><span>Outcome</span></th>
+          <th scope="col" rowspan="2" class="tabellify-col-count"><button type="button" class="tabellify-sort">k/M</button></th>
+        </tr>
+        <tr class="tabellify-tag-row">
+          <th scope="col" class="tabellify-col-tag tabellify-group-start"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move column: Heat index"></span><button type="button" class="tabellify-sort">Heat index</button></th>
+          <th scope="col" class="tabellify-col-tag"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move column: Temperature"></span><button type="button" class="tabellify-sort">Temperature</button></th>
+          <th scope="col" class="tabellify-col-tag tabellify-group-start"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move column: Mortality"></span><button type="button" class="tabellify-sort">Mortality</button></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="tabellify-col-grip"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move paper: A"></span></td>
+          <td class="tabellify-col-title">A study with no codebook tags yet</td>
+          <td class="tabellify-col-tag tabellify-group-start" aria-label="Heat index: Not used"></td>
+          <td class="tabellify-col-tag" aria-label="Temperature: Not used"></td>
+          <td class="tabellify-col-tag tabellify-group-start" aria-label="Mortality: Not used"></td>
+          <td class="tabellify-col-count tabellify-monitor-count">0/3</td>
+        </tr>
+        <tr class="tabellify-row-alt">
+          <td class="tabellify-col-grip"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move paper: B"></span></td>
+          <td class="tabellify-col-title">Heat waves and mortality in European cities (striped row)</td>
+          <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="Heat index: Used"></td>
+          <td class="tabellify-col-tag" aria-label="Temperature: Not used"></td>
+          <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="Mortality: Used"></td>
+          <td class="tabellify-col-count tabellify-monitor-count">2/3</td>
+        </tr>
+        <tr class="gallery-selected">
+          <td class="tabellify-col-grip"><span class="tabellify-grip gallery-focus" tabindex="0" role="button" aria-label="Move paper: C"></span></td>
+          <td class="tabellify-col-title">Current row with a focused grip (static copy) and a complete k/M</td>
+          <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="Heat index: Used"></td>
+          <td class="tabellify-col-tag tabellify-tag-used" aria-label="Temperature: Used"></td>
+          <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="Mortality: Used"></td>
+          <td class="tabellify-col-count tabellify-monitor-count tabellify-count-complete">3/3</td>
+        </tr>
+        <tr class="tabellify-row-alt">
+          <td class="tabellify-col-grip"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move paper: D"></span></td>
+          <td class="tabellify-col-title tabellify-untitled">Untitled</td>
+          <td class="tabellify-col-tag tabellify-group-start" aria-label="Heat index: Not used"></td>
+          <td class="tabellify-col-tag tabellify-tag-used" aria-label="Temperature: Used"></td>
+          <td class="tabellify-col-tag tabellify-group-start" aria-label="Mortality: Not used"></td>
+          <td class="tabellify-col-count tabellify-monitor-count">1/3</td>
+        </tr>
+        <tr class="tabellify-drop-before">
+          <td class="tabellify-col-grip"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move paper: E"></span></td>
+          <td class="tabellify-col-title">Drop line above this row (drag and drop)</td>
+          <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="Heat index: Used"></td>
+          <td class="tabellify-col-tag tabellify-tag-used" aria-label="Temperature: Used"></td>
+          <td class="tabellify-col-tag tabellify-group-start" aria-label="Mortality: Not used"></td>
+          <td class="tabellify-col-count tabellify-monitor-count">2/3</td>
+        </tr>
+        <tr class="tabellify-row-alt gallery-edit">
+          <td class="tabellify-col-grip"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move paper: F"></span></td>
+          <td class="tabellify-col-title">
+            <input type="text" value="" aria-invalid="true" aria-describedby="gallery-edit-error" placeholder="Title">
+            <p id="gallery-edit-error" class="gallery-error">Editing sample (planned, not built): enter a value.</p>
+          </td>
+          <td class="tabellify-col-tag tabellify-group-start" aria-label="Heat index: Not used"></td>
+          <td class="tabellify-col-tag" aria-label="Temperature: Not used"></td>
+          <td class="tabellify-col-tag tabellify-group-start" aria-label="Mortality: Not used"></td>
+          <td class="tabellify-col-count tabellify-monitor-count">0/3</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>State panels</h2>
+  <p class="gallery-label">Empty</p>
+  <p id="tabellify-no-items" class="tabellify-status">This collection has no papers.</p>
+  <p class="gallery-label">Loading (pulses unless reduced motion is on)</p>
+  <p id="tabellify-loading-items" class="tabellify-status">Loading papers…</p>
+  <p class="gallery-label">Error</p>
+  <p id="tabellify-load-error" class="tabellify-status">The papers could not be loaded.</p>
+  <p class="gallery-label">Codebook status: saved, then an error with a file path</p>
+  <p id="tabellify-codebook-status"><span>Codebook saved.</span></p>
+  <p id="tabellify-layout-status"><span>The table layout file could not be read.</span><code>/path/to/layout.json</code></p>
+  <p class="gallery-label">Monitor message</p>
+  <p id="tabellify-monitor-message">Choose a collection to see which codebook tags its papers use.</p>
+</main>
+</body>
+</html>
