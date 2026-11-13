@@ -287,3 +287,12 @@ test("F005b AC12: the reader section's Fluent IDs exist (header .label, side-nav
   assert.ok(ids.length >= 7, "reader Fluent IDs not found (check is vacuous)");
   for (const id of ids) assert.ok(messages.get(id)?.value, `${id} missing from tabellify.ftl or has no value`);
 });
+
+// XML forbids "--" inside comments; Gecko then refuses to load the whole workspace document
+// ("XML Parsing Error: not well-formed"). Found in the F005d smoke test.
+test("workspace.xhtml comments contain no double hyphen (well-formed XML)", () => {
+  const bad = [...workspace.matchAll(/<!--([\s\S]*?)-->/g)]
+    .map((m) => m[1])
+    .filter((body) => body.includes("--") || body.endsWith("-"));
+  assert.deepEqual(bad, [], `XML comments with "--": ${bad.join(" | ")}`);
+});
