@@ -5,6 +5,8 @@
 //     globals (Services, ChromeUtils, IOUtils, Zotero_Tabs, Zotero.Reader, …)
 //   - it never saves: no saveData / writeJSON / makeDirectory, and it calls only
 //     TabellifyCodebookStore.load / platformFs / dataDir
+//   - owner change 2026-11-13: it may READ the "count item tags" pref (Zotero.Prefs.get,
+//     global, through the model's COUNT_ITEM_TAGS_PREF name) but never set or clear prefs
 //   - library text reaches the page only through createElementNS + textContent
 //   - tabellify.js loads the four scripts in dependency order and they exist
 //   - the icons it points at exist under src/content/icons/
@@ -34,6 +36,8 @@ test("F005b AC12: reader-tags.js uses only the Zotero APIs listed in the spec", 
     "Zotero.Notifier.unregisterObserver",
     "Zotero.Items.get",
     "Zotero.Libraries.get",
+    // Owner change 2026-11-13: read the "Also count tags on the paper itself" switch.
+    "Zotero.Prefs.get",
     "Zotero.debug",
     "Zotero.logError",
   ]);
@@ -57,11 +61,17 @@ test("F005b AC12: reader-tags.js calls only read-only item getters", () => {
 test("F005b AC12: reader-tags.js uses no other privileged globals or Zotero internals", () => {
   for (const banned of [
     /\bServices\b/, /\bChromeUtils\b/, /\bComponents\b/, /\bIOUtils\b/, /\bPathUtils\b/,
-    /\bZotero_Tabs\b/, /\bZotero\.Reader\b/, /\bZoteroPane\b/, /\bZotero\.Prefs\b/,
+    /\bZotero_Tabs\b/, /\bZotero\.Reader\b/, /\bZoteroPane\b/, /\bZotero\.Prefs\.(?!get\b)/, /\bPrefs\.(?:set|clear)\b/,
     /\bZotero\.DB\b/, /\bwindow\b/,
   ]) {
     assert.doesNotMatch(reader, banned);
   }
+});
+
+test("F005b (owner change 2026-11-13): the pref is only read, global, by the model's name", () => {
+  const reads = [...reader.matchAll(/Zotero\.Prefs\.get\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepEqual(reads, ["TabellifyTagMonitor.COUNT_ITEM_TAGS_PREF, true"]);
+  assert.match(code("content/tag-monitor-model.js"), /COUNT_ITEM_TAGS_PREF:\s*"extensions\.tabellify\.countItemTags"/);
 });
 
 test("F005b AC12 / data safety: the section never saves the codebook or writes files", () => {
@@ -82,6 +92,8 @@ test("F005b AC12 / FU-SEC-004: elements are built with createElementNS(HTML_NS) 
   assert.doesNotMatch(reader, /\bcreateElement\(/, "plain createElement would make XUL elements in the main window");
   assert.match(reader, /\.textContent = group\.name;/);
   assert.match(reader, /\.textContent = tag;/);
+  // The only text node holds a literal space (between checklist mark and tag name).
+  for (const m of reader.matchAll(/createTextNode\(([^)]*)\)/g)) assert.equal(m[1], '" "');
   assert.doesNotMatch(reader, /innerHTML|outerHTML|insertAdjacentHTML|DOMParser|createContextualFragment|parseFromString/);
   // Fluent arguments are numbers only (no library text inside data-l10n-args).
   for (const m of reader.matchAll(/this\.para\(doc, "[^"]+", \{([^}]*)\}\)/g)) {

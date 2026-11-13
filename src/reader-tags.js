@@ -4,8 +4,16 @@
  * `Zotero.ItemPaneManager.registerSection` API (ADR-0013, option A). Zotero shows item pane
  * sections in the library's right-hand pane AND in the right-hand "context pane" of every
  * reader tab (for the paper the open PDF/EPUB/snapshot belongs to). The section says how
- * many codebook tags this paper already has ("2 / 3", also shown when collapsed) and lists
- * the ones still missing, grouped by super-tag.
+ * many codebook tags this paper already has ("2 / 3", also shown when collapsed) and, when
+ * expanded, a CHECKLIST of every codebook tag grouped by super-tag: ✓ used, ☐ not yet
+ * (owner change 2026-11-13).
+ *
+ * COUNTING RULE (owner decision 2026-11-13, same as the workspace's tag monitor because
+ * both use TabellifyTagMonitor.countedTagNames): only tags on the paper's highlights count,
+ * unless the pref `extensions.tabellify.countItemTags` is true ("Also count tags on the
+ * paper itself" in the Tabellify tab). This section only READS that pref, on every render;
+ * a change made in the Tabellify tab shows up on the section's next render (switching
+ * item or tab, or any tag change). There is no pref observer.
  *
  * WHERE THIS CODE RUNS: tabellify.js loads this file with
  * `Services.scriptloader.loadSubScript`, so it runs in the plugin's bootstrap scope (like
@@ -17,7 +25,8 @@
  *   (content/codebook-store.js), TabellifyTagMonitor (content/tag-monitor-model.js).
  *
  * READ-ONLY: reads the shown item, its attachments, their annotations, the tags of all of
- * these, and codebooks.json (through TabellifyCodebookStore.load only). Writes nothing.
+ * these, codebooks.json (through TabellifyCodebookStore.load only) and one Tabellify pref
+ * (Zotero.Prefs.get). Writes nothing.
  * Library text (tag and group names) reaches the page only through `textContent`.
  *
  * Lifecycle (CLAUDE.md rule 9): `register()` (from Tabellify.init) adds the section and one
@@ -203,8 +212,9 @@ var TabellifyReaderTags = {
       // Fills Zotero's in-memory cache (tags, child items, annotations); reads only.
       await Zotero.Libraries.get(item.libraryID).waitForDataLoad("item");
       if (stale()) return;
-      const { applicable, tags } = this.collectPaperTags(item);
-      if (!applicable) return;
+      const paper = this.collectPaperTags(item);
+      if (!paper.applicable) return;
+      const countItemTags = this.readCountItemTags();
 
       const loaded = await this.loadCodebook();
       if (stale()) return;
@@ -215,7 +225,8 @@ var TabellifyReaderTags = {
         return;
       }
 
-      const summary = TabellifyTagMonitor.paperSummary(loaded.data, tags);
+      // The pure model applies the counting rule (highlights only, unless the switch is on).
+      const summary = TabellifyTagMonitor.paperChecklist(loaded.data, paper, { countItemTags });
       if (summary.total === 0) {
         body.replaceChildren(this.para(doc, "tabellify-reader-no-codebook"));
         setSectionSummary(this.NO_SUMMARY);
@@ -223,7 +234,7 @@ var TabellifyReaderTags = {
       }
       const text = await this.formatSummary(doc, summary.used, summary.total);
       if (stale()) return;
-      body.replaceChildren(...this.summaryNodes(doc, summary));
+      body.replaceChildren(...this.checklistNodes(doc, summary));
       setSectionSummary(text);
     }
     catch (err) {
@@ -263,27 +274,50 @@ var TabellifyReaderTags = {
   },
 
   /**
-   * The paper's MANUAL tag names: tags on the item itself plus tags on every non-trashed
-   * annotation of its non-trashed file attachments (a standalone file attachment counts its
-   * own tags and annotations). Same rule as F005's tag monitor. Call after
-   * `waitForDataLoad("item")`.
+   * The paper's tags, kept apart by where they sit: `itemTags` on the item itself (for a
+   * standalone file attachment: its own tags) and `annotationTags` on every non-trashed
+   * annotation of its non-trashed file attachments. Copied as plain `{ tag, type }`
+   * objects; which of them COUNT (manual only, item tags only with the switch on) is
+   * decided by TabellifyTagMonitor.countedTagNames, the same rule as F005's tag monitor.
+   * Call after `waitForDataLoad("item")`.
    * @param {any} item  The item the pane shows
-   * @returns {{ applicable: boolean, tags: string[] }}  Names trimmed and de-duplicated
+   * @returns {{ applicable: boolean, itemTags: Array<{ tag: string, type?: number }>,
+   *             annotationTags: Array<{ tag: string, type?: number }> }}
    */
   collectPaperTags(item) {
-    if (!this.isApplicable(item)) return { applicable: false, tags: [] };
+    if (!this.isApplicable(item)) return { applicable: false, itemTags: [], annotationTags: [] };
     // getAttachments() only works on regular items (it throws on attachments) and returns
     // IDs; trashed attachments are left out. A standalone attachment is its own "file".
     const files = item.isAttachment() ? [item] : Zotero.Items.get(item.getAttachments());
-    const raw = [...item.getTags()];
+    // getTags() gives `{ tag, type? }` objects; copy only those two fields.
+    const copy = (t) => ({ tag: t.tag, type: t.type });
+    const itemTags = item.getTags().map(copy);
+    const annotationTags = [];
     for (const file of files) {
       // Only file attachments have annotations; getAnnotations() throws on linked URLs.
       if (!file.isFileAttachment()) continue;
       // getAnnotations() leaves trashed annotations out by default.
-      for (const annotation of file.getAnnotations()) raw.push(...annotation.getTags());
+      for (const annotation of file.getAnnotations()) annotationTags.push(...annotation.getTags().map(copy));
     }
-    // manualTagNames: drops automatic tags (type 1), trims, drops empty names.
-    return { applicable: true, tags: [...new Set(TabellifyTagMonitor.manualTagNames(raw))] };
+    return { applicable: true, itemTags, annotationTags };
+  },
+
+  /**
+   * The owner's switch "Also count tags on the paper itself" (a boolean Zotero pref, set
+   * only from the Tabellify tab). `Zotero.Prefs.get(name, true)`: `true` = `name` is the
+   * full pref name (without it Zotero would put its own "extensions.zotero." in front). A
+   * pref that was never set reads as `undefined`, hence `=== true` (default: off). Any
+   * error also means "off": the section then counts highlight tags only.
+   * @returns {boolean}
+   */
+  readCountItemTags() {
+    try {
+      return Zotero.Prefs.get(TabellifyTagMonitor.COUNT_ITEM_TAGS_PREF, true) === true;
+    }
+    catch (err) {
+      Zotero.logError(err);
+      return false;
+    }
   },
 
   /**
@@ -314,29 +348,32 @@ var TabellifyReaderTags = {
   },
 
   /**
-   * The expanded body: "k of M used", then the remaining tags grouped by super-tag, or
-   * "All M codebook tags used on this paper."
+   * The expanded body: "k of M codebook tags used on this paper", then the checklist: every
+   * codebook tag, grouped by super-tag in codebook order, each line "✓ Tag" (used) or
+   * "☐ Tag" (not yet). The mark is a Fluent message (character + tooltip), the tag name is
+   * plain text; nothing here is parsed as markup.
    * @param {any} doc
-   * @param {{ total: number, used: number, allUsed: boolean,
-   *   remainingByGroup: Array<{ name: string, tags: string[] }> }} summary
+   * @param {{ total: number, used: number,
+   *   groups: Array<{ name: string, tags: Array<{ tag: string, used: boolean }> }> }} summary
+   *   From TabellifyTagMonitor.paperChecklist
    * @returns {any[]}  Elements to put into the body
    */
-  summaryNodes(doc, summary) {
+  checklistNodes(doc, summary) {
     const { used, total } = summary;
-    if (summary.allUsed) return [this.para(doc, "tabellify-reader-all-used", { total })];
-    const nodes = [
-      this.para(doc, "tabellify-reader-used", { used, total }),
-      this.para(doc, "tabellify-reader-remaining"),
-    ];
-    for (const group of summary.remainingByGroup) {
+    const nodes = [this.para(doc, "tabellify-reader-used", { used, total })];
+    for (const group of summary.groups) {
       const heading = this.el(doc, "p");
       const name = this.el(doc, "strong");
       name.textContent = group.name; // library/codebook text: textContent only, never markup
       heading.append(name);
       const list = this.el(doc, "ul");
-      for (const tag of group.tags) {
+      for (const { tag, used: isUsed } of group.tags) {
         const li = this.el(doc, "li");
-        li.textContent = tag;
+        const mark = this.l10nEl(doc, "span", isUsed ? "tabellify-reader-mark-used" : "tabellify-reader-mark-unused");
+        const label = this.el(doc, "span");
+        label.textContent = tag;
+        // A text node is plain text by definition: the space between mark and name.
+        li.append(mark, doc.createTextNode(" "), label);
         list.append(li);
       }
       nodes.push(heading, list);
@@ -353,10 +390,21 @@ var TabellifyReaderTags = {
    * @param {Record<string, number>} [args]
    */
   para(doc, l10nID, args) {
-    const p = this.el(doc, "p");
-    p.setAttribute("data-l10n-id", l10nID);
-    if (args) p.setAttribute("data-l10n-args", JSON.stringify(args));
-    return p;
+    return this.l10nEl(doc, "p", l10nID, args);
+  },
+
+  /**
+   * Any element whose text (and allowed attributes such as `title`) Fluent fills in.
+   * @param {any} doc
+   * @param {string} tag
+   * @param {string} l10nID
+   * @param {Record<string, number>} [args]  Numbers only, never library text
+   */
+  l10nEl(doc, tag, l10nID, args) {
+    const el = this.el(doc, tag);
+    el.setAttribute("data-l10n-id", l10nID);
+    if (args) el.setAttribute("data-l10n-args", JSON.stringify(args));
+    return el;
   },
 
   /** An HTML element in `doc` (the main window is a XUL document, so the namespace matters). */

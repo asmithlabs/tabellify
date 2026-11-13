@@ -211,37 +211,6 @@ var TabellifyTagMonitor = {
   },
 
   /**
-   * Feature 005b: compare the codebook with the tags of ONE paper (the reader's "Tabellify
-   * tags" section). Same counting rule as summarize(): a codebook tag is "used" if one of
-   * `tagNames` equals it exactly (case-sensitive) after trimming both sides.
-   *
-   * The caller passes names that are already MANUAL tags of the paper and its highlights
-   * (reader-tags.js filters them with manualTagNames() above), so this function does not
-   * see tag types.
-   * @param {object | null} codebookData  The codebooks.json data (F004), or null
-   * @param {string[]} tagNames  Manual tag names on the paper (item + annotations), any order
-   * @returns {{ total: number, used: number, allUsed: boolean,
-   *   remainingByGroup: Array<{ id: string, name: string, tags: string[] }> }}
-   *   `remainingByGroup` is in codebook order and leaves out groups with nothing remaining.
-   */
-  paperSummary(codebookData, tagNames) {
-    const groups = this.codebookGroups(codebookData);
-    const present = new Set(
-      (tagNames ?? []).map((name) => String(name ?? "").trim()).filter((name) => name !== ""),
-    );
-    let total = 0;
-    let used = 0;
-    const remainingByGroup = [];
-    for (const g of groups) {
-      const remaining = g.tags.filter((t) => !present.has(t));
-      total += g.tags.length;
-      used += g.tags.length - remaining.length;
-      if (remaining.length > 0) remainingByGroup.push({ id: g.id, name: g.name, tags: remaining });
-    }
-    return { total, used, allUsed: total > 0 && used === total, remainingByGroup };
-  },
-
-  /**
    * Feature 005b (owner change 2026-11-13): the reader section's CHECKLIST for one paper.
    * Every codebook tag, grouped by super-tag in codebook order, each marked used or not.
    * Same counting rule as summarize() (countedTagNames): highlights only by default.

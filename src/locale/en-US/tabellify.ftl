@@ -130,8 +130,12 @@ tabellify-reader-section-sidenav =
 # Header summary, also shown when the section is collapsed: "2 / 3".
 tabellify-reader-summary = { $used } / { $total }
 tabellify-reader-used = { $used } of { $total } codebook tags used on this paper
-tabellify-reader-remaining = Remaining:
-tabellify-reader-all-used = All { $total } codebook tags used on this paper.
+# Checklist marks in front of each codebook tag (the tag name follows as plain text).
+# `.title` is the tooltip shown when pointing at the mark.
+tabellify-reader-mark-used = ✓
+    .title = Used on this paper
+tabellify-reader-mark-unused = ☐
+    .title = Not used on this paper yet
 tabellify-reader-no-codebook = No codebook yet. Create one in Tools → Tabellify…
 tabellify-reader-codebook-error = Could not read the codebook.
 tabellify-reader-counting = Counting…

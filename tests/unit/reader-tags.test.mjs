@@ -10,9 +10,11 @@
 //   - Zotero.Items.get, Zotero.Libraries.get(id).waitForDataLoad, Zotero.DataDirectory.dir;
 //   - IOUtils.readJSON over an in-memory "disk"; every IOUtils write method throws, so a
 //     write attempt fails the test;
-//   - a tiny DOM (createElementNS, setAttribute, textContent, append, replaceChildren) and
-//     doc.l10n.formatValue that answers from the real tabellify.ftl;
-//   - Zotero.ItemPaneManager / Zotero.Notifier that record calls.
+//   - a tiny DOM (createElementNS, createTextNode, setAttribute, textContent, append,
+//     replaceChildren) and doc.l10n.formatValue that answers from the real tabellify.ftl;
+//   - Zotero.ItemPaneManager / Zotero.Notifier that record calls;
+//   - Zotero.Prefs.get answering the "count item tags" switch (Prefs.set throws: the
+//     section must never write a pref).
 // Lifecycle with the full mocked Zotero (bootstrap → tabellify.js → reader-tags.js) is in
 // tests/behavior/lifecycle.test.mjs.
 
@@ -104,6 +106,10 @@ function makeDoc() {
       };
       return el;
     },
+    // A text node: plain text, never parsed as markup.
+    createTextNode(text) {
+      return { tag: "#text", children: [], _text: String(text), get textContent() { return this._text; } };
+    },
     l10n: {
       formatValue: async (id, args = {}) =>
         ftl.get(id)?.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k])),
@@ -112,14 +118,21 @@ function makeDoc() {
   return doc;
 }
 
+/** Translated text of a Fluent element (data-l10n-id + numeric data-l10n-args). */
+function l10nText(el) {
+  const id = el.getAttribute("data-l10n-id");
+  const args = JSON.parse(el.getAttribute("data-l10n-args") ?? "{}");
+  const text = ftl.get(id);
+  assert.ok(text, `${id} missing from tabellify.ftl`);
+  return text.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k]));
+}
+
 /** Text of a fake element tree, with Fluent elements shown as their translated text. */
 function render(el) {
-  const id = el.getAttribute?.("data-l10n-id");
-  if (id) {
-    const args = JSON.parse(el.getAttribute("data-l10n-args") ?? "{}");
-    const text = ftl.get(id);
-    assert.ok(text, `${id} missing from tabellify.ftl`);
-    return [`<${el.tag}>${text.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k]))}`];
+  if (el.getAttribute?.("data-l10n-id")) return [`<${el.tag}>${l10nText(el)}`];
+  // A checklist line is one line of text: mark (Fluent) + " " + tag name.
+  if (el.tag === "li") {
+    return [`<li>${el.children.map((c) => (c.getAttribute?.("data-l10n-id") ? l10nText(c) : c.textContent)).join("")}`];
   }
   if (el.children.length === 0) return [`<${el.tag}>${el._text}`];
   return [`<${el.tag}>`, ...el.children.flatMap(render).map((l) => `  ${l}`)];
@@ -135,6 +148,7 @@ const bodyLines = (body) => body.children.flatMap(render);
  *           unregisterObserverThrows?: boolean }} [o]
  */
 function setup(o = {}) {
+  // `pref`: what Zotero.Prefs.get returns for the switch (undefined = never set).
   const calls = [];
   const errors = [];
   const debug = [];
@@ -150,6 +164,14 @@ function setup(o = {}) {
       debug: (m) => debug.push(String(m)),
       logError: (e) => errors.push(e),
       DataDirectory: { dir: DATA_DIR },
+      Prefs: {
+        get(name, global) {
+          calls.push(`Prefs.get(${name}, ${global})`);
+          if (o.prefThrows) throw new Error("Error getting preference");
+          return name === "extensions.tabellify.countItemTags" && global === true ? o.pref : undefined;
+        },
+        set(name) { calls.push(`Prefs.set(${name})`); throw new Error("the reader section must not write prefs"); },
+      },
       Items: { get: (ids) => { calls.push(`Items.get(${ids})`); return ids.map((id) => items.get(id)); } },
       Libraries: {
         get: (libraryID) => ({
@@ -231,32 +253,48 @@ function smokePaper(calls, extra = {}) {
 // AC10: collectPaperTags
 // ---------------------------------------------------------------------------------------
 
-test("AC10: item tags + annotation tags of file attachments, manual only, trimmed and de-duplicated", () => {
-  const { R, calls, sandbox } = setup();
+/** Names that count for a collected paper, by the shared model rule. */
+const counted = (s, paper, countItemTags) => [...s.sandbox.TabellifyTagMonitor.countedTagNames(paper, { countItemTags })];
+
+test("AC10: item tags and annotation tags of file attachments are collected separately", () => {
+  const s = setup();
+  const { R, calls, sandbox } = s;
   const ann1 = makeItem(calls, { id: 31, kind: "annotation", tags: [{ tag: "Hospitalization" }, { tag: "Mortality", type: 1 }] });
   const ann2 = makeItem(calls, { id: 32, kind: "annotation", tags: [{ tag: " Heat index " }] });
   const pdf = makeItem(calls, { id: 21, kind: "file", annotations: [ann1, ann2] });
   const paper = makeItem(calls, { id: 11, tags: [{ tag: "Heat index" }, { tag: "Temperature", type: 1 }], attachments: [21] });
   sandbox.Zotero.Items.get = (ids) => ids.map((id) => ({ 21: pdf })[id]);
-  assert.deepEqual(plain(R.collectPaperTags(paper)), { applicable: true, tags: ["Heat index", "Hospitalization"] });
+  const result = R.collectPaperTags(paper);
+  assert.deepEqual(plain(result), {
+    applicable: true,
+    itemTags: [{ tag: "Heat index" }, { tag: "Temperature", type: 1 }],
+    annotationTags: [{ tag: "Hospitalization" }, { tag: "Mortality", type: 1 }, { tag: " Heat index " }],
+  });
+  // Counting (model): highlights only by default; with the switch, item tags too. Manual only, trimmed, once.
+  assert.deepEqual(counted(s, result, false), ["Hospitalization", "Heat index"]);
+  assert.deepEqual(counted(s, result, true), ["Hospitalization", "Heat index"]);
 });
 
-test("AC10: automatic tags (type 1) are excluded on the item and on annotations", () => {
-  const { R, calls, sandbox } = setup();
+test("AC10: automatic tags (type 1) never count, on the item or on annotations", () => {
+  const s = setup();
+  const { R, calls, sandbox } = s;
   const ann = makeItem(calls, { id: 33, kind: "annotation", tags: [{ tag: "Temperature", type: 1 }] });
   const pdf = makeItem(calls, { id: 22, kind: "file", annotations: [ann] });
   const paper = makeItem(calls, { id: 12, tags: [{ tag: "Heat index", type: 1 }], attachments: [22] });
   sandbox.Zotero.Items.get = (ids) => ids.map(() => pdf);
-  assert.deepEqual(plain(R.collectPaperTags(paper)), { applicable: true, tags: [] });
+  const result = R.collectPaperTags(paper);
+  assert.deepEqual(counted(s, result, false), []);
+  assert.deepEqual(counted(s, result, true), []);
 });
 
 test("AC10: linked-URL attachments are skipped (getAnnotations never called on them)", () => {
   const calls = [];
   const link = makeItem(calls, { id: 23, kind: "link", tags: [{ tag: "Temperature" }] });
   const { paper, pdf } = smokePaper(calls, { attachments: [20, 23] });
-  const { R } = setup({ items: [pdf, link] });
-  const result = R.collectPaperTags(paper);
-  assert.deepEqual(plain(result), { applicable: true, tags: ["Heat index", "Hospitalization"] });
+  const s = setup({ items: [pdf, link] });
+  const result = s.R.collectPaperTags(paper);
+  assert.deepEqual(plain(result), { applicable: true, itemTags: [{ tag: "Heat index" }], annotationTags: [{ tag: "Hospitalization" }] });
+  assert.deepEqual(counted(s, result, true), ["Hospitalization", "Heat index"], "the link's own tag is not read");
   assert.ok(calls.includes("getAnnotations(20)"));
   assert.ok(!calls.includes("getAnnotations(23)"), "no getAnnotations on a linked URL");
 });
@@ -266,7 +304,10 @@ test("AC10: a standalone file attachment counts its own tags and annotations", (
   const ann = makeItem(calls, { id: 34, kind: "annotation", tags: [{ tag: "Temperature" }] });
   const pdf = makeItem(calls, { id: 24, kind: "file", tags: [{ tag: "Heat index" }], annotations: [ann] });
   const { R, calls: itemsCalls } = setup();
-  assert.deepEqual(plain(R.collectPaperTags(pdf)), { applicable: true, tags: ["Heat index", "Temperature"] });
+  // The attachment's own tags are its "item tags" (they count only with the switch on).
+  assert.deepEqual(plain(R.collectPaperTags(pdf)), {
+    applicable: true, itemTags: [{ tag: "Heat index" }], annotationTags: [{ tag: "Temperature" }],
+  });
   assert.ok(!calls.includes("getAttachments(24)"), "getAttachments is not called on an attachment (it throws there)");
   assert.ok(!itemsCalls.some((c) => c.startsWith("Items.get")), "no ID lookup needed");
 });
@@ -281,7 +322,7 @@ test("AC10: notes, annotations, linked-URL attachments and no item are not appli
     null,
     undefined,
   ]) {
-    assert.deepEqual(plain(R.collectPaperTags(item)), { applicable: false, tags: [] });
+    assert.deepEqual(plain(R.collectPaperTags(item)), { applicable: false, itemTags: [], annotationTags: [] });
   }
   assert.deepEqual(calls, [], "nothing is read for items that do not apply");
 });
@@ -303,33 +344,87 @@ test("AC10: onItemChange shows the section for papers and file attachments, hide
 // Rendering (AC2, AC4, AC7 as data)
 // ---------------------------------------------------------------------------------------
 
-test("render: smoke-test paper shows 2 / 3, 'used' sentence and Temperature under Exposure only", async () => {
+test("render (default, highlights only): smoke-test paper shows 1 / 3 and the full checklist", async () => {
   const calls = [];
   const { paper, pdf } = smokePaper(calls);
-  const s = setup({ items: [pdf] });
-  const { lines, summaries, afterRender } = await renderSection(s.R, paper);
-  assert.deepEqual(afterRender, ["<p>Counting…"]);
+  for (const pref of [undefined, false, "true", 1]) {
+    const s = setup({ items: [pdf], pref });
+    const { lines, summaries, afterRender } = await renderSection(s.R, paper);
+    assert.deepEqual(afterRender, ["<p>Counting…"]);
+    assert.deepEqual(summaries, ["", "1 / 3"], `pref ${pref}`);
+    assert.deepEqual(lines, [
+      "<p>1 of 3 codebook tags used on this paper",
+      "<p>",
+      "  <strong>Exposure",
+      "<ul>",
+      "  <li>☐ Heat index",
+      "  <li>☐ Temperature",
+      "<p>",
+      "  <strong>Health outcome",
+      "<ul>",
+      "  <li>✓ Hospitalization",
+    ]);
+    assert.ok(s.calls.includes("waitForDataLoad(1, item)"), "item data loaded first");
+    assert.ok(s.calls.includes(`IOUtils.readJSON(${CODEBOOK_PATH})`));
+    assert.ok(s.calls.includes("Prefs.get(extensions.tabellify.countItemTags, true)"), "reads the global pref by its full name");
+    assert.deepEqual(s.errors, []);
+  }
+});
+
+test("render (switch on): item tags count too: 2 / 3 with Heat index ticked", async () => {
+  const calls = [];
+  const { paper, pdf } = smokePaper(calls);
+  const s = setup({ items: [pdf], pref: true });
+  const { lines, summaries } = await renderSection(s.R, paper);
   assert.deepEqual(summaries, ["", "2 / 3"]);
   assert.deepEqual(lines, [
     "<p>2 of 3 codebook tags used on this paper",
-    "<p>Remaining:",
     "<p>",
     "  <strong>Exposure",
     "<ul>",
-    "  <li>Temperature",
+    "  <li>✓ Heat index",
+    "  <li>☐ Temperature",
+    "<p>",
+    "  <strong>Health outcome",
+    "<ul>",
+    "  <li>✓ Hospitalization",
   ]);
-  assert.ok(s.calls.includes("waitForDataLoad(1, item)"), "item data loaded first");
-  assert.ok(s.calls.includes(`IOUtils.readJSON(${CODEBOOK_PATH})`));
-  assert.deepEqual(s.errors, []);
 });
 
-test("render: everything used gives 3 / 3 and the 'all used' sentence only", async () => {
+test("render: the setting is read on every render (a change shows up on the next render)", async () => {
   const calls = [];
-  const { paper, pdf } = smokePaper(calls, { tags: [{ tag: "Heat index" }, { tag: "Temperature" }] });
+  const { paper, pdf } = smokePaper(calls);
+  const s = setup({ items: [pdf] });
+  const first = await renderSection(s.R, paper);
+  s.sandbox.Zotero.Prefs.get = () => true;
+  const second = await renderSection(s.R, paper);
+  assert.deepEqual([first.summaries.at(-1), second.summaries.at(-1)], ["1 / 3", "2 / 3"]);
+});
+
+test("render: an unreadable pref counts highlight tags only and is logged", async () => {
+  const calls = [];
+  const { paper, pdf } = smokePaper(calls);
+  const s = setup({ items: [pdf], prefThrows: true });
+  const { summaries } = await renderSection(s.R, paper);
+  assert.equal(summaries.at(-1), "1 / 3");
+  assert.equal(s.errors.length, 1);
+});
+
+test("render: everything used gives 3 / 3 and every line ticked", async () => {
+  const calls = [];
+  const { paper, pdf, highlight } = smokePaper(calls);
+  highlight.getTags = () => [{ tag: "Hospitalization" }, { tag: "Heat index" }, { tag: "Temperature" }];
   const s = setup({ items: [pdf] });
   const { lines, summaries } = await renderSection(s.R, paper);
   assert.deepEqual(summaries.at(-1), "3 / 3");
-  assert.deepEqual(lines, ["<p>All 3 codebook tags used on this paper."]);
+  assert.equal(lines[0], "<p>3 of 3 codebook tags used on this paper");
+  assert.deepEqual(lines.filter((l) => l.includes("<li>")), ["  <li>✓ Heat index", "  <li>✓ Temperature", "  <li>✓ Hospitalization"]);
+});
+
+test("render: checklist marks are Fluent messages with a tooltip", () => {
+  const ftlText = readFileSync(join(srcDir, "locale", "en-US", "tabellify.ftl"), "utf8");
+  assert.match(ftlText, /^tabellify-reader-mark-used = ✓\n {4}\.title = .+$/m);
+  assert.match(ftlText, /^tabellify-reader-mark-unused = ☐\n {4}\.title = .+$/m);
 });
 
 test("render: no codebook file or a codebook without tags shows 'No codebook yet' and —", async () => {
@@ -391,6 +486,7 @@ test("render: never writes (only IOUtils.readJSON; the store gets no write funct
   const s = setup({ items: [pdf], files: {} });
   await renderSection(s.R, paper);
   assert.ok(!s.calls.some((c) => /IOUtils\.(?!readJSON)/.test(c)), s.calls.join("\n"));
+  assert.ok(!s.calls.some((c) => c.startsWith("Prefs.set")), "no pref is written");
   assert.equal(s.files.size, 0, "no codebook file was created");
 });
 
@@ -414,7 +510,7 @@ test("render: a slow render overtaken by a newer one does not overwrite it", asy
   release();
   await slow;
   assert.deepEqual(bodyLines(body), done, "the outdated render changed nothing");
-  assert.deepEqual(summaries, ["", "", "2 / 3"]);
+  assert.deepEqual(summaries, ["", "", "1 / 3"]);
 });
 
 test("render: tag and group names go in as text, not markup", async () => {
@@ -425,10 +521,12 @@ test("render: tag and group names go in as text, not markup", async () => {
   const { paper, pdf } = smokePaper(calls);
   const s = setup({ items: [pdf], files: { [CODEBOOK_PATH]: data } });
   const { body } = await renderSection(s.R, paper);
-  const group = body.children[2].children[0];
+  const group = body.children[1].children[0];
   assert.equal(group.textContent, "<img src=x onerror=alert(1)>");
   assert.equal(group.children.length, 0);
-  assert.equal(body.children[3].children[0].textContent, "<b>bold</b>");
+  const label = body.children[2].children[0].children[2];
+  assert.equal(label.textContent, "<b>bold</b>");
+  assert.equal(label.children.length, 0);
 });
 
 // ---------------------------------------------------------------------------------------
