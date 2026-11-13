@@ -1,26 +1,39 @@
-/* Tabellify workspace window — minimal placeholder styling (Feature 001). */
+/* Tabellify workspace styles (Features 001–005c, restyled with brand tokens in 005d).
+
+   Colours (ADR-0015): this file uses ONLY semantic tokens, var(--tabellify-color-…), from
+   tokens.css (linked before this file in workspace.xhtml), plus `transparent`,
+   `currentColor`, `inherit` and `none`. No hex values, no rgb(), no named colours and no
+   --tabellify-palette-… primitives: tests/static/l10n-and-window.test.mjs enforces that.
+   The tokens switch between light and dark with Zotero's Color Scheme setting, so nothing
+   here needs to know which mode is on.
+
+   Backgrounds: never on :root or <window> (global.css gives the window its opaque native
+   background, without which the window turns see-through). Our page colour is painted on
+   #tabellify-workspace-main, which fills the tab.
+
+   No shadows and no gradients (flat cards). The only box-shadows are inset lines: the
+   drag-and-drop drop indicator and the selected-row bar. */
 
 /* The window is opened without a fixed size, so it sizes to its content; these minimums
-   keep the placeholder from opening as a tiny box. */
+   keep it from opening as a tiny box. */
 :root {
   min-width: 480px;
   min-height: 240px;
 }
 
-#tabellify-workspace-main {
-  padding: 24px;
-}
+/* ---------------------------------------------------------------------------------------
+   Page
+   --------------------------------------------------------------------------------------- */
 
-/* Feature 003: collection dropdown, status messages and the items table.
-   No colours or backgrounds: global.css system colours follow light/dark mode. The only
-   exception is the per-paper table (Feature 005c, below): translucent text-colour tints
-   and the system colour -moz-Dialog on its cells (tests/static/l10n-and-window.test.mjs). */
-
-/* Let the content area fill the tab/window and scroll when the list is long. */
+/* The content area fills the tab/window, scrolls when the list is long, and carries the
+   page colour. */
 #tabellify-workspace-main {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding: var(--tabellify-space-6);
+  background-color: var(--tabellify-color-page);
+  color: var(--tabellify-color-text);
 }
 
 /* Make sure the `hidden` attribute hides our HTML elements inside the XUL document. */
@@ -28,11 +41,31 @@
   display: none !important;
 }
 
+#tabellify-workspace-main h1 {
+  color: var(--tabellify-color-text);
+}
+
+/* Section headings: a short accent rule under the text (brand gold / dark gold). */
+#tabellify-workspace-main h2 {
+  color: var(--tabellify-color-text);
+  padding-block-end: var(--tabellify-space-1);
+  border-bottom: var(--tabellify-border-width-strong) solid var(--tabellify-color-heading-accent);
+  width: fit-content;
+}
+
+/* Keyboard focus: every focusable element in the workspace shows the same ring.
+   :focus-visible matches only when the browser decides a ring helps (keyboard use), so a
+   mouse click on a button does not leave a ring behind. */
+#tabellify-workspace-main :focus-visible {
+  outline: var(--tabellify-focus-width) solid var(--tabellify-color-focus-ring);
+  outline-offset: var(--tabellify-focus-offset);
+}
+
 #tabellify-collection-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-block: 16px;
+  gap: var(--tabellify-space-3);
+  margin-block: var(--tabellify-space-5);
 }
 
 #tabellify-collection-select {
@@ -40,136 +73,96 @@
   max-width: 100%;
 }
 
-/* Feature 005c: table formatting.
-   - `separate` + spacing 0 instead of `collapse`: with collapsed borders Gecko paints the
-     borders on the table, not on the sticky header cells, so the header's borders would
-     scroll away. Each cell draws its right and bottom border; the table draws the outer
-     top and left edge, so lines are never doubled.
-   - `table-layout: fixed`: column widths come from the <col> elements workspace.js builds
-     (one per column, with a class per kind: grip, title, tag, count) and do not jump when
-     the rows change. <col> and not the header cells, because the first header row has
-     group cells that span several columns.
-   - Width: at least the tab's width, and wider when there are many tag columns
-     (--tabellify-tag-columns is set by workspace.js); the page then scrolls sideways
-     instead of squeezing each tag column below 5.5em. The Title column takes the rest.
-   - Colours: borders and tints are the text colour mixed with transparency
-     (`color-mix(in srgb, currentColor N%, transparent)`), so they work in light and dark
-     mode without a hard-coded colour. */
-#tabellify-items-table {
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: fixed;
-  width: max(100%, calc(24em + var(--tabellify-tag-columns, 0) * 5.5em));
-  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+/* Muted helper text (untitled papers, "none", "no tags"): a muted colour instead of
+   lowered opacity, so the contrast stays checked by the token test. */
+.tabellify-untitled {
+  font-style: italic;
+  color: var(--tabellify-color-text-muted);
 }
 
-#tabellify-items-table th,
-#tabellify-items-table td {
-  text-align: start;
-  vertical-align: top;
-  padding: 4px 8px;
-  border-right: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+/* ---------------------------------------------------------------------------------------
+   State panels (Feature 005d): empty, loading and error messages.
+   Muted text on a flat card. The glyph before the text is decorative CSS content (like the
+   ▲/▼ sort arrows and ✓); the words still come from Fluent.
+   --------------------------------------------------------------------------------------- */
+
+.tabellify-status,
+#tabellify-codebook-status,
+#tabellify-layout-status,
+#tabellify-monitor-message {
+  margin-block: var(--tabellify-space-3);
+  padding: var(--tabellify-space-4);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border);
+  border-radius: var(--tabellify-radius-md);
+  background-color: var(--tabellify-color-surface);
+  color: var(--tabellify-color-text-muted);
 }
 
-/* Sticky header: the header cells stay at the top of the scrolling area
-   (#tabellify-workspace-main) while the rows scroll under them. They need an OPAQUE
-   background or rows would show through: -moz-Dialog is the system window colour that
-   global.css gives the window, so it matches the page and follows light/dark mode
-   (docs/zotero-api-notes.md, "System colours" row). */
-#tabellify-items-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background-color: -moz-Dialog;
-  border-bottom: 2px solid color-mix(in srgb, currentColor 40%, transparent);
-}
-
-/* Two header rows (owner decision 2026-11-13): group (super-tag) headers, then tag
-   headers. The group row has a fixed minimum height and its names stay on one line (cut
-   with "…", full name in the tooltip), so the tag row can stick right below it. The tag
-   row sticks 1px higher and lies above the group row, so no gap can open between them. */
-#tabellify-items-table thead th.tabellify-col-group {
-  height: 2em;
-  border-bottom-width: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-#tabellify-items-table thead tr.tabellify-tag-row th {
-  top: calc(2em - 1px);
-  z-index: 2;
-}
-
-/* Every other paper row is lightly tinted (workspace.js sets the class). */
-#tabellify-items-table tbody tr.tabellify-row-alt {
-  background-color: color-mix(in srgb, currentColor 6%, transparent);
-}
-
-/* Hover helps following one row across a wide table. */
-#tabellify-items-table tbody tr:hover {
-  background-color: color-mix(in srgb, currentColor 10%, transparent);
-}
-
-/* Column widths by <col> class. The title gets what the fixed columns leave. */
-#tabellify-items-table col.tabellify-col-grip { width: 2.5em; }
-#tabellify-items-table col.tabellify-col-title { width: auto; }
-#tabellify-items-table col.tabellify-col-tag { width: 5.5em; }
-#tabellify-items-table col.tabellify-col-count { width: 4.5em; }
-
-#tabellify-items-table .tabellify-col-grip {
-  padding-inline: 2px;
+.tabellify-status::before,
+#tabellify-codebook-status.tabellify-codebook-error::before,
+#tabellify-layout-status::before,
+#tabellify-monitor-message::before {
+  display: inline-block;
+  min-width: 1.2em;
+  margin-inline-end: var(--tabellify-space-2);
+  font-weight: bold;
   text-align: center;
 }
 
-/* Long titles and tag names (and unbroken strings such as DOIs or URLs) wrap inside their
-   column instead of widening the table. */
-#tabellify-items-table td.tabellify-col-title,
-#tabellify-items-table th.tabellify-col-tag button.tabellify-sort {
-  overflow-wrap: anywhere;
-  white-space: normal;
-  text-align: start;
+/* Empty: "○". */
+#tabellify-no-collections::before,
+#tabellify-no-items::before,
+#tabellify-monitor-message::before {
+  content: "○";
 }
 
-#tabellify-items-table td.tabellify-col-count {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+/* Loading: "…" that pulses gently (no pulse under reduced motion, below). */
+#tabellify-loading-items::before {
+  content: "…";
+  animation: tabellify-pulse 1.2s ease-in-out infinite alternate;
 }
 
-/* Tag cells: centred ✓ when the paper has the tag. The glyph comes from CSS (like the
-   grip and the sort arrows); the cell's text for screen readers and its tooltip come from
-   Fluent ("Heat index: Used" / "Not used"), set by workspace.js. */
-#tabellify-items-table td.tabellify-col-tag {
-  text-align: center;
+@keyframes tabellify-pulse {
+  from { opacity: 1; }
+  to { opacity: 0.35; }
 }
 
-#tabellify-items-table td.tabellify-tag-used::before {
-  content: "✓";
+/* Error: "!" in the error colour, and bold text (so it is not colour alone). Every layout
+   file message is a problem (ADR-0014), so the layout status always looks like an error. */
+#tabellify-load-error,
+#tabellify-codebook-status.tabellify-codebook-error,
+#tabellify-layout-status {
+  color: var(--tabellify-color-status-error);
   font-weight: bold;
 }
 
-/* A stronger line where a new group (super-tag) starts. */
-#tabellify-items-table .tabellify-group-start {
-  border-left: 2px solid color-mix(in srgb, currentColor 40%, transparent);
+#tabellify-load-error::before,
+#tabellify-codebook-status.tabellify-codebook-error::before,
+#tabellify-layout-status::before {
+  content: "!";
 }
 
-.tabellify-untitled {
-  font-style: italic;
-  opacity: 0.7;
+/* The file path after a codebook or layout message. */
+#tabellify-codebook-status code,
+#tabellify-layout-status code {
+  margin-inline-start: var(--tabellify-space-2);
+  font-weight: normal;
+  color: var(--tabellify-color-text);
+  word-break: break-all;
 }
 
-/* Feature 004: Codebook section. Again no colours or backgrounds (light/dark mode). */
+/* ---------------------------------------------------------------------------------------
+   Codebook section (Feature 004)
+   --------------------------------------------------------------------------------------- */
 
 #tabellify-codebook {
-  margin-block: 16px 24px;
-  padding-block-end: 16px;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  margin-block: var(--tabellify-space-5) var(--tabellify-space-6);
+  padding-block-end: var(--tabellify-space-5);
+  border-bottom: var(--tabellify-border-width) solid var(--tabellify-color-border);
 }
 
 #tabellify-codebook h2 {
-  margin-block: 0 4px;
+  margin-block: 0 var(--tabellify-space-2);
 }
 
 /* The fieldset only groups the controls (so one `disabled` switches them all off);
@@ -187,11 +180,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--tabellify-space-3);
 }
 
 #tabellify-codebook-add-row {
-  margin-block: 8px 12px;
+  margin-block: var(--tabellify-space-3) var(--tabellify-space-4);
 }
 
 #tabellify-codebook-group-input,
@@ -203,67 +196,66 @@
   max-width: 280px;
 }
 
-.tabellify-codebook-group {
-  margin-block: 8px;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: 6px;
+/* Groups (and the tag monitor's groups below) are flat cards: surface, thin border,
+   rounded corners, no shadow. */
+.tabellify-codebook-group,
+.tabellify-monitor-group {
+  margin-block: var(--tabellify-space-3);
+  padding: var(--tabellify-space-3) var(--tabellify-space-4);
+  background-color: var(--tabellify-color-surface);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border);
+  border-radius: var(--tabellify-radius-md);
 }
 
 .tabellify-codebook-group-name {
   margin: 0;
-  font-size: 1.1em;
+  font-size: var(--tabellify-font-size-lg);
+  color: var(--tabellify-color-heading-accent);
 }
 
 .tabellify-codebook-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--tabellify-space-2);
   list-style: none;
-  margin-block: 8px;
+  margin-block: var(--tabellify-space-3);
   padding: 0;
 }
 
+/* Tag chips: pill outline in the strong border colour. */
 .tabellify-codebook-tags li {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px 2px 8px;
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-radius: 12px;
+  gap: var(--tabellify-space-2);
+  padding: var(--tabellify-space-1) var(--tabellify-space-2) var(--tabellify-space-1) var(--tabellify-space-3);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border-strong);
+  border-radius: var(--tabellify-radius-pill);
 }
 
 .tabellify-codebook-tags button {
   min-width: 0;
-  padding-inline: 4px;
+  padding-inline: var(--tabellify-space-2);
 }
 
 .tabellify-codebook-no-tags {
-  margin-block: 8px;
+  margin-block: var(--tabellify-space-3);
   font-style: italic;
-  opacity: 0.7;
+  color: var(--tabellify-color-text-muted);
 }
 
-#tabellify-codebook-status code {
-  margin-inline-start: 4px;
-  word-break: break-all;
-}
-
-.tabellify-codebook-error {
-  font-weight: bold;
-}
-
-/* Feature 005: Tag monitor and per-paper table. No colours or backgrounds (light/dark). */
+/* ---------------------------------------------------------------------------------------
+   Tag monitor (Feature 005)
+   --------------------------------------------------------------------------------------- */
 
 #tabellify-tag-monitor {
-  margin-block: 0 16px;
+  margin-block: 0 var(--tabellify-space-5);
 }
 
 #tabellify-monitor-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--tabellify-space-4);
 }
 
 #tabellify-monitor-header h2 {
@@ -274,32 +266,61 @@
 #tabellify-monitor-count-item-tags-label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--tabellify-space-2);
 }
 
+/* Summary cards (F005d "Representative dashboard"): each span of the summary is a flat
+   card. Numbers use tabular figures (all digits the same width) so they line up. */
 #tabellify-monitor-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--tabellify-space-4);
+  margin-block: var(--tabellify-space-4);
+}
+
+#tabellify-monitor-summary > span {
+  padding: var(--tabellify-space-3) var(--tabellify-space-5);
+  background-color: var(--tabellify-color-surface);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border);
+  border-radius: var(--tabellify-radius-md);
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#tabellify-monitor-used {
+  color: var(--tabellify-color-heading-accent);
+}
+
+#tabellify-monitor-all-used {
+  color: var(--tabellify-color-status-positive);
+}
+
+#tabellify-monitor-all-used::before {
+  content: "✓ ";
+}
+
+/* "Remaining r" card (spec Q5): what still needs work, in the caution colour. */
+#tabellify-monitor-remaining-total {
+  color: var(--tabellify-color-status-caution);
+}
+
+/* Warning line (some highlights could not be read): caution colour with a "!" mark. */
+#tabellify-monitor-warning {
+  color: var(--tabellify-color-status-caution);
   font-weight: bold;
 }
 
-#tabellify-monitor-warning {
-  font-style: italic;
-}
-
-.tabellify-monitor-group {
-  margin-block: 8px;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: 6px;
+#tabellify-monitor-warning::before {
+  content: "! ";
 }
 
 .tabellify-monitor-group-name {
   display: flex;
-  gap: 8px;
-  margin: 0 0 4px;
-  font-size: 1.05em;
+  gap: var(--tabellify-space-3);
+  margin: 0 0 var(--tabellify-space-2);
+  font-size: var(--tabellify-font-size-lg);
+  color: var(--tabellify-color-heading-accent);
 }
 
 .tabellify-monitor-count {
@@ -307,13 +328,17 @@
   white-space: nowrap;
 }
 
+.tabellify-monitor-group-name .tabellify-monitor-count {
+  color: var(--tabellify-color-text);
+}
+
 /* "Remaining: a, b" / "Used: c · 2 papers": label followed by an inline list. */
 .tabellify-monitor-list {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  margin-block: 4px;
+  gap: var(--tabellify-space-2);
+  margin-block: var(--tabellify-space-2);
 }
 
 .tabellify-monitor-list-label {
@@ -323,126 +348,304 @@
 .tabellify-monitor-list ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--tabellify-space-2);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+/* Used chips: solid outline. */
 .tabellify-monitor-list li {
-  padding: 1px 8px;
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-radius: 12px;
+  padding: var(--tabellify-space-1) var(--tabellify-space-3);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border-strong);
+  border-radius: var(--tabellify-radius-pill);
 }
 
-/* Remaining tags are what still needs work: dashed outline, so the difference does not
-   rely on colour alone. */
+/* Remaining chips: dashed outline in the caution colour. The dashed shape is the cue that
+   does not rely on colour. */
 .tabellify-monitor-remaining li {
   border-style: dashed;
+  border-color: var(--tabellify-color-status-caution);
 }
 
 .tabellify-monitor-list li.tabellify-monitor-none {
   border: 0;
   font-style: italic;
-  opacity: 0.7;
+  color: var(--tabellify-color-text-muted);
 }
 
-/* Sortable column headers: native buttons (so they clearly look clickable; their
-   background comes from the system theme), with an arrow on the active column
-   (aria-sort is set by workspace.js). */
-#tabellify-items-table th button.tabellify-sort {
-  margin: 0;
-  min-width: 0;
-  font-weight: bold;
-}
-
-#tabellify-items-table th[aria-sort="ascending"] button.tabellify-sort::after {
-  content: " ▲";
-}
-
-#tabellify-items-table th[aria-sort="descending"] button.tabellify-sort::after {
-  content: " ▼";
-}
-
-/* Feature 005c: table toolbar, grips and drag-and-drop marks. No colours: lines and
-   outlines use the text colour (currentColor), so they follow light/dark mode. */
+/* ---------------------------------------------------------------------------------------
+   Table toolbar (Feature 005c)
+   --------------------------------------------------------------------------------------- */
 
 #tabellify-table-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-block: 8px;
+  gap: var(--tabellify-space-3);
+  margin-block: var(--tabellify-space-3);
 }
 
-/* "Manual order" while the manual order is shown (aria-pressed is set by workspace.js). */
+/* "Manual order" while the manual order is shown (aria-pressed is set by workspace.js):
+   bold text and an outline, so the pressed state is not colour alone. */
 #tabellify-table-toolbar button[aria-pressed="true"] {
   font-weight: bold;
-  outline: 1px solid currentColor;
+  outline: var(--tabellify-border-width) solid var(--tabellify-color-action);
 }
 
-/* Grip: a decorative glyph from CSS (like the ▲/▼ sort arrows); its accessible name
-   comes from Fluent (aria-label). */
-#tabellify-items-table .tabellify-grip {
+/* ---------------------------------------------------------------------------------------
+   Grid table: the shared table style (.tabellify-grid, spec Q7). Rules that only fit the
+   per-paper table (its <col> widths and the two sticky header rows) use
+   #tabellify-items-table instead.
+
+   - `separate` + spacing 0 instead of `collapse`: with collapsed borders Gecko paints the
+     borders on the table, not on the sticky header cells, so the header's borders would
+     scroll away. Each cell draws its right and bottom border; the table draws the outer
+     top and left edge, so lines are never doubled.
+   - `table-layout: fixed`: column widths come from <col> elements and do not jump when
+     the rows change.
+   - Body rows on `surface`; every other row on `surface-alt` (stripes); hover tint.
+   --------------------------------------------------------------------------------------- */
+
+.tabellify-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  background-color: var(--tabellify-color-surface);
+  color: var(--tabellify-color-text);
+  border-top: var(--tabellify-border-width) solid var(--tabellify-color-border);
+  border-left: var(--tabellify-border-width) solid var(--tabellify-color-border);
+}
+
+.tabellify-grid th,
+.tabellify-grid td {
+  text-align: start;
+  vertical-align: top;
+  padding: var(--tabellify-row-pad-block) var(--tabellify-row-pad-inline);
+  border-right: var(--tabellify-border-width) solid var(--tabellify-color-border);
+  border-bottom: var(--tabellify-border-width) solid var(--tabellify-color-border);
+}
+
+/* Header: its own colour (light gray / dark slate) and a 2px rule under it (teal / gold).
+   Sticky header cells need an OPAQUE background or rows would show through; every
+   colour token is an opaque hex (tokens.css). */
+.tabellify-grid thead th {
+  background-color: var(--tabellify-color-header);
+  color: var(--tabellify-color-text);
+  border-bottom: var(--tabellify-border-width-strong) solid var(--tabellify-color-header-rule);
+}
+
+/* Group (super-tag) names in the accent colour (dark gold / gold). */
+.tabellify-grid thead th.tabellify-col-group {
+  color: var(--tabellify-color-heading-accent);
+  font-weight: bold;
+}
+
+/* Sort buttons in the header: flat (no button look), the whole text clickable. The
+   active sorted column's button is in the action colour and keeps its ▲/▼ glyph and
+   aria-sort, so the sort does not rely on colour. */
+.tabellify-grid th button.tabellify-sort {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+  border-radius: var(--tabellify-radius-sm);
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: bold;
+  text-align: start;
+  cursor: pointer;
+}
+
+.tabellify-grid th > button.tabellify-sort:only-child {
+  width: 100%;
+}
+
+.tabellify-grid th button.tabellify-sort:hover {
+  text-decoration: underline;
+}
+
+.tabellify-grid th[aria-sort] button.tabellify-sort {
+  color: var(--tabellify-color-action);
+}
+
+.tabellify-grid th[aria-sort="ascending"] button.tabellify-sort::after {
+  content: " ▲";
+}
+
+.tabellify-grid th[aria-sort="descending"] button.tabellify-sort::after {
+  content: " ▼";
+}
+
+/* Rows: stripes, hover (with a short background fade; 0 ms under reduced motion because
+   the duration token is 0 there), and the focused row. */
+.tabellify-grid tbody tr {
+  transition: background-color var(--tabellify-duration-fast) ease-out;
+}
+
+.tabellify-grid tbody tr.tabellify-row-alt {
+  background-color: var(--tabellify-color-surface-alt);
+}
+
+.tabellify-grid tbody tr:hover {
+  background-color: var(--tabellify-color-surface-hover);
+}
+
+/* The row that holds keyboard focus (for example its grip) gets the "selected" look:
+   tinted background and a bar at its start edge. :focus-within matches an element when it
+   or anything inside it has focus. Real multi-row selection is a later feature. */
+.tabellify-grid tbody tr:focus-within {
+  background-color: var(--tabellify-color-selected-bg);
+  color: var(--tabellify-color-selected-text);
+}
+
+.tabellify-grid tbody tr:focus-within > td:first-child {
+  box-shadow: inset var(--tabellify-selected-bar-width) 0 0 var(--tabellify-color-selected-bar);
+}
+
+/* Long titles and tag names (and unbroken strings such as DOIs or URLs) wrap inside their
+   column instead of widening the table. */
+.tabellify-grid td.tabellify-col-title,
+.tabellify-grid th.tabellify-col-tag button.tabellify-sort {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: start;
+}
+
+/* Numbers right-aligned with tabular figures (digits line up); text stays left. */
+.tabellify-grid td.tabellify-col-count {
+  text-align: end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A paper that has every codebook tag (workspace.js sets the class): green, with a ✓ so
+   it is not colour alone. */
+.tabellify-grid td.tabellify-count-complete {
+  color: var(--tabellify-color-status-positive);
+  font-weight: bold;
+}
+
+.tabellify-grid td.tabellify-count-complete::after {
+  content: " ✓";
+}
+
+/* Tag cells: centred ✓ when the paper has the tag. The glyph comes from CSS; the cell's
+   text for screen readers and its tooltip come from Fluent ("Heat index: Used" /
+   "Not used"), set by workspace.js. */
+.tabellify-grid td.tabellify-col-tag {
+  text-align: center;
+}
+
+.tabellify-grid td.tabellify-tag-used::before {
+  content: "✓";
+  font-weight: bold;
+  color: var(--tabellify-color-status-info);
+}
+
+/* A stronger line where a new group (super-tag) starts. */
+.tabellify-grid .tabellify-group-start {
+  border-left: var(--tabellify-border-width-strong) solid var(--tabellify-color-border-strong);
+}
+
+.tabellify-grid .tabellify-col-grip {
+  padding-inline: var(--tabellify-space-1);
+  text-align: center;
+}
+
+/* Grip: a decorative glyph from CSS; its accessible name comes from Fluent (aria-label). */
+.tabellify-grid .tabellify-grip {
   display: inline-block;
-  padding: 0 2px;
-  border-radius: 3px;
+  padding: 0 var(--tabellify-space-1);
+  border-radius: var(--tabellify-radius-sm);
   cursor: grab;
   user-select: none;
-  opacity: 0.7;
+  color: var(--tabellify-color-text-muted);
 }
 
-#tabellify-items-table .tabellify-grip::before {
+.tabellify-grid .tabellify-grip::before {
   content: "⠿";
 }
 
-#tabellify-items-table .tabellify-grip:hover {
-  opacity: 1;
+.tabellify-grid .tabellify-grip:hover,
+.tabellify-grid .tabellify-grip:focus-visible {
+  color: var(--tabellify-color-action);
 }
 
-#tabellify-items-table .tabellify-grip:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
-  opacity: 1;
-}
-
-#tabellify-items-table th .tabellify-grip {
-  margin-inline-end: 4px;
+.tabellify-grid th .tabellify-grip {
+  margin-inline-end: var(--tabellify-space-2);
 }
 
 /* The column or row being dragged. */
-#tabellify-items-table .tabellify-dragging {
+.tabellify-grid .tabellify-dragging {
   opacity: 0.5;
 }
 
 /* Drop line where the dragged item will land: left/right edge of a header cell for
-   columns, top/bottom edge of a row for papers. */
-#tabellify-items-table th.tabellify-drop-before {
-  box-shadow: inset 2px 0 0 currentColor;
+   columns, top/bottom edge of a row for papers. An inset line, not a shadow. */
+.tabellify-grid th.tabellify-drop-before {
+  box-shadow: inset var(--tabellify-border-width-strong) 0 0 var(--tabellify-color-action);
 }
 
-#tabellify-items-table th.tabellify-drop-after {
-  box-shadow: inset -2px 0 0 currentColor;
+.tabellify-grid th.tabellify-drop-after {
+  box-shadow: inset calc(-1 * var(--tabellify-border-width-strong)) 0 0 var(--tabellify-color-action);
 }
 
-#tabellify-items-table tr.tabellify-drop-before > td {
-  box-shadow: inset 0 2px 0 currentColor;
+.tabellify-grid tr.tabellify-drop-before > td {
+  box-shadow: inset 0 var(--tabellify-border-width-strong) 0 var(--tabellify-color-action);
 }
 
-#tabellify-items-table tr.tabellify-drop-after > td {
-  box-shadow: inset 0 -2px 0 currentColor;
+.tabellify-grid tr.tabellify-drop-after > td {
+  box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
 }
 
-/* Problems with the saved layout file (ADR-0014): message, then the file path. */
-#tabellify-layout-status {
-  font-weight: bold;
+/* ---------------------------------------------------------------------------------------
+   Per-paper table only (#tabellify-items-table, Feature 005c)
+   --------------------------------------------------------------------------------------- */
+
+/* Width: at least the tab's width, and wider when there are many tag columns
+   (--tabellify-tag-columns is set by workspace.js); the page then scrolls sideways
+   instead of squeezing each tag column below 5.5em. The Title column takes the rest. */
+#tabellify-items-table {
+  width: max(100%, calc(24em + var(--tabellify-tag-columns, 0) * 5.5em));
 }
 
-#tabellify-layout-status code {
-  margin-inline-start: 4px;
-  font-weight: normal;
-  word-break: break-all;
+/* Sticky header: the header cells stay at the top of the scrolling area
+   (#tabellify-workspace-main) while the rows scroll under them. */
+#tabellify-items-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
+
+/* Two header rows (owner decision 2026-11-13): group (super-tag) headers, then tag
+   headers. The group row has a fixed minimum height and its names stay on one line (cut
+   with "…", full name in the tooltip), so the tag row can stick right below it. The tag
+   row sticks 1px higher and lies above the group row, so no gap can open between them.
+   The group row's bottom line is the thin separator; the header rule is under the tags. */
+#tabellify-items-table thead th.tabellify-col-group {
+  height: 2em;
+  border-bottom: var(--tabellify-border-width) solid var(--tabellify-color-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tabellify-items-table thead tr.tabellify-tag-row th {
+  top: calc(2em - 1px);
+  z-index: 2;
+}
+
+/* Column widths by <col> class. The title gets what the fixed columns leave. */
+#tabellify-items-table col.tabellify-col-grip { width: 2.5em; }
+#tabellify-items-table col.tabellify-col-title { width: auto; }
+#tabellify-items-table col.tabellify-col-tag { width: 5.5em; }
+#tabellify-items-table col.tabellify-col-count { width: 5.5em; }
+
+/* ---------------------------------------------------------------------------------------
+   Misc
+   --------------------------------------------------------------------------------------- */
 
 /* Read by screen readers, not shown (the keyboard-move announcements). */
 .tabellify-visually-hidden {
@@ -452,4 +655,12 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Reduced motion (macOS: Accessibility → Display → Reduce motion): no pulsing. Transitions
+   already take 0 ms through --tabellify-duration-fast (tokens.css). */
+@media (prefers-reduced-motion: reduce) {
+  #tabellify-loading-items::before {
+    animation: none;
+  }
 }
