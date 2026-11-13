@@ -316,6 +316,40 @@ var TabellifyCodebook = {
   },
 
   /**
+   * Put `tag` together with `anchor` (Feature 006c: a tag column dropped below another tag
+   * column, ADR-0016 §7). Both must already be in the codebook.
+   * - `anchor` in group G: `tag` joins G (as setTagGroup; `created: false`).
+   * - `anchor` ungrouped: the group named like `anchor` (ignoring case; its stored spelling
+   *   wins) is used, or a new one named exactly `anchor` is created (`created: true`, id from
+   *   nextId). Then `anchor` and `tag` are moved into it, each only when not already there,
+   *   in that order, so a moved `anchor` comes before `tag` in the tag list.
+   * Refused (ERR_TAG_MISSING) when either tag is unknown or `tag === anchor`. Group names and
+   * tag names are separate lists (ADR-0016 §2), so a group may share its name with a tag.
+   * @param {CodebookData} data
+   * @param {string} tag     The dragged tag
+   * @param {string} anchor  The tag it was dropped below
+   * @returns {{ ok: true, data: CodebookData, groupId: string, created: boolean } | { ok: false, error: string }}
+   */
+  groupUnderTag(data, tag, anchor) {
+    const record = this.findTag(data, tag);
+    const anchorRecord = this.findTag(data, anchor);
+    if (!record || !anchorRecord || tag === anchor) return this.refuse(this.ERR_TAG_MISSING);
+    if (anchorRecord.group !== null) {
+      const result = this.setTagGroup(data, tag, anchorRecord.group);
+      if (!result.ok) return result;
+      return { ok: true, data: result.data, groupId: anchorRecord.group, created: false };
+    }
+    const next = this.clone(data);
+    const lower = anchor.toLowerCase();
+    const existing = next.codebooks[0].groups.find((g) => g.name.toLowerCase() === lower);
+    const groupId = existing ? existing.id : this.pushGroup(next, anchor);
+    for (const name of [anchor, tag]) {
+      if (this.findTag(next, name).group !== groupId) this.moveTagRecord(next, name, groupId);
+    }
+    return { ok: true, data: next, groupId, created: !existing };
+  },
+
+  /**
    * Apply one tag-script entry (Feature 006a), all or nothing. `items` is what
    * TabellifyTagScript.parse() returns: `{ kind: "tag", name }` or
    * `{ kind: "group", name, tags: string[] }`, in the order typed.

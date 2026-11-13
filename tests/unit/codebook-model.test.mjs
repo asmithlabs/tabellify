@@ -212,6 +212,101 @@ test("AC13: setTagGroup moves to a group (end of list), to null, and refuses unk
 });
 
 // ---------------------------------------------------------------------------------------
+// groupUnderTag (Feature 006c AC12): a tag column dropped below another tag column
+// ---------------------------------------------------------------------------------------
+
+/** Deep-freeze an input: any mutation by the model throws (the model runs in strict mode). */
+function frozen(value) {
+  if (value && typeof value === "object") {
+    for (const v of Object.values(value)) frozen(v);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+test("006c AC12: groupUnderTag with the anchor in a group joins that group", () => {
+  const r = M.groupUnderTag(frozen(sample()), "age", "Hospitalization");
+  assert.equal(r.ok, true);
+  assert.equal(r.groupId, "g3");
+  assert.equal(r.created, false);
+  assert.deepEqual(plain(M.tagsIn(r.data, "g3")), ["Hospitalization", "age"]);
+  assert.deepEqual(plain(M.tagsIn(r.data, null)), []);
+  assert.equal(r.data.nextId, 5, "no new id");
+  assert.deepEqual(plain(M.validate(r.data)), { ok: true });
+});
+
+test("006c AC12: groupUnderTag with an ungrouped anchor creates a group named like it", () => {
+  const d = frozen(v2([{ id: "g2", name: "Exposure" }], [
+    { name: "Heat index", group: "g2" },
+    { name: "sex", group: null },
+    { name: "age", group: null },
+  ], 5));
+  const r = M.groupUnderTag(d, "sex", "age");
+  assert.equal(r.ok, true);
+  assert.equal(r.created, true);
+  assert.equal(r.groupId, "g5", "id from nextId");
+  assert.equal(r.data.nextId, 6, "nextId + 1");
+  assert.deepEqual(plain(M.groups(r.data)), [{ id: "g2", name: "Exposure" }, { id: "g5", name: "age" }]);
+  // The anchor comes before the dragged tag, although `sex` was first in the list.
+  assert.deepEqual(plain(M.tagsIn(r.data, "g5")), ["age", "sex"]);
+  assert.deepEqual(plain(M.tagsIn(r.data, null)), []);
+  assert.deepEqual(plain(M.validate(r.data)), { ok: true });
+});
+
+test("006c AC12: groupUnderTag reuses a group with the same name in another case (Q2)", () => {
+  const d = frozen(v2([{ id: "g2", name: "Country" }], [
+    { name: "country", group: null },
+    { name: "region", group: null },
+  ], 3));
+  const r = M.groupUnderTag(d, "region", "country");
+  assert.equal(r.ok, true);
+  assert.equal(r.created, false);
+  assert.equal(r.groupId, "g2");
+  assert.equal(r.data.nextId, 3, "no new id");
+  assert.deepEqual(plain(M.groups(r.data)), [{ id: "g2", name: "Country" }], "stored spelling kept, no second group");
+  assert.deepEqual(plain(M.tagsIn(r.data, "g2")), ["country", "region"]);
+  assert.deepEqual(plain(M.validate(r.data)), { ok: true });
+});
+
+test("006c AC12: groupUnderTag when the tag is already in that group changes nothing", () => {
+  const r = M.groupUnderTag(frozen(sample()), "Temperature", "Heat index");
+  assert.equal(r.ok, true);
+  assert.equal(r.groupId, "g2");
+  assert.deepEqual(tagList(r.data), tagList(sample()));
+  // Reused group that already holds the dragged tag: only the anchor moves in.
+  const d = frozen(v2([{ id: "g2", name: "Country" }], [
+    { name: "region", group: "g2" },
+    { name: "country", group: null },
+  ], 3));
+  const r2 = M.groupUnderTag(d, "region", "country");
+  assert.equal(r2.ok, true);
+  assert.deepEqual(plain(M.tagsIn(r2.data, "g2")), ["region", "country"]);
+  assert.deepEqual(plain(M.validate(r2.data)), { ok: true });
+});
+
+test("006c AC12: groupUnderTag refuses a missing tag, a missing anchor and tag = anchor", () => {
+  const d = frozen(sample());
+  const refused = { ok: false, error: M.ERR_TAG_MISSING };
+  assert.deepEqual(plain(M.groupUnderTag(d, "nope", "age")), refused);
+  assert.deepEqual(plain(M.groupUnderTag(d, "age", "nope")), refused);
+  assert.deepEqual(plain(M.groupUnderTag(d, "age", "age")), refused);
+  assert.deepEqual(plain(M.groupUnderTag(d, "Heat index", "Heat index")), refused);
+  assert.deepEqual(plain(d), sample(), "input not mutated");
+});
+
+test("006c AC12: groupUnderTag keeps \"__proto__\" an ordinary tag and group name", () => {
+  const d = frozen(v2([], [
+    { name: "__proto__", group: null },
+    { name: "x", group: null },
+  ], 2));
+  const r = M.groupUnderTag(d, "x", "__proto__");
+  assert.equal(r.ok, true);
+  assert.deepEqual(plain(M.groups(r.data)), [{ id: "g2", name: "__proto__" }]);
+  assert.deepEqual(plain(M.tagsIn(r.data, "g2")), ["__proto__", "x"]);
+  assert.deepEqual(plain(M.validate(r.data)), { ok: true });
+});
+
+// ---------------------------------------------------------------------------------------
 // applyScript (Feature 006a)
 // ---------------------------------------------------------------------------------------
 
