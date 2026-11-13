@@ -16,13 +16,13 @@ tabellify-menu-open =
 
 ## Workspace window (chrome://tabellify/content/workspace.xhtml)
 
-tabellify-workspace-title = Tabellify Workspace
+# The page heading (Feature 006a, spec Q9). The tab title stays "Tabellify"
+# (tabellify-tab-title below).
+tabellify-workspace-title = Tabellify Codebook
 
 # The root <window> takes its title-bar text from the `title` attribute.
 tabellify-workspace-window =
     .title = { tabellify-workspace-title }
-
-tabellify-workspace-description = Your literature tables will appear here.
 
 ## Workspace tab in the main window (Feature 002).
 ## Tabellify reads this from JavaScript with document.l10n.formatValue() and passes the
@@ -43,31 +43,49 @@ tabellify-load-error = Could not load this collection. See Help → Debug Output
 tabellify-column-title = Title
 tabellify-untitled = (untitled)
 
-## Workspace: codebook (Feature 004).
-## The heading, intro, "Add group" button and empty message are set in workspace.xhtml with
-## data-l10n-id. All other messages here are read from JavaScript with
-## document.l10n.formatValue() and put on the page as plain text (buttons, placeholders,
-## the status line). Messages that end in "File:" are followed by the file's path, which
-## workspace.js adds as separate text.
+## Workspace: tag script box and group pills (Feature 006a).
+## The label, the help line and "Edit groups and tags" are set in workspace.xhtml with
+## data-l10n-id. The other messages are read from JavaScript with
+## document.l10n.formatValue() (no arguments) and put on the page as plain text; names and
+## numbers are added by workspace.js ("Outcome" + " · 3", "Outcome: " + "3 " + "tags").
 
-tabellify-codebook-heading = Codebook
-tabellify-codebook-intro = Plan your tags here, grouped under super-tags. Editing the codebook never changes the tags in your Zotero library.
-tabellify-codebook-group-placeholder = New group (super-tag) name
-tabellify-codebook-add-group = Add group
-tabellify-codebook-empty = The codebook is empty. Add a group to start.
+tabellify-script-label = Tags and groups
+tabellify-script-placeholder = Exposure(heat index, temperature), age
+tabellify-script-help = Type a tag, several tags separated by commas, or Group(tag, tag), then press Enter. Your Zotero tags are never changed.
+tabellify-script-error-unbalanced = Check the brackets: every "(" needs a matching ")".
+tabellify-script-error-empty-tag = A tag name is missing. Remove the extra comma or type a name.
+tabellify-script-error-empty-group = Type a group name before "(".
+tabellify-script-error-nested = A group cannot contain another group.
+tabellify-script-error-missing-comma = Separate the entries with a comma.
+tabellify-script-error-unclosed-quote = A quotation mark (") is not closed.
+tabellify-script-error-duplicate = The same tag appears twice in this entry.
+tabellify-script-nothing-new = These tags are already in the codebook.
+# Follows "Codebook saved." when the entry moved tags that were already in the codebook.
+tabellify-script-moved = Some tags were moved to another group.
+# Screen-reader name of the list of group pills.
+tabellify-pills-label = Groups
+# Name of the pill (and of the editor box) for tags without a group.
+tabellify-pill-ungrouped = Ungrouped
+# Follows a number in a pill's screen-reader name: "Outcome: 3 tags".
+tabellify-pill-tags = tags
+
+## Workspace: codebook editor ("Edit groups and tags", Feature 004, reduced in 006a).
+## All messages except the disclosure's summary are read from JavaScript with
+## document.l10n.formatValue() and put on the page as plain text (buttons, the status
+## line). Messages that end in "File:" are followed by the file's path, which workspace.js
+## adds as separate text.
+
+tabellify-codebook-edit = Edit groups and tags
+tabellify-codebook-ungrouped = Ungrouped
 tabellify-codebook-rename = Rename
 tabellify-codebook-rename-save = Save
 tabellify-codebook-rename-cancel = Cancel
+# Deleting a group keeps its tags: they become ungrouped (spec F006a Q4).
 tabellify-codebook-delete = Delete
-tabellify-codebook-delete-confirm = Confirm delete
 tabellify-codebook-group-name-label = Group name
-tabellify-codebook-tag-placeholder = New tag name
-tabellify-codebook-add-tag = Add tag
 # Text of the small button next to each tag; the next message is its tooltip.
 tabellify-codebook-remove-tag = ×
 tabellify-codebook-remove-tag-tooltip = Remove this tag from the codebook (your Zotero tags are not changed)
-tabellify-codebook-pick-placeholder = Pick from library…
-tabellify-codebook-no-tags = No tags in this group yet.
 
 ## Codebook status line.
 
@@ -84,36 +102,25 @@ tabellify-codebook-error-group-duplicate = A group with this name already exists
 tabellify-codebook-error-group-missing = This group no longer exists.
 tabellify-codebook-error-tag-empty = Enter a tag name.
 tabellify-codebook-error-tag-duplicate = This tag is already in the codebook.
-tabellify-codebook-error-tag-missing = This tag is no longer in the group.
+tabellify-codebook-error-tag-missing = This tag is no longer in the codebook.
 
-## Workspace: tag monitor (Feature 005).
-## The heading, the "Refresh" button and the new table headers are set in workspace.xhtml
-## with data-l10n-id. All other messages are read from JavaScript with
+## Workspace: tag counting (Feature 005; one summary line since 006a, spec Q2).
+## The "Refresh" button and the table headers are set in workspace.xhtml with
+## data-l10n-id. All other messages are read from JavaScript with
 ## document.l10n.formatValue() (no arguments) and put on the page as plain text.
-## Numbers are added by workspace.js after the text, e.g. "Tags used" + " 2/4",
-## "Papers:" + " 3", "Heat index · 3" + " papers".
+## Numbers are added by workspace.js after the text: "Tags used" + " 2/4", "Papers" + " 3".
 
-tabellify-monitor-heading = Tag monitor
 tabellify-monitor-refresh = Refresh
 # Checkbox next to "Refresh". Off (default): only tags on highlights count. On: tags on the
 # paper item itself count too. The reader's "Tabellify tags" section follows the same setting.
 tabellify-monitor-count-item-tags = Also count tags on the paper itself
 tabellify-monitor-choose = Choose a collection to see which codebook tags its papers use.
 tabellify-monitor-codebook-empty = The codebook has no tags yet. Add tags to the codebook to see which ones are used.
-tabellify-monitor-unavailable = The tag monitor is unavailable because the codebook could not be loaded.
+tabellify-monitor-unavailable = Tag counts are unavailable because the codebook could not be loaded.
 tabellify-monitor-annotations-error = Some highlights could not be read, so their tags are not counted. See Help → Debug Output Logging for details.
 tabellify-monitor-tags-used = Tags used
 tabellify-monitor-all-used = All codebook tags are used.
-tabellify-monitor-papers = Papers:
-tabellify-monitor-used = Used:
-tabellify-monitor-remaining = Remaining:
-# Summary card (Feature 005d): followed by the number of codebook tags not used yet,
-# e.g. "Remaining" + " 2".
-tabellify-monitor-remaining-count = Remaining
-tabellify-monitor-none = none
-# Follows a number: "1 paper", "3 papers".
-tabellify-monitor-paper-one = paper
-tabellify-monitor-paper-other = papers
+tabellify-monitor-papers = Papers
 # Last column of the per-paper table: k codebook tags used on the paper, of M in the
 # codebook (owner decision 2026-11-13). The short header keeps the column narrow; the
 # tooltip and the screen-reader name say what it means.
@@ -136,6 +143,9 @@ tabellify-column-move =
 tabellify-table-move-paper = Move paper:
 tabellify-table-move-group = Move group:
 tabellify-table-move-tag = Move column:
+# Screen-reader name of the blank group header over the tags without a group (F006a);
+# also follows "Move group:" on its grip.
+tabellify-table-ungrouped-header = Ungrouped tags
 # Tooltip and screen-reader text of a tag cell: ✓ (the paper has the tag) or empty.
 tabellify-table-tag-used = Used
 tabellify-table-tag-not-used = Not used

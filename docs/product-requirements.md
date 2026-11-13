@@ -55,6 +55,14 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 | F009 | Column customization: user-created columns, drag-and-drop reorder, column types | |
 | F010+ | AI-assisted extraction and classification | Future |
 
+**Proposed split (2026-11-13, approved by the owner).** The owner's workspace
+restructure request is planned as 006a (layout, tag script box, optional groups; ADR-0016),
+006b (library tag autocomplete, codebook-only "Create tag"), 006c (regroup by drag), F008
+(CSV export; ADR-0017), 007a ("View table" modal) and 007b (saved tables; ADR-0018). The
+original F006 addition (highlight text in cells) becomes 006d. Details:
+`docs/features/006a-workspace-restructure.md`, "Phases". The table above is updated once the
+owner approves.
+
 **Renumbering (2026-11-11).** The new F002 was inserted ahead of data access, so every later
 feature moved up by one. Accepted ADRs keep the old numbers as historical records; read them
 with this mapping:

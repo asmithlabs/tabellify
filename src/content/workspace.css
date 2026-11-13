@@ -1,4 +1,5 @@
-/* Tabellify workspace styles (Features 001–005c, restyled with brand tokens in 005d).
+/* Tabellify workspace styles (Features 001–005c, restyled with brand tokens in 005d,
+   page restructured in 006a).
 
    Colours (ADR-0015): this file uses ONLY semantic tokens, var(--tabellify-color-…), from
    tokens.css (linked before this file in workspace.xhtml), plus `transparent`,
@@ -11,7 +12,7 @@
    background, without which the window turns see-through). Our page colour is painted on
    #tabellify-workspace-main, which fills the tab.
 
-   No shadows and no gradients (flat cards). The only box-shadows are inset lines: the
+   No shadows and no gradients (flat). The only box-shadows are inset lines: the
    drag-and-drop drop indicator and the selected-row bar. */
 
 /* The window is opened without a fixed size, so it sizes to its content; these minimums
@@ -61,11 +62,14 @@
   outline-offset: var(--tabellify-focus-offset);
 }
 
+/* Collection row (F006a): dropdown, Refresh, the "count item tags" checkbox and the
+   summary line, wrapping onto a second line on narrow tabs. */
 #tabellify-collection-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--tabellify-space-3);
-  margin-block: var(--tabellify-space-5);
+  gap: var(--tabellify-space-3) var(--tabellify-space-4);
+  margin-block: var(--tabellify-space-5) var(--tabellify-space-3);
 }
 
 #tabellify-collection-select {
@@ -152,17 +156,62 @@
 }
 
 /* ---------------------------------------------------------------------------------------
-   Codebook section (Feature 004)
+   Summary line and warning (Feature 005; one line since 006a, spec Q2)
+   --------------------------------------------------------------------------------------- */
+
+/* "Also count tags on the paper itself": box and text on one line. */
+#tabellify-monitor-count-item-tags-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tabellify-space-2);
+}
+
+/* "Tags used 2/4 · Papers 3": plain text, numbers in tabular figures (all digits the same
+   width). The "·" between the parts is decorative CSS content. */
+#tabellify-monitor-summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--tabellify-space-2);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+#tabellify-monitor-summary > span + span::before {
+  content: "· ";
+  color: var(--tabellify-color-text-muted);
+}
+
+#tabellify-monitor-all-used {
+  color: var(--tabellify-color-status-positive);
+  font-weight: bold;
+}
+
+#tabellify-monitor-all-used::before {
+  content: "✓ ";
+}
+
+/* k/M numbers (the table's last column). */
+.tabellify-monitor-count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Warning line (some highlights could not be read): caution colour with a "!" mark. */
+#tabellify-monitor-warning {
+  color: var(--tabellify-color-status-caution);
+  font-weight: bold;
+}
+
+#tabellify-monitor-warning::before {
+  content: "! ";
+}
+
+/* ---------------------------------------------------------------------------------------
+   Codebook section: tag script box, group pills, "Edit groups and tags" (F004, F006a)
    --------------------------------------------------------------------------------------- */
 
 #tabellify-codebook {
-  margin-block: var(--tabellify-space-5) var(--tabellify-space-6);
-  padding-block-end: var(--tabellify-space-5);
-  border-bottom: var(--tabellify-border-width) solid var(--tabellify-color-border);
-}
-
-#tabellify-codebook h2 {
-  margin-block: 0 var(--tabellify-space-2);
+  margin-block: var(--tabellify-space-5);
 }
 
 /* The fieldset only groups the controls (so one `disabled` switches them all off);
@@ -174,32 +223,100 @@
   min-width: 0;
 }
 
-#tabellify-codebook-add-row,
-.tabellify-codebook-group-header,
-.tabellify-codebook-tag-row {
+#tabellify-script-label {
+  display: block;
+  margin-block-end: var(--tabellify-space-2);
+  font-weight: bold;
+}
+
+#tabellify-script-input {
+  width: 100%;
+  max-width: 60em;
+  box-sizing: border-box;
+}
+
+/* A rejected entry: the box gets a red outline (aria-invalid is set by workspace.js), and
+   the message below has a "!" and bold text, so the error is not colour alone. */
+#tabellify-script-input[aria-invalid="true"] {
+  outline: var(--tabellify-focus-width) solid var(--tabellify-color-status-error);
+  outline-offset: 0;
+}
+
+#tabellify-script-help {
+  margin-block: var(--tabellify-space-2);
+  font-size: var(--tabellify-font-size-sm);
+  color: var(--tabellify-color-text-muted);
+}
+
+#tabellify-script-error {
+  margin-block: var(--tabellify-space-2);
+  color: var(--tabellify-color-status-error);
+  font-weight: bold;
+}
+
+#tabellify-script-error::before {
+  content: "! ";
+}
+
+/* Group pills: "Exposure · 2". Rounded outline, the count in tabular figures; the "·" is
+   decorative CSS content. The ungrouped pill has a dashed outline (a shape cue, not only
+   a different word). */
+#tabellify-group-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tabellify-space-2);
+  list-style: none;
+  margin-block: var(--tabellify-space-3);
+  padding: 0;
+}
+
+.tabellify-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--tabellify-space-1);
+  padding: var(--tabellify-space-1) var(--tabellify-space-3);
+  background-color: var(--tabellify-color-surface);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border-strong);
+  border-radius: var(--tabellify-radius-pill);
+}
+
+.tabellify-pill-name {
+  font-weight: bold;
+}
+
+.tabellify-pill-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.tabellify-pill-count::before {
+  content: "· ";
+  color: var(--tabellify-color-text-muted);
+}
+
+.tabellify-pill.tabellify-pill-ungrouped {
+  border-style: dashed;
+}
+
+/* "Edit groups and tags": a <details> disclosure (closed by default). */
+#tabellify-codebook-editor {
+  margin-block: var(--tabellify-space-3);
+}
+
+#tabellify-codebook-editor > summary {
+  cursor: pointer;
+  color: var(--tabellify-color-action);
+  font-weight: bold;
+}
+
+.tabellify-codebook-group-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--tabellify-space-3);
 }
 
-#tabellify-codebook-add-row {
-  margin-block: var(--tabellify-space-3) var(--tabellify-space-4);
-}
-
-#tabellify-codebook-group-input,
-.tabellify-codebook-tag-row input {
-  min-width: 200px;
-}
-
-.tabellify-codebook-tag-row select {
-  max-width: 280px;
-}
-
-/* Groups (and the tag monitor's groups below) are flat cards: surface, thin border,
-   rounded corners, no shadow. */
-.tabellify-codebook-group,
-.tabellify-monitor-group {
+/* Each group in the editor is a flat card: surface, thin border, rounded corners. */
+.tabellify-codebook-group {
   margin-block: var(--tabellify-space-3);
   padding: var(--tabellify-space-3) var(--tabellify-space-4);
   background-color: var(--tabellify-color-surface);
@@ -213,16 +330,21 @@
   color: var(--tabellify-color-heading-accent);
 }
 
+/* The "Ungrouped" box: dashed outline, like its pill. */
+.tabellify-codebook-group.tabellify-codebook-ungrouped {
+  border-style: dashed;
+}
+
 .tabellify-codebook-tags {
   display: flex;
   flex-wrap: wrap;
   gap: var(--tabellify-space-2);
   list-style: none;
-  margin-block: var(--tabellify-space-3);
+  margin-block: var(--tabellify-space-3) 0;
   padding: 0;
 }
 
-/* Tag chips: pill outline in the strong border colour. */
+/* Tag chips: pill outline in the strong border colour, with the × remove button. */
 .tabellify-codebook-tags li {
   display: inline-flex;
   align-items: center;
@@ -235,143 +357,6 @@
 .tabellify-codebook-tags button {
   min-width: 0;
   padding-inline: var(--tabellify-space-2);
-}
-
-.tabellify-codebook-no-tags {
-  margin-block: var(--tabellify-space-3);
-  font-style: italic;
-  color: var(--tabellify-color-text-muted);
-}
-
-/* ---------------------------------------------------------------------------------------
-   Tag monitor (Feature 005)
-   --------------------------------------------------------------------------------------- */
-
-#tabellify-tag-monitor {
-  margin-block: 0 var(--tabellify-space-5);
-}
-
-#tabellify-monitor-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--tabellify-space-4);
-}
-
-#tabellify-monitor-header h2 {
-  margin-block: 0;
-}
-
-/* "Also count tags on the paper itself": box and text on one line. */
-#tabellify-monitor-count-item-tags-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tabellify-space-2);
-}
-
-/* Summary cards (F005d "Representative dashboard"): each span of the summary is a flat
-   card. Numbers use tabular figures (all digits the same width) so they line up. */
-#tabellify-monitor-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--tabellify-space-4);
-  margin-block: var(--tabellify-space-4);
-}
-
-#tabellify-monitor-summary > span {
-  padding: var(--tabellify-space-3) var(--tabellify-space-5);
-  background-color: var(--tabellify-color-surface);
-  border: var(--tabellify-border-width) solid var(--tabellify-color-border);
-  border-radius: var(--tabellify-radius-md);
-  font-weight: bold;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-#tabellify-monitor-used {
-  color: var(--tabellify-color-heading-accent);
-}
-
-#tabellify-monitor-all-used {
-  color: var(--tabellify-color-status-positive);
-}
-
-#tabellify-monitor-all-used::before {
-  content: "✓ ";
-}
-
-/* "Remaining r" card (spec Q5): what still needs work, in the caution colour. */
-#tabellify-monitor-remaining-total {
-  color: var(--tabellify-color-status-caution);
-}
-
-/* Warning line (some highlights could not be read): caution colour with a "!" mark. */
-#tabellify-monitor-warning {
-  color: var(--tabellify-color-status-caution);
-  font-weight: bold;
-}
-
-#tabellify-monitor-warning::before {
-  content: "! ";
-}
-
-.tabellify-monitor-group-name {
-  display: flex;
-  gap: var(--tabellify-space-3);
-  margin: 0 0 var(--tabellify-space-2);
-  font-size: var(--tabellify-font-size-lg);
-  color: var(--tabellify-color-heading-accent);
-}
-
-.tabellify-monitor-count {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.tabellify-monitor-group-name .tabellify-monitor-count {
-  color: var(--tabellify-color-text);
-}
-
-/* "Remaining: a, b" / "Used: c · 2 papers": label followed by an inline list. */
-.tabellify-monitor-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--tabellify-space-2);
-  margin-block: var(--tabellify-space-2);
-}
-
-.tabellify-monitor-list-label {
-  font-weight: bold;
-}
-
-.tabellify-monitor-list ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--tabellify-space-2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* Used chips: solid outline. */
-.tabellify-monitor-list li {
-  padding: var(--tabellify-space-1) var(--tabellify-space-3);
-  border: var(--tabellify-border-width) solid var(--tabellify-color-border-strong);
-  border-radius: var(--tabellify-radius-pill);
-}
-
-/* Remaining chips: dashed outline in the caution colour. The dashed shape is the cue that
-   does not rely on colour. */
-.tabellify-monitor-remaining li {
-  border-style: dashed;
-  border-color: var(--tabellify-color-status-caution);
-}
-
-.tabellify-monitor-list li.tabellify-monitor-none {
-  border: 0;
-  font-style: italic;
-  color: var(--tabellify-color-text-muted);
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -439,6 +424,12 @@
 .tabellify-grid thead th.tabellify-col-group {
   color: var(--tabellify-color-heading-accent);
   font-weight: bold;
+}
+
+/* F006a: the blank group header over the tags without a group. It shows only its grip
+   (its name "Ungrouped tags" is for screen readers), so it stays visually quiet. */
+.tabellify-grid thead th.tabellify-col-group-ungrouped {
+  color: var(--tabellify-color-text-muted);
 }
 
 /* Sort buttons in the header: flat (no button look), the whole text clickable. The

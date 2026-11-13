@@ -24,8 +24,9 @@ they never need to know which mode is on.
   is on `#tabellify-workspace-main`.
 - **Flat:** no shadows and no gradients. The only `box-shadow`s are inset lines (drop
   indicator, selected-row bar).
-- **Status never by colour alone.** ✓ is a glyph with Fluent text, remaining chips are
-  dashed, errors have a "!" and bold text, a complete k/M has a "✓".
+- **Status never by colour alone.** ✓ is a glyph with Fluent text, the "Ungrouped" pill
+  and editor box are dashed, errors (including the tag script box's inline error) have a
+  "!" and bold text, a complete k/M has a "✓".
 - Dark-mode gold (`status-caution`) is **not** used as text inside table rows: it fails
   4.5:1 on stripes and hover (ADR-0015, "Flagged").
 
@@ -62,6 +63,21 @@ per-paper table (column widths per `<col>`, the two sticky header rows) stay on
 - numbers right-aligned with tabular figures; `td.tabellify-count-complete` in
   `status-positive` with a "✓"
 - group start lines (`.tabellify-group-start`), grips, `.tabellify-dragging`, drop lines
+- the blank group header of tags without a group (`th.tabellify-col-group-ungrouped`,
+  Feature 006a): no text, only its grip; its name is for screen readers
+
+## 5a. Workspace page components (Feature 006a)
+The per-group summary cards and the Remaining/Used chip lists of Feature 005/005d were
+removed in Feature 006a. The page now uses:
+- the **summary line** in the collection row ("Tags used 4/6 · Papers 12"; the "·" is CSS)
+- the **tag script box** (`#tabellify-script-input`) with a muted help line and an inline
+  error line (`#tabellify-script-error`: `status-error`, bold, "!"); the box itself gets a
+  `status-error` outline while `aria-invalid="true"`
+- **group pills** (`.tabellify-pill`: surface, `border-strong` outline, pill radius; name in
+  bold, count in tabular figures after a CSS "·"; the ungrouped pill is dashed)
+- the **"Edit groups and tags"** disclosure (`<details>`), whose groups are flat cards with
+  tag chips and a × button
+All of them are in the states gallery.
 
 ## 6. Light and dark
 `tokens.css` switches with `@media (prefers-color-scheme: dark)`. In Zotero this follows

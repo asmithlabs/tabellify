@@ -634,3 +634,55 @@ test("AC4 (data): a Notifier event refreshes every live section; onDestroy and u
   ref.notify("modify", "item", [10], {});
   assert.deepEqual(counts, { a: 2, b: 1 }, "nothing refreshed after unregister");
 });
+
+// ---------------------------------------------------------------------------------------
+// Feature 006a AC15: ungrouped tags (codebook schema 2, ADR-0016 §8, spec Q11)
+// ---------------------------------------------------------------------------------------
+
+test("F006a AC15: ungrouped tags are listed first without a heading, as plain text; k/M counts them", async () => {
+  const calls = [];
+  const { paper, pdf, highlight } = smokePaper(calls);
+  highlight.getTags = () => [{ tag: "Hospitalization" }, { tag: "<b>age</b>" }];
+  const v2 = {
+    schemaVersion: 2,
+    revision: 8,
+    nextId: 4,
+    codebooks: [{
+      id: "c1",
+      name: "Codebook",
+      groups: [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Health outcome" }],
+      tags: [
+        { name: "Heat index", group: "g2" },
+        { name: "<b>age</b>", group: null },
+        { name: "Hospitalization", group: "g3" },
+        { name: "sex", group: null },
+      ],
+    }],
+  };
+  const s = setup({ items: [pdf], files: { [CODEBOOK_PATH]: v2 } });
+  const { lines, summaries, body } = await renderSection(s.R, paper);
+  assert.equal(summaries.at(-1), "2 / 4");
+  assert.deepEqual(lines, [
+    "<p>2 of 4 codebook tags used on this paper",
+    "<ul>",
+    "  <li>✓ <b>age</b>",
+    "  <li>☐ sex",
+    "<p>",
+    "  <strong>Exposure",
+    "<ul>",
+    "  <li>☐ Heat index",
+    "<p>",
+    "  <strong>Health outcome",
+    "<ul>",
+    "  <li>✓ Hospitalization",
+  ]);
+  // No heading element at all for the ungrouped block, and no "null" anywhere.
+  assert.equal(body.children[1].tag, "ul");
+  assert.ok(lines.every((l) => !l.includes("null")));
+  // The tag name is a text node's content, not markup.
+  const label = body.children[1].children[0].children[2];
+  assert.equal(label.children.length, 0);
+  assert.equal(label.textContent, "<b>age</b>");
+  assert.deepEqual(s.errors, []);
+  assert.ok(!s.calls.some((c) => c.startsWith("IOUtils.write")), "nothing written");
+});

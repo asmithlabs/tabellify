@@ -1,4 +1,5 @@
-// Feature 004 AC8 + AC9: unit tests for the pure codebook model (src/content/codebook-model.js).
+// Feature 004 AC8/AC9 and Feature 006a AC13: unit tests for the pure codebook model
+// (src/content/codebook-model.js), schema version 2 (ADR-0016) with version 1 migration.
 //
 // codebook-model.js is a classic browser script (no import/export). Node runs it here in an
 // empty node:vm sandbox (as in workspace-helpers.test.mjs); its one global,
@@ -26,8 +27,8 @@ function ok(result) {
   return result.data;
 }
 
-/** A data object with Exposure (g2: Heat index, Temperature) and Outcome (g3: Hospitalization). */
-function sample() {
+/** Version 1 fixture: Exposure (g2: Heat index, Temperature), Outcome (g3: Hospitalization). */
+function sampleV1() {
   return {
     schemaVersion: 1,
     revision: 7,
@@ -45,48 +46,95 @@ function sample() {
   };
 }
 
+/** The same codebook in version 2, plus one ungrouped tag `age`. */
+function sample() {
+  return {
+    schemaVersion: 2,
+    revision: 7,
+    nextId: 5,
+    codebooks: [
+      {
+        id: "c1",
+        name: "Codebook",
+        groups: [
+          { id: "g2", name: "Exposure" },
+          { id: "g3", name: "Outcome" },
+        ],
+        tags: [
+          { name: "Heat index", group: "g2" },
+          { name: "Temperature", group: "g2" },
+          { name: "Hospitalization", group: "g3" },
+          { name: "age", group: null },
+        ],
+      },
+    ],
+  };
+}
+
+/** A v2 data object with one codebook built from groups/tags. */
+function v2(groups, tags, nextId = 9) {
+  return { schemaVersion: 2, revision: 1, nextId, codebooks: [{ id: "c1", name: "C", groups, tags }] };
+}
+
 const names = (data) => plain(M.groups(data)).map((g) => g.name);
+const tagList = (data) => plain(data.codebooks[0].tags);
 
 // ---------------------------------------------------------------------------------------
-// AC8: model rules
+// Basics
 // ---------------------------------------------------------------------------------------
 
-test("AC8: the file defines TabellifyCodebook without Zotero/DOM/IOUtils", () => {
+test("the file defines TabellifyCodebook without Zotero/DOM/IOUtils", () => {
   assert.equal(typeof M, "object");
-  for (const fn of ["emptyData", "validate", "migrate", "addGroup", "renameGroup", "deleteGroup",
-    "addTagToGroup", "removeTagFromGroup", "availableTags"]) {
+  assert.equal(M.SCHEMA_VERSION, 2);
+  assert.equal(M.UNGROUPED_ID, "ungrouped");
+  for (const fn of ["emptyData", "validate", "migrate", "groups", "tagsIn", "addGroup", "renameGroup",
+    "deleteGroup", "removeTagFromCodebook", "setTagGroup", "applyScript", "availableTags"]) {
     assert.equal(typeof M[fn], "function", fn);
   }
+  // Replaced by the v2 edits (ADR-0016).
+  assert.equal(M.addTagToGroup, undefined);
+  assert.equal(M.removeTagFromGroup, undefined);
   const src = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   for (const g of ["Zotero", "IOUtils", "PathUtils", "document", "window"]) {
     assert.doesNotMatch(src, new RegExp(`\\b${g}\\b`), `${g} used in the pure model`);
   }
 });
 
-test("AC8: emptyData is valid, has one codebook with no groups and revision 0", () => {
+test("AC13: emptyData is valid v2, one codebook with no groups, no tags, revision 0", () => {
   const d = M.emptyData();
   assert.deepEqual(plain(M.validate(d)), { ok: true });
-  assert.equal(d.schemaVersion, 1);
+  assert.equal(d.schemaVersion, 2);
   assert.equal(d.revision, 0);
   assert.equal(d.codebooks.length, 1);
   assert.deepEqual(plain(M.groups(d)), []);
+  assert.deepEqual(plain(d.codebooks[0].tags), []);
   // A fresh object each time (callers may keep it).
   assert.notEqual(M.emptyData(), M.emptyData());
 });
 
-test("AC8: addGroup appends with an id from nextId, trims, keeps order", () => {
+test("AC13: groups() returns { id, name } in order; tagsIn() per group and for null", () => {
+  const d = sample();
+  assert.deepEqual(plain(M.groups(d)), [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Outcome" }]);
+  assert.deepEqual(plain(M.tagsIn(d, "g2")), ["Heat index", "Temperature"]);
+  assert.deepEqual(plain(M.tagsIn(d, "g3")), ["Hospitalization"]);
+  assert.deepEqual(plain(M.tagsIn(d, null)), ["age"]);
+  assert.deepEqual(plain(M.tagsIn(d, "g99")), []);
+});
+
+// ---------------------------------------------------------------------------------------
+// Group edits
+// ---------------------------------------------------------------------------------------
+
+test("addGroup appends with an id from nextId, trims, keeps order", () => {
   let d = M.emptyData();
   d = ok(M.addGroup(d, "  Exposure "));
   d = ok(M.addGroup(d, "Outcome"));
-  assert.deepEqual(plain(M.groups(d)), [
-    { id: "g2", name: "Exposure", tags: [] },
-    { id: "g3", name: "Outcome", tags: [] },
-  ]);
+  assert.deepEqual(plain(M.groups(d)), [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Outcome" }]);
   assert.equal(d.nextId, 4);
   assert.deepEqual(plain(M.validate(d)), { ok: true });
 });
 
-test("AC8: addGroup rejects empty and duplicate (ignoring case) names", () => {
+test("addGroup rejects empty and duplicate (ignoring case) names", () => {
   const d = sample();
   for (const bad of ["", "   ", undefined, null]) {
     assert.deepEqual(plain(M.addGroup(d, bad)), { ok: false, error: M.ERR_GROUP_EMPTY }, String(bad));
@@ -95,7 +143,7 @@ test("AC8: addGroup rejects empty and duplicate (ignoring case) names", () => {
   assert.deepEqual(plain(M.addGroup(d, " OUTCOME ")), { ok: false, error: M.ERR_GROUP_DUPLICATE });
 });
 
-test("AC8: ids keep counting after a delete (never reused)", () => {
+test("ids keep counting after a delete (never reused)", () => {
   let d = M.emptyData();
   d = ok(M.addGroup(d, "A"));
   d = ok(M.deleteGroup(d, "g2"));
@@ -103,117 +151,204 @@ test("AC8: ids keep counting after a delete (never reused)", () => {
   assert.deepEqual(plain(M.groups(d)).map((g) => g.id), ["g3"]);
 });
 
-test("AC8: renameGroup trims, keeps id/tags/position, allows a case-only change", () => {
+test("renameGroup trims, keeps id/tags/position, allows a case-only change", () => {
   let d = sample();
   d = ok(M.renameGroup(d, "g3", "  Health outcome "));
   assert.deepEqual(names(d), ["Exposure", "Health outcome"]);
-  assert.deepEqual(plain(M.groups(d)[1]), { id: "g3", name: "Health outcome", tags: ["Hospitalization"] });
+  assert.deepEqual(plain(M.tagsIn(d, "g3")), ["Hospitalization"]);
   d = ok(M.renameGroup(d, "g2", "EXPOSURE"));
   assert.deepEqual(names(d), ["EXPOSURE", "Health outcome"]);
 });
 
-test("AC8: renameGroup rejects empty, duplicate and unknown group", () => {
+test("renameGroup rejects empty, duplicate and unknown group", () => {
   const d = sample();
   assert.deepEqual(plain(M.renameGroup(d, "g3", " ")), { ok: false, error: M.ERR_GROUP_EMPTY });
   assert.deepEqual(plain(M.renameGroup(d, "g3", "exposure")), { ok: false, error: M.ERR_GROUP_DUPLICATE });
   assert.deepEqual(plain(M.renameGroup(d, "g99", "X")), { ok: false, error: M.ERR_GROUP_MISSING });
 });
 
-test("AC8: deleteGroup removes the group and its tags; unknown id is refused", () => {
+test("AC13: deleteGroup removes the group; its tags become ungrouped in place (Q4)", () => {
   let d = sample();
   d = ok(M.deleteGroup(d, "g2"));
   assert.deepEqual(names(d), ["Outcome"]);
-  // Its tags are free again.
-  d = ok(M.addTagToGroup(d, "g3", "Heat index"));
-  assert.deepEqual(plain(M.groups(d)[0].tags), ["Hospitalization", "Heat index"]);
+  assert.deepEqual(tagList(d), [
+    { name: "Heat index", group: null },
+    { name: "Temperature", group: null },
+    { name: "Hospitalization", group: "g3" },
+    { name: "age", group: null },
+  ]);
+  assert.deepEqual(plain(M.validate(d)), { ok: true });
   assert.deepEqual(plain(M.deleteGroup(d, "g2")), { ok: false, error: M.ERR_GROUP_MISSING });
 });
 
-test("AC8: AC2 sequence ends with exactly Exposure, Health outcome", () => {
-  let d = M.emptyData();
-  d = ok(M.addGroup(d, "Exposure"));
-  d = ok(M.addGroup(d, "Outcome"));
-  d = ok(M.renameGroup(d, "g3", "Health outcome"));
-  d = ok(M.addGroup(d, "Temp"));
-  d = ok(M.deleteGroup(d, "g4"));
-  assert.deepEqual(names(d), ["Exposure", "Health outcome"]);
+// ---------------------------------------------------------------------------------------
+// Tag edits
+// ---------------------------------------------------------------------------------------
+
+test("AC13: removeTagFromCodebook removes exactly that tag; unknown tag refused", () => {
+  let d = sample();
+  d = ok(M.removeTagFromCodebook(d, "Heat index"));
+  assert.deepEqual(plain(M.tagsIn(d, "g2")), ["Temperature"]);
+  d = ok(M.removeTagFromCodebook(d, "age"));
+  assert.deepEqual(plain(M.tagsIn(d, null)), []);
+  assert.deepEqual(plain(M.removeTagFromCodebook(d, "Heat index")), { ok: false, error: M.ERR_TAG_MISSING });
+  // Exact match only (case-sensitive, as Zotero).
+  assert.deepEqual(plain(M.removeTagFromCodebook(d, "temperature")), { ok: false, error: M.ERR_TAG_MISSING });
 });
 
-test("AC8: addTagToGroup trims, appends in order", () => {
+test("AC13: setTagGroup moves to a group (end of list), to null, and refuses unknowns", () => {
   let d = sample();
-  d = ok(M.addTagToGroup(d, "g2", "  Humidity "));
-  assert.deepEqual(plain(M.groups(d)[0].tags), ["Heat index", "Temperature", "Humidity"]);
+  d = ok(M.setTagGroup(d, "Heat index", "g3"));
+  assert.deepEqual(plain(M.tagsIn(d, "g3")), ["Hospitalization", "Heat index"]);
+  assert.deepEqual(plain(M.tagsIn(d, "g2")), ["Temperature"]);
+  d = ok(M.setTagGroup(d, "Hospitalization", null));
+  assert.deepEqual(plain(M.tagsIn(d, null)), ["age", "Hospitalization"]);
+  // Same group: unchanged position.
+  const same = ok(M.setTagGroup(sample(), "Heat index", "g2"));
+  assert.deepEqual(tagList(same), tagList(sample()));
+  assert.deepEqual(plain(M.setTagGroup(d, "nope", "g2")), { ok: false, error: M.ERR_TAG_MISSING });
+  assert.deepEqual(plain(M.setTagGroup(d, "age", "g99")), { ok: false, error: M.ERR_GROUP_MISSING });
   assert.deepEqual(plain(M.validate(d)), { ok: true });
 });
 
-test("AC8: addTagToGroup rejects empty, duplicate anywhere in the codebook, unknown group", () => {
+// ---------------------------------------------------------------------------------------
+// applyScript (Feature 006a)
+// ---------------------------------------------------------------------------------------
+
+test("AC13: applyScript adds ungrouped tags and a new group with ids from nextId", () => {
+  const r = M.applyScript(M.emptyData(), [
+    { kind: "tag", name: "age" },
+    { kind: "group", name: "Humidity", tags: ["rh", "dew point"] },
+    { kind: "tag", name: "sex" },
+  ]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(plain(r.report), { added: 4, moved: 0, unchanged: 0, groupsCreated: 1 });
+  assert.deepEqual(plain(M.groups(r.data)), [{ id: "g2", name: "Humidity" }]);
+  assert.equal(r.data.nextId, 3);
+  assert.deepEqual(tagList(r.data), [
+    { name: "age", group: null },
+    { name: "rh", group: "g2" },
+    { name: "dew point", group: "g2" },
+    { name: "sex", group: null },
+  ]);
+  assert.deepEqual(plain(M.validate(r.data)), { ok: true });
+});
+
+test("AC13: applyScript reuses a group ignoring case (keeps its spelling), moves, leaves unchanged", () => {
+  // Spec AC5: Exposure(Heat index, Air quality), country, Outcome(age)
+  const r = M.applyScript(sample(), [
+    { kind: "group", name: "exposure", tags: ["Heat index", "Air quality"] },
+    { kind: "tag", name: "country" },
+    { kind: "group", name: "Outcome", tags: ["age"] },
+  ]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(plain(r.report), { added: 2, moved: 1, unchanged: 1, groupsCreated: 0 });
+  assert.deepEqual(names(r.data), ["Exposure", "Outcome"]);
+  assert.deepEqual(plain(M.tagsIn(r.data, "g2")), ["Heat index", "Temperature", "Air quality"]);
+  // age moved to the end of Outcome.
+  assert.deepEqual(plain(M.tagsIn(r.data, "g3")), ["Hospitalization", "age"]);
+  assert.deepEqual(plain(M.tagsIn(r.data, null)), ["country"]);
+  assert.equal(r.data.nextId, 5);
+});
+
+test("AC13: applyScript moves a grouped tag to ungrouped for a top-level mention (Q3)", () => {
+  const r = M.applyScript(sample(), [{ kind: "tag", name: "Heat index" }]);
+  assert.deepEqual(plain(r.report), { added: 0, moved: 1, unchanged: 0, groupsCreated: 0 });
+  assert.deepEqual(plain(M.tagsIn(r.data, null)), ["age", "Heat index"]);
+  assert.deepEqual(plain(M.tagsIn(r.data, "g2")), ["Temperature"]);
+});
+
+test("AC13: applyScript with nothing new reports only unchanged and returns equal data", () => {
+  const r = M.applyScript(sample(), [{ kind: "tag", name: "age" }, { kind: "group", name: "Exposure", tags: ["Temperature"] }]);
+  assert.deepEqual(plain(r.report), { added: 0, moved: 0, unchanged: 2, groupsCreated: 0 });
+  assert.deepEqual(plain(r.data), sample());
+});
+
+test("AC13: applyScript empty group creates it once; same group twice merges", () => {
+  let r = M.applyScript(sample(), [{ kind: "group", name: "Planned", tags: [] }]);
+  assert.deepEqual(plain(r.report), { added: 0, moved: 0, unchanged: 0, groupsCreated: 1 });
+  assert.deepEqual(names(r.data), ["Exposure", "Outcome", "Planned"]);
+  r = M.applyScript(M.emptyData(), [
+    { kind: "group", name: "A", tags: ["x"] },
+    { kind: "group", name: "a", tags: ["y"] },
+  ]);
+  assert.deepEqual(plain(M.groups(r.data)), [{ id: "g2", name: "A" }]);
+  assert.deepEqual(plain(M.tagsIn(r.data, "g2")), ["x", "y"]);
+  assert.equal(r.report.groupsCreated, 1);
+});
+
+test("AC13: applyScript cleans names (trim + NFC), case-sensitive like Zotero", () => {
+  const decomposed = "é"; // "é" as e + combining accent
+  const r = M.applyScript(M.emptyData(), [
+    { kind: "tag", name: `  ${decomposed}  ` },
+    { kind: "tag", name: "Heat" },
+    { kind: "tag", name: "heat" },
+  ]);
+  assert.deepEqual(plain(M.tagsIn(r.data, null)), ["é", "Heat", "heat"]);
+});
+
+test("AC13: applyScript refuses empty names and duplicates in one entry, changing nothing", () => {
   const d = sample();
-  assert.deepEqual(plain(M.addTagToGroup(d, "g2", "  ")), { ok: false, error: M.ERR_TAG_EMPTY });
-  assert.deepEqual(plain(M.addTagToGroup(d, "g2", "Heat index")), { ok: false, error: M.ERR_TAG_DUPLICATE });
-  // Same tag under another group: still a duplicate (one tag → one column).
-  assert.deepEqual(plain(M.addTagToGroup(d, "g3", " Heat index ")), { ok: false, error: M.ERR_TAG_DUPLICATE });
-  assert.deepEqual(plain(M.addTagToGroup(d, "g99", "X")), { ok: false, error: M.ERR_GROUP_MISSING });
+  const before = JSON.stringify(d);
+  assert.deepEqual(plain(M.applyScript(d, [{ kind: "tag", name: " " }])), { ok: false, error: M.ERR_TAG_EMPTY });
+  assert.deepEqual(plain(M.applyScript(d, [{ kind: "group", name: "", tags: ["x"] }])), { ok: false, error: M.ERR_GROUP_EMPTY });
+  assert.deepEqual(plain(M.applyScript(d, [{ kind: "group", name: "G", tags: ["x", ""] }])), { ok: false, error: M.ERR_TAG_EMPTY });
+  assert.deepEqual(
+    plain(M.applyScript(d, [{ kind: "group", name: "A", tags: ["x"] }, { kind: "group", name: "B", tags: ["x"] }])),
+    { ok: false, error: M.ERR_TAG_DUPLICATE },
+  );
+  assert.deepEqual(plain(M.applyScript(d, [{ kind: "tag", name: "x" }, { kind: "tag", name: " x" }])), { ok: false, error: M.ERR_TAG_DUPLICATE });
+  assert.equal(JSON.stringify(d), before);
 });
 
-test("AC8: tag matching is case-sensitive (owner decision 3)", () => {
-  const d = ok(M.addTagToGroup(sample(), "g3", "heat index"));
-  assert.deepEqual(plain(M.groups(d)[1].tags), ["Hospitalization", "heat index"]);
+test("AC13: markup in names stays literal text", () => {
+  const evil = '<img src=x onerror="alert(1)">';
+  const r = M.applyScript(M.emptyData(), [{ kind: "group", name: evil, tags: [evil] }]);
+  assert.equal(M.groups(r.data)[0].name, evil);
+  assert.deepEqual(plain(M.tagsIn(r.data, "g2")), [evil]);
 });
 
-test("AC8: removeTagFromGroup removes exactly that tag; unknown tag/group refused", () => {
-  let d = sample();
-  d = ok(M.removeTagFromGroup(d, "g2", "Heat index"));
-  assert.deepEqual(plain(M.groups(d)[0].tags), ["Temperature"]);
-  assert.deepEqual(plain(M.removeTagFromGroup(d, "g2", "Heat index")), { ok: false, error: M.ERR_TAG_MISSING });
-  assert.deepEqual(plain(M.removeTagFromGroup(d, "g3", "Temperature")), { ok: false, error: M.ERR_TAG_MISSING });
-  assert.deepEqual(plain(M.removeTagFromGroup(d, "g99", "Temperature")), { ok: false, error: M.ERR_GROUP_MISSING });
-});
-
-test("AC8: edits never mutate their input (they return new data)", () => {
+test("AC13: edits never mutate their input (they return new data) and keep revision", () => {
   const d = sample();
   const before = JSON.stringify(d);
   ok(M.addGroup(d, "New"));
   ok(M.renameGroup(d, "g2", "Renamed"));
   ok(M.deleteGroup(d, "g3"));
-  ok(M.addTagToGroup(d, "g2", "New tag"));
-  ok(M.removeTagFromGroup(d, "g2", "Temperature"));
+  ok(M.removeTagFromCodebook(d, "Temperature"));
+  ok(M.setTagGroup(d, "age", "g2"));
+  M.applyScript(d, [{ kind: "group", name: "Outcome", tags: ["Heat index", "z"] }, { kind: "tag", name: "Temperature" }]);
   M.availableTags(d, ["x", "Temperature"]);
   M.migrate(d);
+  M.migrate(sampleV1());
   assert.equal(JSON.stringify(d), before);
   const r = M.addGroup(d, "New");
   assert.notEqual(r.data, d);
   assert.notEqual(r.data.codebooks, d.codebooks);
+  assert.equal(r.data.revision, 7);
 });
 
-test("AC8: edits do not change revision (the store does)", () => {
-  assert.equal(ok(M.addGroup(sample(), "New")).revision, 7);
-});
-
-test("AC8/AC4: availableTags — once each, sorted, minus codebook tags and blanks", () => {
+test("availableTags — once each, sorted, minus codebook tags and blanks", () => {
   const out = M.availableTags(sample(), [
-    "zeta", "Temperature", "alpha", "Tag 10", "Tag 2", "alpha", "  ", "", "Heat index", "heat index", "Beta",
+    "zeta", "Temperature", "alpha", "Tag 10", "Tag 2", "alpha", "  ", "", "Heat index", "heat index", "Beta", "age",
   ]);
   assert.deepEqual(plain(out), ["alpha", "Beta", "heat index", "Tag 2", "Tag 10", "zeta"]);
   assert.deepEqual(plain(M.availableTags(M.emptyData(), [])), []);
 });
 
-test("AC8: markup in names stays literal text", () => {
-  const evil = '<img src=x onerror="alert(1)">';
-  let d = ok(M.addGroup(M.emptyData(), evil));
-  d = ok(M.addTagToGroup(d, "g2", evil));
-  assert.equal(M.groups(d)[0].name, evil);
-  assert.equal(M.groups(d)[0].tags[0], evil);
-});
-
 // ---------------------------------------------------------------------------------------
-// AC9: validation and versions
+// Validation and versions
 // ---------------------------------------------------------------------------------------
 
-test("AC9: a valid v1 file passes", () => {
+test("AC13: valid v1 and v2 files pass", () => {
+  assert.deepEqual(plain(M.validate(sampleV1())), { ok: true });
   assert.deepEqual(plain(M.validate(sample())), { ok: true });
+  // A group with no tags, extra fields on a tag record: allowed.
+  assert.deepEqual(plain(M.validate(v2([{ id: "g2", name: "A" }], [{ name: "x", group: null, note: "later" }]))), { ok: true });
+  // A group name may equal a tag name (different lists).
+  assert.deepEqual(plain(M.validate(v2([{ id: "g2", name: "x" }], [{ name: "x", group: "g2" }]))), { ok: true });
 });
 
-test("AC9: schemaVersion missing is rejected (no v0 exists)", () => {
+test("schemaVersion missing is rejected (no v0 exists)", () => {
   const d = sample();
   delete d.schemaVersion;
   const r = M.validate(d);
@@ -222,8 +357,8 @@ test("AC9: schemaVersion missing is rejected (no v0 exists)", () => {
   assert.match(r.reason, /schemaVersion/);
 });
 
-test("AC9: schemaVersion higher than 1 is reported as newer", () => {
-  const r = M.validate({ ...sample(), schemaVersion: 2 });
+test("AC13: schemaVersion 3 is reported as newer", () => {
+  const r = M.validate({ ...sample(), schemaVersion: 3 });
   assert.equal(r.ok, false);
   assert.equal(r.newer, true);
   assert.match(r.reason, /newer/);
@@ -231,43 +366,40 @@ test("AC9: schemaVersion higher than 1 is reported as newer", () => {
   assert.equal(M.validate({ schemaVersion: 5, whatever: true }).newer, true);
 });
 
-test("AC9: wrong types and missing fields are rejected with a reason", () => {
+test("version 1 files: wrong types and missing fields are rejected with a reason", () => {
+  const cb = (groups) => ({ ...sampleV1(), codebooks: [{ id: "c1", name: "C", groups }] });
   const cases = {
     "not an object (null)": null,
     "not an object (array)": [],
     "not an object (string)": "not json",
-    "schemaVersion 0": { ...sample(), schemaVersion: 0 },
-    "schemaVersion string": { ...sample(), schemaVersion: "1" },
-    "schemaVersion 1.5": { ...sample(), schemaVersion: 1.5 },
-    "revision missing": (() => { const d = sample(); delete d.revision; return d; })(),
-    "revision negative": { ...sample(), revision: -1 },
-    "nextId missing": (() => { const d = sample(); delete d.nextId; return d; })(),
-    "nextId string": { ...sample(), nextId: "5" },
-    "codebooks missing": (() => { const d = sample(); delete d.codebooks; return d; })(),
-    "codebooks not array": { ...sample(), codebooks: {} },
-    "codebooks empty": { ...sample(), codebooks: [] },
-    "codebook not object": { ...sample(), codebooks: ["c1"] },
-    "codebook bad id": { ...sample(), codebooks: [{ id: "x", name: "C", groups: [] }] },
-    "codebook name missing": { ...sample(), codebooks: [{ id: "c1", groups: [] }] },
-    "groups missing": { ...sample(), codebooks: [{ id: "c1", name: "C" }] },
-    "group not object": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [null] }] },
-    "group id wrong prefix": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "c2", name: "A", tags: [] }] }] },
-    "group id >= nextId": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g5", name: "A", tags: [] }] }] },
-    "group id twice": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [
-      { id: "g2", name: "A", tags: [] }, { id: "g2", name: "B", tags: [] }] }] },
-    "group name number": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g2", name: 3, tags: [] }] }] },
-    "group name empty": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g2", name: " ", tags: [] }] }] },
-    "group name untrimmed": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g2", name: " A", tags: [] }] }] },
-    "group names duplicate ignoring case": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [
-      { id: "g2", name: "A", tags: [] }, { id: "g3", name: "a", tags: [] }] }] },
-    "tags missing": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g2", name: "A" }] }] },
-    "tag not a string": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g2", name: "A", tags: [42] }] }] },
-    "tag empty": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g2", name: "A", tags: [""] }] }] },
-    "tag untrimmed": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [{ id: "g2", name: "A", tags: ["x "] }] }] },
-    "duplicate tag in one group": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [
-      { id: "g2", name: "A", tags: ["x", "x"] }] }] },
-    "duplicate tag across groups": { ...sample(), codebooks: [{ id: "c1", name: "C", groups: [
-      { id: "g2", name: "A", tags: ["x"] }, { id: "g3", name: "B", tags: ["x"] }] }] },
+    "schemaVersion 0": { ...sampleV1(), schemaVersion: 0 },
+    "schemaVersion string": { ...sampleV1(), schemaVersion: "1" },
+    "schemaVersion 1.5": { ...sampleV1(), schemaVersion: 1.5 },
+    "revision missing": (() => { const d = sampleV1(); delete d.revision; return d; })(),
+    "revision negative": { ...sampleV1(), revision: -1 },
+    "nextId missing": (() => { const d = sampleV1(); delete d.nextId; return d; })(),
+    "nextId string": { ...sampleV1(), nextId: "5" },
+    "codebooks missing": (() => { const d = sampleV1(); delete d.codebooks; return d; })(),
+    "codebooks not array": { ...sampleV1(), codebooks: {} },
+    "codebooks empty": { ...sampleV1(), codebooks: [] },
+    "codebook not object": { ...sampleV1(), codebooks: ["c1"] },
+    "codebook bad id": { ...sampleV1(), codebooks: [{ id: "x", name: "C", groups: [] }] },
+    "codebook name missing": { ...sampleV1(), codebooks: [{ id: "c1", groups: [] }] },
+    "groups missing": { ...sampleV1(), codebooks: [{ id: "c1", name: "C" }] },
+    "group not object": cb([null]),
+    "group id wrong prefix": cb([{ id: "c2", name: "A", tags: [] }]),
+    "group id >= nextId": cb([{ id: "g5", name: "A", tags: [] }]),
+    "group id twice": cb([{ id: "g2", name: "A", tags: [] }, { id: "g2", name: "B", tags: [] }]),
+    "group name number": cb([{ id: "g2", name: 3, tags: [] }]),
+    "group name empty": cb([{ id: "g2", name: " ", tags: [] }]),
+    "group name untrimmed": cb([{ id: "g2", name: " A", tags: [] }]),
+    "group names duplicate ignoring case": cb([{ id: "g2", name: "A", tags: [] }, { id: "g3", name: "a", tags: [] }]),
+    "tags missing": cb([{ id: "g2", name: "A" }]),
+    "tag not a string": cb([{ id: "g2", name: "A", tags: [42] }]),
+    "tag empty": cb([{ id: "g2", name: "A", tags: [""] }]),
+    "tag untrimmed": cb([{ id: "g2", name: "A", tags: ["x "] }]),
+    "duplicate tag in one group": cb([{ id: "g2", name: "A", tags: ["x", "x"] }]),
+    "duplicate tag across groups": cb([{ id: "g2", name: "A", tags: ["x"] }, { id: "g3", name: "B", tags: ["x"] }]),
   };
   for (const [label, data] of Object.entries(cases)) {
     const r = M.validate(data);
@@ -278,10 +410,74 @@ test("AC9: wrong types and missing fields are rejected with a reason", () => {
   }
 });
 
-test("AC9: migrate returns an equal copy for v1 and refuses unknown versions", () => {
+test("AC13: version 2 files: bad groups and tag records are rejected with a reason", () => {
+  const G = [{ id: "g2", name: "A" }, { id: "g3", name: "B" }];
+  const cases = {
+    "tags missing": { ...v2(G, []), codebooks: [{ id: "c1", name: "C", groups: G }] },
+    "tags not array": v2(G, {}),
+    "tag record not object": v2(G, ["x"]),
+    "tag name missing": v2(G, [{ group: null }]),
+    "tag name not string": v2(G, [{ name: 1, group: null }]),
+    "tag name empty": v2(G, [{ name: "", group: null }]),
+    "tag name untrimmed": v2(G, [{ name: " x", group: null }]),
+    "duplicate tags": v2(G, [{ name: "x", group: "g2" }, { name: "x", group: null }]),
+    "group missing on record": v2(G, [{ name: "x" }]),
+    "group points at a missing group": v2(G, [{ name: "x", group: "g7" }]),
+    "group is a number": v2(G, [{ name: "x", group: 2 }]),
+    "group is false": v2(G, [{ name: "x", group: false }]),
+    "group is the view id": v2(G, [{ name: "x", group: "ungrouped" }]),
+    "group name untrimmed": v2([{ id: "g2", name: "A " }], []),
+    "group names duplicate ignoring case": v2([{ id: "g2", name: "A" }, { id: "g3", name: "a" }], []),
+    "group id invalid": v2([{ id: "ungrouped", name: "A" }], []),
+    "group id >= nextId": v2([{ id: "g9", name: "A" }], []),
+  };
+  for (const [label, data] of Object.entries(cases)) {
+    const r = M.validate(data);
+    assert.equal(r.ok, false, `${label} should be rejected`);
+    assert.equal(r.newer, undefined, `${label} is not "newer"`);
+    assert.ok(typeof r.reason === "string" && r.reason.length > 0, label);
+  }
+  // A group of ANOTHER codebook does not count.
+  const two = {
+    schemaVersion: 2, revision: 1, nextId: 9,
+    codebooks: [
+      { id: "c1", name: "C", groups: [], tags: [{ name: "x", group: "g3" }] },
+      { id: "c2", name: "D", groups: [{ id: "g3", name: "B" }], tags: [] },
+    ],
+  };
+  assert.equal(M.validate(two).ok, false);
+});
+
+test("AC13: migrate v1 → v2 keeps ids, nextId, revision, group order and tag order", () => {
+  const m = M.migrate(sampleV1());
+  assert.deepEqual(plain(m), {
+    schemaVersion: 2,
+    revision: 7,
+    nextId: 5,
+    codebooks: [
+      {
+        id: "c1",
+        name: "Codebook",
+        groups: [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Outcome" }],
+        tags: [
+          { name: "Heat index", group: "g2" },
+          { name: "Temperature", group: "g2" },
+          { name: "Hospitalization", group: "g3" },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(plain(M.validate(m)), { ok: true });
+  // Names are not re-normalized by the migration (ADR-0016 §2).
+  const nfd = sampleV1();
+  nfd.codebooks[0].groups[0].tags[0] = "é";
+  assert.equal(M.migrate(nfd).codebooks[0].tags[0].name, "é");
+});
+
+test("migrate returns an equal copy for v2 and refuses unknown versions", () => {
   const d = sample();
   const m = M.migrate(d);
   assert.deepEqual(plain(m), plain(d));
   assert.notEqual(m, d);
-  assert.throws(() => M.migrate({ ...d, schemaVersion: 2 }));
+  assert.throws(() => M.migrate({ ...d, schemaVersion: 3 }));
 });

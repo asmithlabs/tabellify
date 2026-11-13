@@ -1,4 +1,5 @@
-/* Tabellify — workspace.js (F003 collection browser + F004 codebook + F005 tag monitor)
+/* Tabellify — workspace.js (F003 collection browser, F004 codebook, F005 tag monitor,
+ * F006a workspace restructure)
  *
  * Runs inside chrome://tabellify/content/workspace.xhtml, both when that document is shown
  * in the main-window tab (inside an <iframe>) and in the F001 fallback window.
@@ -9,7 +10,7 @@
  * - F003: fills a dropdown with every collection in My Library.
  * - F005: when the user picks a collection, reads its papers AND those of all its
  *   subcollections, with their manual tags and the tags on their highlights, and compares
- *   them with the codebook: "Tags used N/M", used/remaining tags per group, and a per-paper
+ *   them with the codebook: one summary line "Tags used N/M · Papers n" and a per-paper
  *   table (which replaced the F003 item list). Owner decision 2026-11-13: that table's
  *   columns are Title, one column per codebook tag grouped under its super-tag (a ✓ where
  *   the paper has the tag), and "k/M".
@@ -26,10 +27,15 @@
  *   nothing is written to the library. The layout is saved in Tabellify's own
  *   layout.json (ADR-0014) by layout-store.js (TabellifyLayoutStore), one second after the
  *   last move; a file that cannot be read means "default layout" and is never overwritten.
- * - F004: shows and edits the codebook (super-tag groups and their planned tags). The rules
+ * - F004: shows and edits the codebook (planned tags, optionally in groups). The rules
  *   live in codebook-model.js (TabellifyCodebook); the file is read and written by
  *   codebook-store.js (TabellifyCodebookStore): Tabellify's own codebooks.json in
  *   <Zotero data directory>/tabellify/ (ADR-0012). workspace.xhtml loads both first.
+ * - F006a: the tag script box adds tags and groups from one typed line (parsed by
+ *   tag-script-model.js, TabellifyTagScript; applied by TabellifyCodebook.applyScript);
+ *   the group pills show each group's tag count; "Edit groups and tags" renames and
+ *   deletes groups and removes tags. Tags without a group (ADR-0016) form one block in
+ *   the table under a blank group header.
  *
  * THE LIBRARY IS READ-ONLY. Every Zotero call here only reads (see the "Read-only
  * guarantee" row in docs/zotero-api-notes.md). Nothing is saved, changed or deleted in the
@@ -187,8 +193,8 @@ var TabellifyWorkspace = {
   async init() {
     const select = this.el("tabellify-collection-select");
     select.addEventListener("change", this.onCollectionChange);
-    // F005: "Refresh", and one delegated click listener on the per-paper table (sort
-    // buttons in the header, "Show remaining" toggles in the rows). Removed in onUnload.
+    // F005: "Refresh" (in the collection row since F006a), and one delegated click listener
+    // on the per-paper table (sort buttons in the header). Removed in onUnload.
     this.el("tabellify-monitor-refresh").addEventListener("click", this.onRefreshClick);
     const table = this.el("tabellify-items-table");
     table.addEventListener("click", this.onTableClick);
@@ -337,12 +343,6 @@ var TabellifyWorkspace = {
     "tabellify-monitor-tags-used",
     "tabellify-monitor-all-used",
     "tabellify-monitor-papers",
-    "tabellify-monitor-used",
-    "tabellify-monitor-remaining",
-    "tabellify-monitor-remaining-count",
-    "tabellify-monitor-none",
-    "tabellify-monitor-paper-one",
-    "tabellify-monitor-paper-other",
   ],
 
   /** True once MONITOR_STRINGS are formatted; renderMonitor() waits for it. */
@@ -501,52 +501,19 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * "Heat index · 3 papers". The count and the word follow the tag as plain text.
-   * @param {{ tag: string, papers: number }} used
-   */
-  usedTagLabel(used) {
-    const word = this.text(used.papers === 1 ? "tabellify-monitor-paper-one" : "tabellify-monitor-paper-other");
-    return `${used.tag} · ${used.papers} ${word}`;
-  },
-
-  /**
-   * A labelled list of tags ("Remaining: Temperature, …"), built as elements with text only.
-   * @param {string} labelId  Fluent ID of the label
-   * @param {string[]} names
-   * @param {string} className
-   */
-  tagList(labelId, names, className) {
-    const box = this.html("div", `tabellify-monitor-list ${className}`);
-    const label = this.html("span", "tabellify-monitor-list-label");
-    label.textContent = this.text(labelId);
-    const list = this.html("ul");
-    if (names.length === 0) {
-      const none = this.html("li", "tabellify-monitor-none");
-      none.textContent = this.text("tabellify-monitor-none");
-      list.append(none);
-    }
-    for (const name of names) {
-      const li = this.html("li");
-      li.textContent = name; // library/codebook text: plain text only (see SECURITY)
-      list.append(li);
-    }
-    box.append(label, list);
-    return box;
-  },
-
-  /**
-   * Show the tag monitor and the per-paper table from `monitorData` and the current
-   * codebook. Synchronous and read-only: it never reads the library, so it can run after
-   * every codebook edit and every sort click.
+   * Show the summary line, the group pills and the per-paper table from `monitorData`
+   * and the current codebook. Synchronous and read-only: it never reads the library, so it
+   * can run after every codebook edit, every column move and every sort click.
    * @returns {ReturnType<typeof TabellifyTagMonitor.summarize> | null}
    */
   renderMonitor() {
-    if (!this.monitorReady) return null;
+    if (!this.monitorReady) {
+      this.renderPills();
+      return null;
+    }
     const message = this.el("tabellify-monitor-message");
     const summary = this.el("tabellify-monitor-summary");
     const warning = this.el("tabellify-monitor-warning");
-    const groupsEl = this.el("tabellify-monitor-groups");
-    groupsEl.replaceChildren();
 
     const setMessage = (id) => {
       message.hidden = id === null;
@@ -559,6 +526,7 @@ var TabellifyWorkspace = {
     if (!data) {
       summary.hidden = true;
       warning.hidden = true;
+      this.renderPills();
       return null;
     }
 
@@ -573,38 +541,18 @@ var TabellifyWorkspace = {
     summary.hidden = !counting;
     this.el("tabellify-monitor-used").textContent =
       `${this.text("tabellify-monitor-tags-used")} ${result.used}/${result.total}`;
+    // F006a (spec Q2): one plain line, "Tags used 2/4 · Papers 3" (the dot is drawn by
+    // workspace.css), plus "All codebook tags are used." when true.
+    this.el("tabellify-monitor-papers").textContent =
+      `${this.text("tabellify-monitor-papers")} ${result.paperCount}`;
     const allUsed = this.el("tabellify-monitor-all-used");
     allUsed.hidden = !result.allUsed;
     allUsed.textContent = this.text("tabellify-monitor-all-used");
-    // F005d (spec Q5): "Remaining r" card, r = codebook tags not used yet. Hidden when
-    // every tag is used (the "All codebook tags are used." card shows instead).
-    const remaining = this.el("tabellify-monitor-remaining-total");
-    remaining.hidden = result.total - result.used <= 0;
-    remaining.textContent = `${this.text("tabellify-monitor-remaining-count")} ${result.total - result.used}`;
-    this.el("tabellify-monitor-papers").textContent =
-      `${this.text("tabellify-monitor-papers")} ${result.paperCount}`;
     warning.hidden = data.annotationErrors === 0;
     warning.textContent = this.text("tabellify-monitor-annotations-error");
 
-    if (counting) {
-      for (const group of result.groups) {
-        const box = this.html("div", "tabellify-monitor-group");
-        const heading = this.html("h3", "tabellify-monitor-group-name");
-        const name = this.html("span");
-        name.textContent = group.name;
-        const count = this.html("span", "tabellify-monitor-count");
-        count.textContent = `${group.used}/${group.total}`;
-        heading.append(name, count);
-        box.append(
-          heading,
-          this.tagList("tabellify-monitor-remaining", group.remainingTags, "tabellify-monitor-remaining"),
-          this.tagList("tabellify-monitor-used", group.usedTags.map((u) => this.usedTagLabel(u)), "tabellify-monitor-used"),
-        );
-        groupsEl.append(box);
-      }
-    }
-
     this.renderPaperTable(result, counting);
+    this.renderPills();
     if (result.paperCount === 0) {
       this.setTableHidden(true);
       this.showStatus("tabellify-no-items");
@@ -812,11 +760,31 @@ var TabellifyWorkspace = {
     return TabellifyTagMonitor.codebookGroups(this.codebook);
   },
 
+  /** True for the view-only block of tags without a group (ADR-0016 §5). */
+  isUngrouped(group) {
+    return group.id === TabellifyTagMonitor.UNGROUPED_ID;
+  },
+
+  /**
+   * A block's name as plain text for screen readers and announcements: the group's name,
+   * or "Ungrouped tags" for the ungrouped block (its header shows no text).
+   * @param {{ id: string, name: string }} group
+   */
+  blockName(group) {
+    return this.isUngrouped(group) ? this.text("tabellify-table-ungrouped-header") : group.name;
+  },
+
   /**
    * Build the group and tag header cells and the <col> elements for `groups` (already in
    * the user's order). The fixed cells (grip column, Title, k/M) come from workspace.xhtml
    * and stay. Only rebuilt when the columns changed, because rebuilding drops the keyboard
    * focus (a sort click or a live update keeps the same header).
+   *
+   * F006a (ADR-0016 §5): the ungrouped block's group header is BLANK (no text, never
+   * "null"), keeps its colSpan and its grip, and is named "Ungrouped tags" for screen
+   * readers. When the ungrouped block is the only block with columns, there are no group
+   * headers to show, so the header is ONE row: the tag headers go into the first row
+   * (before k/M) and the second row is hidden.
    * @param {Array<{ id: string, name: string, tags: string[] }>} groups
    */
   renderTableHeader(groups) {
@@ -828,22 +796,35 @@ var TabellifyWorkspace = {
     const countHeader = this.el("tabellify-items-count-header");
     for (const th of groupRow.querySelectorAll("th[data-group-id]")) th.remove();
     tagRow.replaceChildren();
+    // One header row when no real group has columns (only the ungrouped block).
+    const oneRow = groups.length > 0 && groups.every((g) => this.isUngrouped(g));
     // <col> elements: with `table-layout: fixed` the column widths come from them
     // (workspace.css), because the first header row has cells that span several columns.
     const cols = [this.html("col", "tabellify-col-grip"), this.html("col", "tabellify-col-title")];
     let tagCount = 0;
     for (const group of groups) {
-      // First row: the group (super-tag) header spans its tags.
-      const th = this.html("th", "tabellify-col-group tabellify-group-start");
-      th.setAttribute("scope", "colgroup");
-      th.colSpan = group.tags.length;
-      th.dataset.groupId = group.id;
-      th.title = group.name; // full name as a tooltip (long names are cut with "…")
-      const name = this.html("span", "tabellify-column-label");
-      name.textContent = group.name; // codebook text: plain text only (see SECURITY)
-      th.append(this.columnGrip("group", `${this.text("tabellify-table-move-group")} ${group.name}`), name);
-      groupRow.insertBefore(th, countHeader);
-      // Second row: one header per tag; its button sorts by that tag.
+      const ungrouped = this.isUngrouped(group);
+      if (!oneRow) {
+        // First row: the group (super-tag) header spans its tags.
+        const th = this.html("th", "tabellify-col-group tabellify-group-start");
+        th.setAttribute("scope", "colgroup");
+        th.colSpan = group.tags.length;
+        th.dataset.groupId = group.id;
+        const grip = this.columnGrip("group", `${this.text("tabellify-table-move-group")} ${this.blockName(group)}`);
+        if (ungrouped) {
+          // Blank on screen; the name is only for screen readers. No tooltip.
+          th.classList.add("tabellify-col-group-ungrouped");
+          th.setAttribute("aria-label", this.blockName(group));
+          th.append(grip);
+        } else {
+          th.title = group.name; // full name as a tooltip (long names are cut with "…")
+          const name = this.html("span", "tabellify-column-label");
+          name.textContent = group.name; // codebook text: plain text only (see SECURITY)
+          th.append(grip, name);
+        }
+        groupRow.insertBefore(th, countHeader);
+      }
+      // Second row (first row when oneRow): one header per tag; its button sorts by it.
       group.tags.forEach((tag, i) => {
         const tagTh = this.html("th", "tabellify-col-tag");
         if (i === 0) tagTh.classList.add("tabellify-group-start");
@@ -854,19 +835,55 @@ var TabellifyWorkspace = {
         button.dataset.sort = TabellifyTagMonitor.tagSortKey(tag);
         button.textContent = tag;
         tagTh.append(this.columnGrip("tag", `${this.text("tabellify-table-move-tag")} ${tag}`), button);
-        tagRow.append(tagTh);
+        if (oneRow) groupRow.insertBefore(tagTh, countHeader);
+        else tagRow.append(tagTh);
         cols.push(this.html("col", "tabellify-col-tag"));
         tagCount++;
       });
     }
     cols.push(this.html("col", "tabellify-col-count"));
     this.el("tabellify-items-cols").replaceChildren(...cols);
-    // Without tag columns there is no second header row: the fixed cells span one row.
-    tagRow.hidden = tagCount === 0;
-    for (const th of groupRow.querySelectorAll("th.tabellify-fixed-header")) th.rowSpan = tagCount === 0 ? 1 : 2;
+    // Without a second header row the fixed cells span one row.
+    const twoRows = tagCount > 0 && !oneRow;
+    tagRow.hidden = !twoRows;
+    for (const th of groupRow.querySelectorAll("th.tabellify-fixed-header")) th.rowSpan = twoRows ? 2 : 1;
     // A CSS custom property (variable): workspace.css makes the table at least wide enough
     // for this many tag columns; the page then scrolls sideways instead of squeezing them.
     this.el("tabellify-items-table").style.setProperty("--tabellify-tag-columns", String(tagCount));
+  },
+
+  /**
+   * The group pills (F006a): one per block with columns, in the table's column order (the
+   * ungrouped block as "Ungrouped · N", only when it has tags), then the groups without
+   * tags in codebook order ("Planned · 0"). Not interactive. Built with text only; the
+   * "·" between name and count is drawn by workspace.css. Shown whenever a codebook is
+   * loaded, with or without a chosen collection.
+   */
+  renderPills() {
+    const list = this.el("tabellify-group-pills");
+    list.replaceChildren();
+    const all = this.codebookLoadDone && this.codebook ? this.codebookGroups() : [];
+    const blocks = [
+      ...TabellifyTableLayout.orderedGroups(all, this.columnLayout),
+      ...all.filter((g) => g.tags.length === 0),
+    ];
+    list.setAttribute("aria-label", this.text("tabellify-pills-label"));
+    for (const group of blocks) {
+      const ungrouped = this.isUngrouped(group);
+      const label = ungrouped ? this.text("tabellify-pill-ungrouped") : group.name;
+      const count = group.tags.length;
+      const li = this.html("li", ungrouped ? "tabellify-pill tabellify-pill-ungrouped" : "tabellify-pill");
+      li.dataset.groupId = group.id;
+      const name = this.html("span", "tabellify-pill-name");
+      name.textContent = label; // codebook text: plain text only (see SECURITY)
+      const number = this.html("span", "tabellify-pill-count");
+      number.textContent = String(count);
+      // Screen-reader name, e.g. "Outcome: 3 tags" (attribute values are plain text).
+      li.setAttribute("aria-label", `${label}: ${count} ${this.text("tabellify-pill-tags")}`);
+      li.append(name, number);
+      list.append(li);
+    }
+    list.hidden = blocks.length === 0;
   },
 
   /**
@@ -1199,7 +1216,8 @@ var TabellifyWorkspace = {
         : TabellifyTableLayout.moveTagBy(W.columnLayout, W.codebookGroups(), groupId, tag, delta);
       const moved = W.setColumnLayout(next, groupId, tag, "keyboard");
       if (moved) {
-        const name = tag ?? W.tableGroups.find((g) => g.id === groupId)?.name ?? "";
+        const group = W.tableGroups.find((g) => g.id === groupId);
+        const name = tag ?? (group ? W.blockName(group) : "");
         W.announce(name, moved.position, moved.total);
       }
       W.focusColumnGrip(groupId, tag);
@@ -1581,8 +1599,10 @@ var TabellifyWorkspace = {
   },
 
   // ---------------------------------------------------------------------------------------
-  // Feature 004: Codebook section (uses Zotero, the DOM and the disk; checked by the owner's
-  // smoke test). Rules: TabellifyCodebook. File: TabellifyCodebookStore.
+  // Feature 004 / 006a: Codebook section (uses Zotero, the DOM and the disk; checked by the
+  // owner's smoke test). Rules: TabellifyCodebook. Script parser: TabellifyTagScript.
+  // File: TabellifyCodebookStore. Nothing here writes to the Zotero library: a tag typed
+  // into the script box exists only in codebooks.json.
   // ---------------------------------------------------------------------------------------
 
   /**
@@ -1592,19 +1612,28 @@ var TabellifyWorkspace = {
    * tests/static/workspace-script.test.mjs checks that each exists in tabellify.ftl.
    */
   CODEBOOK_STRINGS: [
-    "tabellify-codebook-group-placeholder",
+    "tabellify-script-placeholder",
+    "tabellify-script-error-unbalanced",
+    "tabellify-script-error-empty-tag",
+    "tabellify-script-error-empty-group",
+    "tabellify-script-error-nested",
+    "tabellify-script-error-missing-comma",
+    "tabellify-script-error-unclosed-quote",
+    "tabellify-script-error-duplicate",
+    "tabellify-script-nothing-new",
+    "tabellify-script-moved",
+    "tabellify-pills-label",
+    "tabellify-pill-ungrouped",
+    "tabellify-pill-tags",
+    "tabellify-table-ungrouped-header",
+    "tabellify-codebook-ungrouped",
     "tabellify-codebook-rename",
     "tabellify-codebook-rename-save",
     "tabellify-codebook-rename-cancel",
     "tabellify-codebook-delete",
-    "tabellify-codebook-delete-confirm",
     "tabellify-codebook-group-name-label",
-    "tabellify-codebook-tag-placeholder",
-    "tabellify-codebook-add-tag",
     "tabellify-codebook-remove-tag",
     "tabellify-codebook-remove-tag-tooltip",
-    "tabellify-codebook-pick-placeholder",
-    "tabellify-codebook-no-tags",
     "tabellify-codebook-saved",
     "tabellify-codebook-load-error",
     "tabellify-codebook-newer",
@@ -1633,10 +1662,10 @@ var TabellifyWorkspace = {
   /** Group whose name is being edited, or null. */
   renamingGroupId: null,
 
-  /** Group whose "Delete" was clicked once and now shows "Confirm delete", or null. */
-  confirmDeleteGroupId: null,
-
-  /** Tag names used in My Library (read once when the workspace opens). */
+  /**
+   * Tag names used in My Library (read once when the workspace opens). Not shown in 006a;
+   * kept for the 006b autocomplete (spec F006a, "Zotero / Mozilla APIs used").
+   */
   libraryTagNames: [],
 
   /** File functions and folder, set in initCodebook(). */
@@ -1657,15 +1686,17 @@ var TabellifyWorkspace = {
     const section = this.el("tabellify-codebook");
     // One listener of each kind on the whole section ("event delegation"): clicks on any
     // button inside it, now or after a re-render, reach these handlers, which look at the
-    // element's data-action to decide what to do. Removed in onUnload.
+    // element's data-action to decide what to do. "input" fires on every edit of a text
+    // box (F006a: it hides the script box's error). Removed in onUnload.
     section.addEventListener("click", this.onCodebookClick);
     section.addEventListener("keydown", this.onCodebookKeydown);
-    section.addEventListener("change", this.onCodebookChange);
+    section.addEventListener("input", this.onCodebookInput);
     try {
       await Zotero.initializationPromise;
 
       await this.formatStrings([...this.CODEBOOK_STRINGS, ...this.codebookErrorIds()]);
-      this.el("tabellify-codebook-group-input").placeholder = this.text("tabellify-codebook-group-placeholder");
+      // A plain-text attribute value (never markup), set from Fluent text.
+      this.el("tabellify-script-input").placeholder = this.text("tabellify-script-placeholder");
 
       this.codebookFs = TabellifyCodebookStore.platformFs();
       this.codebookDir = TabellifyCodebookStore.dataDir();
@@ -1689,9 +1720,9 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * Tag names used in My Library, for the "Pick from library" lists. Read-only: a SELECT
-   * query in Zotero (docs/zotero-api-notes.md). On failure the lists stay empty and the
-   * rest of the codebook works.
+   * Tag names used in My Library (for the 006b autocomplete). Read-only: a SELECT query in
+   * Zotero (docs/zotero-api-notes.md). On failure the list stays empty and the rest of the
+   * codebook works.
    */
   async loadLibraryTags() {
     try {
@@ -1712,14 +1743,19 @@ var TabellifyWorkspace = {
   async loadCodebook() {
     const result = await TabellifyCodebookStore.load(this.codebookFs, this.codebookDir);
     this.renamingGroupId = null;
-    this.confirmDeleteGroupId = null;
     if (result.status === "ok") {
       this.codebook = result.data;
       this.codebookRevision = result.data.revision;
       this.codebookEditable = true;
       if (result.existed) {
-        const count = TabellifyCodebook.groups(result.data).length;
-        this.log(`codebook: loaded ${result.path} (revision ${this.codebookRevision}, ${count} group(s))`);
+        const groups = TabellifyCodebook.groups(result.data).length;
+        const tags = result.data.codebooks[0].tags.length;
+        // ADR-0016 §3: a version 1 file is converted in memory only; the next save after
+        // a user edit writes version 2 (and keeps the old data in codebooks.v1.json).
+        const migrated = result.fromVersion < TabellifyCodebook.SCHEMA_VERSION
+          ? `, migrated in memory from schemaVersion ${result.fromVersion}; the file is rewritten only by the next edit`
+          : "";
+        this.log(`codebook: loaded ${result.path} (revision ${this.codebookRevision}, ${groups} group(s), ${tags} tag(s)${migrated})`);
       } else {
         this.log(`codebook: no file yet at ${result.path}; starting empty (nothing written)`);
       }
@@ -1741,9 +1777,10 @@ var TabellifyWorkspace = {
   /**
    * Save the result of a model edit, then show the outcome.
    * @param {{ ok: boolean, data?: object, error?: string }} edit  From a TabellifyCodebook edit
+   * @param {string | null} [savedExtraId]  Fluent ID shown after "Codebook saved." (F006a)
    * @returns {Promise<boolean>} true if the edit is now shown (saved, or shown but not saved)
    */
-  async applyCodebookEdit(edit) {
+  async applyCodebookEdit(edit, savedExtraId = null) {
     if (!edit.ok) {
       this.showCodebookStatus(edit.error, null, true);
       return false;
@@ -1755,11 +1792,20 @@ var TabellifyWorkspace = {
       const result = await TabellifyCodebookStore.saveData(
         this.codebookFs, this.codebookDir, edit.data, this.codebookRevision,
       );
+      if (result.v1Copy) {
+        // ADR-0016 §3: the one-time copy of the version 1 file. A failure (e.g. the copy
+        // already exists) does not stop the save; the .bak file holds the old data too.
+        if (result.v1Copy.ok) this.log(`codebook: kept the schemaVersion 1 data once in ${result.v1Copy.path}`);
+        else {
+          this.log(`codebook: could not write the one-time copy ${result.v1Copy.path}; continuing (codebooks.json.bak keeps the old data)`);
+          Zotero.logError(result.v1Copy.error);
+        }
+      }
       if (result.status === "saved") {
         this.codebook = result.data;
         this.codebookRevision = result.data.revision;
-        this.log(`codebook: saved revision ${this.codebookRevision} to ${result.path}`);
-        this.showCodebookStatus("tabellify-codebook-saved");
+        this.log(`codebook: saved revision ${this.codebookRevision} (schemaVersion ${result.data.schemaVersion}) to ${result.path}`);
+        this.showCodebookStatus("tabellify-codebook-saved", null, false, savedExtraId);
         return true;
       }
       if (result.status === "conflict") {
@@ -1793,13 +1839,15 @@ var TabellifyWorkspace = {
    * @param {string | null} id  Fluent ID
    * @param {string | null} [path]  File path shown after the message (as plain text)
    * @param {boolean} [isError]
+   * @param {string | null} [extraId]  A second Fluent message shown after the first
    */
-  showCodebookStatus(id, path = null, isError = false) {
+  showCodebookStatus(id, path = null, isError = false, extraId = null) {
     const status = this.el("tabellify-codebook-status");
     const pathEl = this.el("tabellify-codebook-status-path");
     status.hidden = id === null;
     status.classList.toggle("tabellify-codebook-error", isError);
-    this.el("tabellify-codebook-status-text").textContent = id === null ? "" : this.text(id);
+    const text = id === null ? "" : this.text(id);
+    this.el("tabellify-codebook-status-text").textContent = extraId ? `${text} ${this.text(extraId)}` : text;
     pathEl.textContent = path ?? "";
     pathEl.hidden = !path;
   },
@@ -1825,32 +1873,42 @@ var TabellifyWorkspace = {
    * A button that the click handler recognizes by its data-action.
    * @param {string} action
    * @param {string} labelId  Fluent ID of its text
-   * @param {string} groupId
+   * @param {string | null} groupId
    */
   actionButton(action, labelId, groupId) {
     const button = this.html("button");
     button.textContent = this.text(labelId);
     button.dataset.action = action;
-    button.dataset.groupId = groupId;
+    if (groupId !== null) button.dataset.groupId = groupId;
     return button;
   },
 
   /**
-   * Rebuild the list of groups from `this.codebook`. Every name goes in as text only
-   * (textContent / new Option), never as markup (see SECURITY at the top).
+   * Rebuild the "Edit groups and tags" list from `this.codebook` (and, through
+   * renderMonitor, the pills and the table). Every name goes in as text only
+   * (textContent), never as markup (see SECURITY at the top).
    */
   renderCodebook() {
-    // F005: the tag monitor follows every codebook change (no library read needed).
+    // F005: the table and the pills follow every codebook change (no library read needed).
     this.renderMonitor();
     this.updateCodebookControls();
     const container = this.el("tabellify-codebook-groups");
     container.replaceChildren();
-    const groups = this.codebook ? TabellifyCodebook.groups(this.codebook) : [];
-    this.el("tabellify-codebook-empty").hidden = !this.codebook || groups.length > 0;
     if (!this.codebook) return;
 
-    const available = TabellifyCodebook.availableTags(this.codebook, this.libraryTagNames);
-    for (const group of groups) {
+    // Ungrouped tags first, as in the table and the pills (only when there are some).
+    const ungrouped = TabellifyCodebook.tagsIn(this.codebook, null);
+    if (ungrouped.length > 0) {
+      const box = this.html("div", "tabellify-codebook-group tabellify-codebook-ungrouped");
+      const header = this.html("div", "tabellify-codebook-group-header");
+      const name = this.html("h3", "tabellify-codebook-group-name");
+      name.textContent = this.text("tabellify-codebook-ungrouped");
+      header.append(name);
+      box.append(header, this.editorTagList(ungrouped));
+      container.append(box);
+    }
+
+    for (const group of TabellifyCodebook.groups(this.codebook)) {
       const box = this.html("div", "tabellify-codebook-group");
       const header = this.html("div", "tabellify-codebook-group-header");
 
@@ -1869,100 +1927,122 @@ var TabellifyWorkspace = {
       } else {
         const name = this.html("h3", "tabellify-codebook-group-name");
         name.textContent = group.name;
-        header.append(name, this.actionButton("rename", "tabellify-codebook-rename", group.id));
-        if (group.id === this.confirmDeleteGroupId) {
-          header.append(
-            this.actionButton("delete-confirm", "tabellify-codebook-delete-confirm", group.id),
-            this.actionButton("delete-cancel", "tabellify-codebook-rename-cancel", group.id),
-          );
-        } else {
-          header.append(this.actionButton("delete", "tabellify-codebook-delete", group.id));
-        }
+        // Delete needs no confirmation (spec F006a Q4): the group's tags become ungrouped.
+        header.append(
+          name,
+          this.actionButton("rename", "tabellify-codebook-rename", group.id),
+          this.actionButton("delete", "tabellify-codebook-delete", group.id),
+        );
       }
       box.append(header);
-
-      if (group.tags.length === 0) {
-        const none = this.html("p", "tabellify-codebook-no-tags");
-        none.textContent = this.text("tabellify-codebook-no-tags");
-        box.append(none);
-      } else {
-        const list = this.html("ul", "tabellify-codebook-tags");
-        for (const tag of group.tags) {
-          const item = this.html("li");
-          const label = this.html("span");
-          label.textContent = tag;
-          const remove = this.actionButton("remove-tag", "tabellify-codebook-remove-tag", group.id);
-          // dataset values are attributes (plain strings), never parsed as markup.
-          remove.dataset.tag = tag;
-          remove.title = this.text("tabellify-codebook-remove-tag-tooltip");
-          remove.setAttribute("aria-label", `${this.text("tabellify-codebook-remove-tag-tooltip")}: ${tag}`);
-          item.append(label, remove);
-          list.append(item);
-        }
-        box.append(list);
-      }
-
-      const row = this.html("div", "tabellify-codebook-tag-row");
-      const tagInput = this.html("input");
-      tagInput.type = "text";
-      tagInput.placeholder = this.text("tabellify-codebook-tag-placeholder");
-      tagInput.setAttribute("aria-label", this.text("tabellify-codebook-tag-placeholder"));
-      tagInput.dataset.action = "tag-input";
-      tagInput.dataset.groupId = group.id;
-      const picker = this.html("select");
-      picker.dataset.action = "pick-tag";
-      picker.dataset.groupId = group.id;
-      picker.setAttribute("aria-label", this.text("tabellify-codebook-pick-placeholder"));
-      picker.append(new Option(this.text("tabellify-codebook-pick-placeholder"), ""));
-      // `new Option(text, value)`: library tag names are shown as plain text.
-      for (const name of available) picker.append(new Option(name, name));
-      picker.disabled = available.length === 0;
-      row.append(tagInput, this.actionButton("add-tag", "tabellify-codebook-add-tag", group.id), picker);
-      box.append(row);
-
+      const tags = TabellifyCodebook.tagsIn(this.codebook, group.id);
+      if (tags.length > 0) box.append(this.editorTagList(tags));
       container.append(box);
     }
   },
 
   /**
-   * The text box of one group ("tag-input") or the rename box ("rename-input").
-   * @param {string} action
+   * The tags of one editor box, each with its × button (removes it from the codebook only).
+   * @param {string[]} tags
+   */
+  editorTagList(tags) {
+    const list = this.html("ul", "tabellify-codebook-tags");
+    for (const tag of tags) {
+      const item = this.html("li");
+      const label = this.html("span");
+      label.textContent = tag;
+      const remove = this.actionButton("remove-tag", "tabellify-codebook-remove-tag", null);
+      // dataset values are attributes (plain strings), never parsed as markup.
+      remove.dataset.tag = tag;
+      remove.title = this.text("tabellify-codebook-remove-tag-tooltip");
+      remove.setAttribute("aria-label", `${this.text("tabellify-codebook-remove-tag-tooltip")}: ${tag}`);
+      item.append(label, remove);
+      list.append(item);
+    }
+    return list;
+  },
+
+  /**
+   * The rename box of one group.
    * @param {string} groupId
    * @returns {HTMLInputElement | undefined}
    */
-  groupInput(action, groupId) {
+  renameInput(groupId) {
     return [...this.el("tabellify-codebook-groups").querySelectorAll("input")]
-      .find((i) => i.dataset.action === action && i.dataset.groupId === groupId);
-  },
-
-  async addGroupFromInput() {
-    const input = this.el("tabellify-codebook-group-input");
-    const name = input.value;
-    if (await this.applyCodebookEdit(TabellifyCodebook.addGroup(this.codebook, name))) {
-      input.value = "";
-    }
-    input.focus();
-  },
-
-  /** @param {string} groupId */
-  async addTagFromInput(groupId) {
-    const value = this.groupInput("tag-input", groupId)?.value ?? "";
-    const shown = await this.applyCodebookEdit(TabellifyCodebook.addTagToGroup(this.codebook, groupId, value));
-    // The list was re-rendered: put the typed text back if the tag was refused, and keep
-    // the cursor in this group's box so several tags can be typed in a row.
-    const input = this.groupInput("tag-input", groupId);
-    if (input) {
-      if (!shown) input.value = value;
-      input.focus();
-    }
+      .find((i) => i.dataset.action === "rename-input" && i.dataset.groupId === groupId);
   },
 
   /** @param {string} groupId */
   async renameFromInput(groupId) {
-    const value = this.groupInput("rename-input", groupId)?.value ?? "";
+    const value = this.renameInput(groupId)?.value ?? "";
     const edit = TabellifyCodebook.renameGroup(this.codebook, groupId, value);
     if (edit.ok) this.renamingGroupId = null;
     await this.applyCodebookEdit(edit);
+  },
+
+  // ---- Feature 006a: the tag script box ------------------------------------------------
+
+  /**
+   * Show a script error under the box: the message (plain text), aria-invalid on the input,
+   * and the problem selected inside the box so the user sees where it is. The typed text
+   * stays as it is.
+   * @param {string} id  Fluent ID
+   * @param {number} start  Character offsets of the problem
+   * @param {number} end
+   */
+  showScriptError(id, start, end) {
+    const input = this.el("tabellify-script-input");
+    const error = this.el("tabellify-script-error");
+    error.textContent = this.text(id);
+    error.hidden = false;
+    input.setAttribute("aria-invalid", "true");
+    input.focus();
+    // setSelectionRange(start, end): select those characters of the text box (standard DOM).
+    input.setSelectionRange(start, end);
+  },
+
+  /** Hide the script error (the user edited the text, or an entry was added). */
+  hideScriptError() {
+    const error = this.el("tabellify-script-error");
+    error.hidden = true;
+    error.textContent = "";
+    this.el("tabellify-script-input").removeAttribute("aria-invalid");
+  },
+
+  /**
+   * Enter in the script box: parse the whole line and apply it to the codebook, all or
+   * nothing. A parse error or a refused entry keeps the text and shows the reason; an
+   * entry that changes nothing is not saved. After a successful save the box is cleared
+   * and keeps the focus, so the next entry can be typed at once.
+   */
+  async commitScript() {
+    const input = this.el("tabellify-script-input");
+    const text = String(input.value ?? "");
+    const parsed = TabellifyTagScript.parse(text);
+    if (!parsed.ok) {
+      // Only the error kind goes to Debug Output, never the typed text.
+      this.log(`codebook: script entry not accepted (${parsed.error})`);
+      this.showScriptError(parsed.error, parsed.start, parsed.end);
+      return;
+    }
+    if (parsed.items.length === 0) return; // only spaces and commas: nothing to add
+    const edit = TabellifyCodebook.applyScript(this.codebook, parsed.items);
+    if (!edit.ok) {
+      this.showScriptError(edit.error, 0, text.length);
+      return;
+    }
+    this.hideScriptError();
+    const { added, moved, unchanged, groupsCreated } = edit.report;
+    this.log(`codebook: script entry: ${added} added, ${moved} moved, ${unchanged} unchanged, ${groupsCreated} group(s) created`);
+    if (added + moved + groupsCreated === 0) {
+      input.value = "";
+      this.showCodebookStatus("tabellify-script-nothing-new");
+      input.focus();
+      return;
+    }
+    const saved = await this.applyCodebookEdit(edit, moved > 0 ? "tabellify-script-moved" : null);
+    if (saved) input.value = "";
+    input.focus();
   },
 
   /**
@@ -1974,17 +2054,12 @@ var TabellifyWorkspace = {
     const target = event.target.closest?.("button[data-action]");
     if (!target || !W.codebook || target.disabled) return;
     const { action, groupId } = target.dataset;
-    // Any other action cancels a pending "Confirm delete".
-    if (action !== "delete-confirm") W.confirmDeleteGroupId = null;
 
     switch (action) {
-      case "add-group":
-        W.addGroupFromInput();
-        break;
       case "rename":
         W.renamingGroupId = groupId;
         W.renderCodebook();
-        W.groupInput("rename-input", groupId)?.select();
+        W.renameInput(groupId)?.select();
         break;
       case "rename-save":
         W.renameFromInput(groupId);
@@ -1993,59 +2068,39 @@ var TabellifyWorkspace = {
         W.renamingGroupId = null;
         W.renderCodebook();
         break;
-      case "delete": {
-        const group = TabellifyCodebook.groups(W.codebook).find((g) => g.id === groupId);
-        if (group && group.tags.length > 0) {
-          // A group with tags needs a second click ("Confirm delete"). Plain buttons
-          // instead of window.confirm(), which is not verified in the tab's iframe.
-          W.confirmDeleteGroupId = groupId;
-          W.renderCodebook();
-        } else {
-          W.applyCodebookEdit(TabellifyCodebook.deleteGroup(W.codebook, groupId));
-        }
-        break;
-      }
-      case "delete-confirm":
-        W.confirmDeleteGroupId = null;
+      case "delete":
+        // Its tags become ungrouped (spec Q4): nothing is lost, so no confirmation.
         W.applyCodebookEdit(TabellifyCodebook.deleteGroup(W.codebook, groupId));
         break;
-      case "delete-cancel":
-        W.renderCodebook();
-        break;
-      case "add-tag":
-        W.addTagFromInput(groupId);
-        break;
       case "remove-tag":
-        W.applyCodebookEdit(TabellifyCodebook.removeTagFromGroup(W.codebook, groupId, target.dataset.tag));
+        W.applyCodebookEdit(TabellifyCodebook.removeTagFromCodebook(W.codebook, target.dataset.tag));
         break;
     }
   },
 
-  /** Enter in a text box does the same as its button; Escape cancels a rename. */
+  /** Enter in the script box adds the entry; Enter / Escape in a rename box save / cancel. */
   onCodebookKeydown: (event) => {
     const W = TabellifyWorkspace;
     const { action, groupId } = event.target.dataset ?? {};
     if (!action || !W.codebook) return;
     // Only the text boxes are handled; Enter on a button keeps its normal "click".
-    if (event.key === "Enter" && action.endsWith("-input")) {
+    if (event.key === "Enter" && action === "script-input") {
       event.preventDefault();
-      W.confirmDeleteGroupId = null;
-      if (action === "add-group-input") W.addGroupFromInput();
-      else if (action === "tag-input") W.addTagFromInput(groupId);
-      else if (action === "rename-input") W.renameFromInput(groupId);
+      W.commitScript();
+    } else if (event.key === "Enter" && action === "rename-input") {
+      event.preventDefault();
+      W.renameFromInput(groupId);
     } else if (event.key === "Escape" && action === "rename-input") {
       W.renamingGroupId = null;
       W.renderCodebook();
     }
   },
 
-  /** Choosing a name in a "Pick from library" list adds it to that group. */
-  onCodebookChange: (event) => {
+  /** Editing the script box hides its error (the text no longer matches the message). */
+  onCodebookInput: (event) => {
     const W = TabellifyWorkspace;
-    const { action, groupId } = event.target.dataset ?? {};
-    if (action !== "pick-tag" || !W.codebook || event.target.value === "") return;
-    W.confirmDeleteGroupId = null;
-    W.applyCodebookEdit(TabellifyCodebook.addTagToGroup(W.codebook, groupId, event.target.value));
+    if (event.target?.dataset?.action !== "script-input") return;
+    W.hideScriptError();
   },
 
   /**
@@ -2074,7 +2129,7 @@ var TabellifyWorkspace = {
     const section = TabellifyWorkspace.el("tabellify-codebook");
     section?.removeEventListener("click", TabellifyWorkspace.onCodebookClick);
     section?.removeEventListener("keydown", TabellifyWorkspace.onCodebookKeydown);
-    section?.removeEventListener("change", TabellifyWorkspace.onCodebookChange);
+    section?.removeEventListener("input", TabellifyWorkspace.onCodebookInput);
     window.removeEventListener("load", TabellifyWorkspace.onLoad);
     window.removeEventListener("unload", TabellifyWorkspace.onUnload);
   },
