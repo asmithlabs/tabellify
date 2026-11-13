@@ -1,13 +1,15 @@
-// Owner decision 2026-11-13 (Feature 005c): rendering checks for the per-paper table's
-// codebook tag columns, run against the REAL workspace.js code in Node.
+// Owner decision 2026-11-13 (Feature 005c) and Feature 006a AC16: rendering checks for the
+// per-paper table's codebook tag columns, the ungrouped block, the group pills and the tag
+// script box, run against the REAL workspace.js code in Node.
 //
 // workspace.js normally runs in Zotero's privileged document. Here it runs in a node:vm
 // sandbox with a tiny FAKE DOM (below): just enough elements, attributes and simple CSS
 // selectors for renderPaperTable(), the header builder, the Alt+arrow handler and the sort
 // click handler. The fake has no innerHTML (or any other markup parser): touching one throws,
 // so these tests also prove that tag names go onto the page as plain text.
-// The models (tag-monitor-model.js, table-layout-model.js) are loaded first, as
-// workspace.xhtml does. `window` is not defined, so workspace.js does not start itself.
+// The models and stores are loaded first, in workspace.xhtml's order. `window` is not
+// defined, so workspace.js does not start itself. The codebook store gets a fake file
+// system (a Map), so a script-box commit really goes through the save path.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -138,6 +140,8 @@ class FakeElement {
     return null;
   }
   focus() { this.focused = true; }
+  // Text inputs (the script box): the selected range, set by setSelectionRange.
+  setSelectionRange(start, end) { this.selection = [start, end]; }
 }
 
 /** The parts of workspace.xhtml the table code uses, built like the real markup. */
@@ -183,7 +187,8 @@ function load() {
   const document = makeDocument();
   const debug = [];
   const sandbox = vm.createContext({ document, Zotero: { debug: (m) => debug.push(m), logError: () => {} } });
-  for (const name of ["tag-monitor-model.js", "table-layout-model.js", "workspace.js"]) {
+  for (const name of ["codebook-model.js", "codebook-store.js", "tag-script-model.js", "tag-monitor-model.js",
+    "table-layout-model.js", "workspace.js"]) {
     const file = join(contentDir, name);
     vm.runInContext(readFileSync(file, "utf8"), sandbox, { filename: file });
   }
@@ -196,17 +201,35 @@ function load() {
     "tabellify-table-move-paper": "Move paper:",
     "tabellify-table-moved-to": "moved to position",
     "tabellify-table-of": "of",
+    "tabellify-table-ungrouped-header": "Ungrouped tags",
+    "tabellify-pill-ungrouped": "Ungrouped",
+    "tabellify-pill-tags": "tags",
+    "tabellify-pills-label": "Groups",
   };
   W.monitorReady = true;
   W.codebookLoadDone = true;
   W.layoutEditable = false; // no layout file in these tests: layoutChanged() does nothing
-  return { W, T: sandbox.TabellifyTagMonitor, L: sandbox.TabellifyTableLayout, document, debug };
+  return {
+    W, T: sandbox.TabellifyTagMonitor, L: sandbox.TabellifyTableLayout, C: sandbox.TabellifyCodebook,
+    document, debug,
+  };
 }
 
-/** A codebooks.json-shaped object (F004) with the given groups. */
-const codebookData = (groups) => ({
-  schemaVersion: 1, revision: 1, nextId: 9,
-  codebooks: [{ id: "c1", name: "Codebook", groups }],
+/**
+ * A codebooks.json-shaped object, schema 2 (ADR-0016), written compactly: `groups` as
+ * `{ id, name, tags }` and the names of the ungrouped tags (stored first).
+ */
+const codebookData = (groups, ungrouped = []) => ({
+  schemaVersion: 2, revision: 1, nextId: 9,
+  codebooks: [{
+    id: "c1",
+    name: "Codebook",
+    groups: groups.map((g) => ({ id: g.id, name: g.name })),
+    tags: [
+      ...ungrouped.map((name) => ({ name, group: null })),
+      ...groups.flatMap((g) => g.tags.map((name) => ({ name, group: g.id }))),
+    ],
+  }],
 });
 const GROUPS = () => [
   { id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] },
@@ -234,10 +257,10 @@ function monitorData() {
 }
 
 /** Load, set up a codebook and a collection, and render once. */
-function setup({ groups = GROUPS(), countItemTags = false, columnLayout = null } = {}) {
+function setup({ groups = GROUPS(), ungrouped = [], countItemTags = false, columnLayout = null } = {}) {
   const env = load();
   const { W, L } = env;
-  W.codebook = codebookData(groups);
+  W.codebook = codebookData(groups, ungrouped);
   W.monitorData = monitorData();
   W.collectionKeys = W.monitorData.collectionKeys;
   W.currentCollection = "1";
@@ -248,12 +271,13 @@ function setup({ groups = GROUPS(), countItemTags = false, columnLayout = null }
 }
 
 const headerRow = (doc, id) => doc.byId.get(id).children;
-/** Short names of the header cells: "grip", "title", "count", "group:<id>", "tag:<name>". */
+/** Short names of the first header row: "grip", "title", "count", "group:<id>/<span>", "tag:<name>". */
 function groupHeaders(doc) {
   return headerRow(doc, "tabellify-items-group-row").map((th) => {
     if (th.classList.contains("tabellify-col-grip")) return "grip";
     if (th.classList.contains("tabellify-col-title")) return "title";
     if (th.classList.contains("tabellify-col-count")) return "count";
+    if (th.hasAttribute("data-tag")) return `tag:${th.dataset.tag}`;
     return `group:${th.dataset.groupId}/${th.colSpan}`;
   });
 }
@@ -379,7 +403,7 @@ test("keyboard: Alt+Right/Left moves a tag only inside its group; focus stays on
   altKey(W, tagGrip(document, "Heat index"), "ArrowRight");
   assert.deepEqual(tagHeaders(document), ["Temperature", "Heat index", "Mortality"]);
   // The codebook itself is unchanged.
-  assert.deepEqual(W.codebook.codebooks[0].groups[0].tags, ["Heat index", "Temperature"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(W.codebook)), codebookData(GROUPS()));
   assert.deepEqual(JSON.parse(JSON.stringify(W.columnLayout)), { groupOrder: [], tagOrder: { g2: ["Temperature", "Heat index"] } });
 });
 
@@ -485,12 +509,251 @@ test("F005d AC14: never complete without codebook tags (k/M shows –)", () => {
   }
 });
 
-test("F005d Q5: the Remaining card shows M − k and hides when every tag is used", () => {
+test("F006a Q2: one summary line (Tags used k/M, Papers n, all used); no Remaining card", () => {
   const { W, document } = setup(); // 3 codebook tags, all 3 used across the collection
-  const card = document.getElementById("tabellify-monitor-remaining-total");
-  assert.equal(card.hidden, true, "all used: no Remaining card");
+  assert.equal(document.getElementById("tabellify-monitor-summary").hidden, false);
+  assert.equal(document.getElementById("tabellify-monitor-used").textContent, "tabellify-monitor-tags-used 3/3"); // test strings: ID as text
+  assert.equal(document.getElementById("tabellify-monitor-papers").textContent, "tabellify-monitor-papers 3");
+  assert.equal(document.getElementById("tabellify-monitor-all-used").hidden, false);
   W.codebook = codebookData([{ id: "g2", name: "Exposure", tags: ["Heat index", "Humidity", "Wind"] }]);
   W.renderMonitor();
-  assert.equal(card.hidden, false);
-  assert.equal(card.textContent, "tabellify-monitor-remaining-count 2"); // test strings: ID as text
+  assert.equal(document.getElementById("tabellify-monitor-used").textContent, "tabellify-monitor-tags-used 1/3");
+  assert.equal(document.getElementById("tabellify-monitor-all-used").hidden, true);
+  // The removed per-group cards and the Remaining card are not filled any more.
+  assert.equal(document.byId.has("tabellify-monitor-groups"), false);
+  assert.equal(document.byId.has("tabellify-monitor-remaining-total"), false);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 006a AC16: the ungrouped block, the one-row header, the pills, the script box
+// ---------------------------------------------------------------------------------------
+
+/** Every text and attribute value in a subtree (to look for "null"). */
+function allText(el) {
+  return [el.text, ...el.attrs.values(), ...el.children.flatMap(allText)];
+}
+
+test("AC16: ungrouped tags sit first under a BLANK group header (colSpan, aria-label, no 'null')", () => {
+  const { document } = setup({ ungrouped: ["age", "sex"] });
+  assert.deepEqual(groupHeaders(document), ["grip", "title", "group:ungrouped/2", "group:g2/2", "group:g3/1", "count"]);
+  assert.deepEqual(tagHeaders(document), ["age", "sex", "Heat index", "Temperature", "Mortality"]);
+  const th = headerRow(document, "tabellify-items-group-row").find((h) => h.dataset.groupId === "ungrouped");
+  assert.equal(th.textContent, "", "the header shows no text");
+  assert.equal(th.colSpan, 2);
+  assert.ok(th.classList.contains("tabellify-col-group-ungrouped"));
+  assert.equal(th.getAttribute("aria-label"), "Ungrouped tags");
+  assert.equal(th.hasAttribute("title"), false, "no tooltip");
+  assert.equal(th.querySelector(".tabellify-grip").getAttribute("aria-label"), "Move group: Ungrouped tags");
+  // The ungrouped tags are real columns: ✓ cells and k/M include them.
+  assert.equal(bodyRows(document)[0].children.length, 1 + 1 + 5 + 1);
+  assert.ok(bodyRows(document).every((tr) => tr.children.at(-1).textContent.endsWith("/5")));
+  // "null" appears nowhere in the table.
+  const table = document.byId.get("tabellify-items-table");
+  assert.ok(allText(table).every((t) => !String(t).includes("null")), "no 'null' in the table");
+});
+
+test("AC16: only ungrouped tags → one header row (tag headers in the first row, second row hidden)", () => {
+  const { document } = setup({ groups: [{ id: "g2", name: "Empty", tags: [] }], ungrouped: ["age", "sex"] });
+  assert.deepEqual(groupHeaders(document), ["grip", "title", "tag:age", "tag:sex", "count"]);
+  assert.equal(document.byId.get("tabellify-items-tag-row").hidden, true);
+  assert.deepEqual(tagHeaders(document), []);
+  const fixed = headerRow(document, "tabellify-items-group-row").filter((th) => th.classList.contains("tabellify-fixed-header"));
+  assert.deepEqual(fixed.map((th) => th.rowSpan), [1, 1, 1]);
+  assert.equal(document.byId.get("tabellify-items-cols").children.length, 2 + 2 + 1);
+  assert.deepEqual(bodyRows(document).map((tr) => tr.children.length), [5, 5, 5]);
+  // Sorting by an ungrouped tag column works (the sort button is in the first row).
+  const age = headerRow(document, "tabellify-items-group-row").find((th) => th.dataset.tag === "age");
+  assert.equal(age.querySelector("button[data-sort]").dataset.sort, "tag:age");
+});
+
+test("AC16: a saved order with 'ungrouped' in groupOrder is applied; Alt+arrow moves the block and its tags", () => {
+  const { W, document } = setup({
+    ungrouped: ["age", "sex"],
+    columnLayout: { groupOrder: ["g2", "ungrouped"], tagOrder: { ungrouped: ["sex", "age"] } },
+  });
+  assert.deepEqual(groupHeaders(document), ["grip", "title", "group:g2/2", "group:ungrouped/2", "group:g3/1", "count"]);
+  assert.deepEqual(tagHeaders(document), ["Heat index", "Temperature", "sex", "age", "Mortality"]);
+  // The blank header's grip moves the whole block.
+  altKey(W, groupGrip(document, "ungrouped"), "ArrowLeft");
+  assert.deepEqual(groupHeaders(document), ["grip", "title", "group:ungrouped/2", "group:g2/2", "group:g3/1", "count"]);
+  assert.match(document.byId.get("tabellify-table-announce").textContent, /^Ungrouped tags moved to position 1 of 3$/);
+  // An ungrouped tag moves inside the block only.
+  altKey(W, tagGrip(document, "age"), "ArrowLeft");
+  assert.deepEqual(tagHeaders(document), ["age", "sex", "Heat index", "Temperature", "Mortality"]);
+  altKey(W, tagGrip(document, "age"), "ArrowLeft");
+  assert.deepEqual(tagHeaders(document), ["age", "sex", "Heat index", "Temperature", "Mortality"]);
+});
+
+/** Pills as "<name> · <count>" plus their classes. */
+function pills(doc) {
+  return doc.getElementById("tabellify-group-pills").children.map((li) => {
+    const [name, count] = li.children;
+    return `${name.textContent} · ${count.textContent}${li.classList.contains("tabellify-pill-ungrouped") ? " (u)" : ""}`;
+  });
+}
+
+test("AC16: pills follow the table's block order, then groups without tags with 0; ungrouped hidden at 0", () => {
+  const { W, document } = setup({
+    groups: [...GROUPS(), { id: "g5", name: "Planned", tags: [] }],
+    ungrouped: ["age"],
+    columnLayout: { groupOrder: ["g3", "ungrouped", "g2"], tagOrder: {} },
+  });
+  assert.deepEqual(pills(document), ["Outcome · 1", "Ungrouped · 1 (u)", "Exposure · 2", "Empty · 0", "Planned · 0"]);
+  const list = document.getElementById("tabellify-group-pills");
+  assert.equal(list.hidden, false);
+  assert.equal(list.getAttribute("aria-label"), "Groups");
+  assert.equal(list.children[1].getAttribute("aria-label"), "Ungrouped: 1 tags");
+  assert.equal(list.children[0].getAttribute("aria-label"), "Outcome: 1 tags");
+  // No ungrouped tags → no ungrouped pill.
+  W.codebook = codebookData(GROUPS());
+  W.renderMonitor();
+  assert.deepEqual(pills(document), ["Outcome · 1", "Exposure · 2", "Empty · 0"]);
+  // No codebook → no pills, list hidden.
+  W.codebook = null;
+  W.renderMonitor();
+  assert.deepEqual(pills(document), []);
+  assert.equal(list.hidden, true);
+});
+
+test("AC16: pills are shown before a collection is chosen; names with markup stay text", () => {
+  const evil = '<img src=x onerror="alert(1)">';
+  const env = load();
+  env.W.codebook = codebookData([{ id: "g2", name: evil, tags: ["a"] }]);
+  env.W.monitorReady = false; // strings not ready yet: pills still render from the codebook
+  env.W.renderMonitor();
+  const li = env.document.getElementById("tabellify-group-pills").children[0];
+  assert.equal(li.children[0].textContent, evil);
+  assert.equal(li.children[0].children.length, 0, "plain text, no child elements");
+  assert.equal(li.getAttribute("aria-label"), `${evil}: 1 tags`);
+});
+
+/** A setup with the script box and a fake codebooks.json on a fake disk. */
+function scriptSetup({ onDisk, codebook }) {
+  const env = setup({ groups: GROUPS() });
+  const { W, document } = env;
+  const files = new Map([["/d/codebooks.json", JSON.stringify(onDisk)]]);
+  const writes = [];
+  W.codebookFs = {
+    readJSON: async (path) => {
+      if (!files.has(path)) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
+      return JSON.parse(files.get(path));
+    },
+    writeJSON: async (path, value, options) => {
+      writes.push([path, JSON.parse(JSON.stringify(options))]);
+      if (options?.mode === "create" && files.has(path)) throw new Error("exists");
+      if (options?.backupFile && files.has(path)) files.set(options.backupFile, files.get(path));
+      files.set(path, JSON.stringify(value));
+    },
+    makeDirectory: async () => {},
+    join: (...parts) => parts.join("/"),
+  };
+  W.codebookDir = "/d";
+  W.codebook = codebook;
+  W.codebookRevision = codebook.revision;
+  W.codebookEditable = true;
+  const input = document.getElementById("tabellify-script-input");
+  input.setAttribute("data-action", "script-input");
+  return { ...env, files, writes, input, error: document.getElementById("tabellify-script-error") };
+}
+
+test("AC16: a successful script commit saves, clears the input, keeps focus, updates pills and table", async () => {
+  const data = codebookData(GROUPS());
+  const s = scriptSetup({ onDisk: data, codebook: data });
+  s.input.value = "age, Outcome(Heat index), Humidity(rh)";
+  let prevented = false;
+  s.W.onCodebookKeydown({ key: "Enter", target: s.input, preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  // Let the save (several awaits on the fake disk) finish.
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(s.input.value, "");
+  assert.equal(s.input.focused, true);
+  assert.equal(s.input.hasAttribute("aria-invalid"), false);
+  const saved = JSON.parse(s.files.get("/d/codebooks.json"));
+  assert.equal(saved.revision, 2);
+  assert.equal(saved.schemaVersion, 2);
+  assert.deepEqual(pills(s.document), ["Ungrouped · 1 (u)", "Exposure · 1", "Outcome · 2", "Humidity · 1", "Empty · 0"]);
+  assert.deepEqual(tagHeaders(s.document), ["age", "Temperature", "Mortality", "Heat index", "rh"]);
+  // "Codebook saved." plus "Some tags were moved…" (test strings: IDs as text).
+  assert.equal(s.document.getElementById("tabellify-codebook-status-text").textContent,
+    "tabellify-codebook-saved tabellify-script-moved");
+  // Only Tabellify's own file was written.
+  assert.deepEqual(s.writes.map((w) => w[0]), ["/d/codebooks.json"]);
+});
+
+test("AC16: a failed script commit keeps the text, sets aria-invalid and selects the problem; editing hides it", async () => {
+  const data = codebookData(GROUPS());
+  const s = scriptSetup({ onDisk: data, codebook: data });
+  s.input.value = "Exposure(Heat index";
+  await s.W.commitScript();
+  assert.equal(s.input.value, "Exposure(Heat index");
+  assert.equal(s.input.getAttribute("aria-invalid"), "true");
+  assert.deepEqual(s.input.selection, [8, 19]);
+  assert.equal(s.error.hidden, false);
+  assert.equal(s.error.textContent, "tabellify-script-error-unbalanced");
+  assert.deepEqual(s.writes, [], "nothing saved");
+  // Editing the text hides the error.
+  s.W.onCodebookInput({ target: s.input });
+  assert.equal(s.error.hidden, true);
+  assert.equal(s.input.hasAttribute("aria-invalid"), false);
+});
+
+test("AC16: an entry with nothing new is not saved; an empty entry does nothing", async () => {
+  const data = codebookData(GROUPS());
+  const s = scriptSetup({ onDisk: data, codebook: data });
+  s.input.value = "Exposure(Heat index)";
+  await s.W.commitScript();
+  assert.deepEqual(s.writes, []);
+  assert.equal(s.input.value, "");
+  assert.equal(s.document.getElementById("tabellify-codebook-status-text").textContent, "tabellify-script-nothing-new");
+  s.input.value = " , ";
+  await s.W.commitScript();
+  assert.equal(s.input.value, " , ");
+  assert.deepEqual(s.writes, []);
+});
+
+test("AC16 / ADR-0016 §3: the first commit over a version 1 file keeps the v1 copy and writes version 2", async () => {
+  const v1 = {
+    schemaVersion: 1, revision: 4, nextId: 4,
+    codebooks: [{ id: "c1", name: "Codebook", groups: [{ id: "g2", name: "Exposure", tags: ["Heat index"] }] }],
+  };
+  const env = load();
+  const s = scriptSetup({ onDisk: v1, codebook: env.C.migrate(v1) });
+  s.input.value = "age";
+  await s.W.commitScript();
+  assert.deepEqual(JSON.parse(s.files.get("/d/codebooks.v1.json")), v1);
+  assert.equal(JSON.parse(s.files.get("/d/codebooks.json")).schemaVersion, 2);
+  assert.equal(JSON.parse(s.files.get("/d/codebooks.json.bak")).schemaVersion, 1);
+  assert.deepEqual(s.writes.map((w) => w[1]), [{ mode: "create" }, { tmpPath: "/d/codebooks.json.tmp", backupFile: "/d/codebooks.json.bak" }]);
+  assert.ok(s.debug.some((m) => m.includes("kept the schemaVersion 1 data once")), s.debug.join("\n"));
+});
+
+test("AC16: the editor lists ungrouped tags first; Delete ungroups a group's tags without confirmation", async () => {
+  const data = codebookData(GROUPS(), ["age"]);
+  const s = scriptSetup({ onDisk: data, codebook: data });
+  s.W.renderCodebook();
+  const boxes = () => s.document.getElementById("tabellify-codebook-groups").children.map((box) => [
+    box.querySelector(".tabellify-codebook-group-name").textContent,
+    box.querySelectorAll("li").map((li) => li.children[0].textContent),
+  ]);
+  assert.deepEqual(boxes(), [
+    ["tabellify-codebook-ungrouped", ["age"]],
+    ["Exposure", ["Heat index", "Temperature"]],
+    ["Outcome", ["Mortality"]],
+    ["Empty", []],
+  ]);
+  const del = s.document.getElementById("tabellify-codebook-groups").querySelectorAll("button[data-action]")
+    .find((b) => b.dataset.action === "delete" && b.dataset.groupId === "g2");
+  s.W.onCodebookClick({ target: del });
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(boxes(), [
+    ["tabellify-codebook-ungrouped", ["age", "Heat index", "Temperature"]],
+    ["Outcome", ["Mortality"]],
+    ["Empty", []],
+  ]);
+  // The × button removes a tag from the codebook only.
+  const remove = s.document.getElementById("tabellify-codebook-groups").querySelectorAll("button[data-action]")
+    .find((b) => b.dataset.action === "remove-tag" && b.dataset.tag === "Mortality");
+  s.W.onCodebookClick({ target: remove });
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(boxes().find((b) => b[0] === "Outcome"), ["Outcome", []]);
 });

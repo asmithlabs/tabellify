@@ -36,6 +36,16 @@
 //   - layout-store.js loads after table-layout-model.js and before workspace.js, and uses
 //     no Zotero global at all (workspace.js passes it the folder from the codebook store)
 //   - the pending layout-save timer is cleared on unload; layout messages are formatted
+// Feature 006a (AC17) adds:
+//   - script order: codebook-model, codebook-store, tag-script-model, tag-monitor-model,
+//     table-layout-model, layout-store, workspace
+//   - tag-script-model.js uses no Zotero / DOM / IOUtils globals
+//   - the removed Fluent IDs and element IDs (tag monitor section, group cards, chip lists,
+//     summary cards, Add group / Add tag / Pick from library) are gone from src/
+//   - every new Fluent ID exists, starts with tabellify-, and the ones shown from JS are
+//     formatted at start-up (including the parser's error IDs)
+//   - the script box's listeners (keydown, input; delegated on the section) are removed in
+//     onUnload; the Zotero allow-list gains no entry
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -54,6 +64,7 @@ const js = code("content/workspace.js");
 const modelJs = code("content/codebook-model.js");
 const storeJs = code("content/codebook-store.js");
 const monitorJs = code("content/tag-monitor-model.js");
+const scriptJs = code("content/tag-script-model.js");
 const layoutModelJs = code("content/table-layout-model.js");
 const layoutStoreJs = code("content/layout-store.js");
 const ftlIds = new Set([...read("locale/en-US/tabellify.ftl").matchAll(/^(tabellify-[\w-]+)\s*=/gm)].map((m) => m[1]));
@@ -166,7 +177,8 @@ test("F005: tag-monitor-model.js uses no Zotero / DOM / IOUtils globals", () => 
 test("F005: every MONITOR_STRINGS ID exists in tabellify.ftl and starts with tabellify-monitor-", () => {
   const list = /MONITOR_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
   const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(ids.length >= 10, "MONITOR_STRINGS not found (check is vacuous)");
+  // F006a removed the per-group card and chip strings, leaving the summary line's.
+  assert.ok(ids.length >= 5, "MONITOR_STRINGS not found (check is vacuous)");
   for (const id of ids) {
     assert.match(id, /^tabellify-monitor-/);
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
@@ -350,4 +362,130 @@ test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never
   for (const expr of interpolated) assert.match(expr, /^(?:id|Number\(paperId\))$/, `selector built from ${expr}`);
   // The column drag carries only its kind.
   assert.match(js, /dt\.setData\(W\.COLUMN_DRAG_TYPE, grip\.dataset\.grip\)/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 006a AC17
+// ---------------------------------------------------------------------------------------
+
+test("F006a AC17: script order is model, store, tag script, tag monitor, layout model, layout store, workspace", () => {
+  const scripts = [...xhtml.matchAll(/<script\s+src="chrome:\/\/tabellify\/content\/([\w-]+\.js)"\s*\/>/g)].map((m) => m[1]);
+  assert.deepEqual(scripts, [
+    "codebook-model.js",
+    "codebook-store.js",
+    "tag-script-model.js",
+    "tag-monitor-model.js",
+    "table-layout-model.js",
+    "layout-store.js",
+    "workspace.js",
+  ]);
+});
+
+test("F006a AC17: tag-script-model.js uses no Zotero / DOM / IOUtils globals", () => {
+  assert.match(scriptJs, /var TabellifyTagScript\b/, "parser not found (check is vacuous)");
+  assert.doesNotMatch(scriptJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
+});
+
+test("F006a AC17: removed Fluent IDs and element IDs are gone from src/", () => {
+  const ftl = read("locale/en-US/tabellify.ftl");
+  const removedFluent = [
+    "tabellify-workspace-description", "tabellify-codebook-heading", "tabellify-codebook-intro",
+    "tabellify-codebook-group-placeholder", "tabellify-codebook-add-group", "tabellify-codebook-empty",
+    "tabellify-codebook-tag-placeholder", "tabellify-codebook-add-tag", "tabellify-codebook-pick-placeholder",
+    "tabellify-codebook-delete-confirm", "tabellify-codebook-no-tags", "tabellify-monitor-heading",
+    "tabellify-monitor-used", "tabellify-monitor-remaining", "tabellify-monitor-none",
+    "tabellify-monitor-paper-one", "tabellify-monitor-paper-other", "tabellify-monitor-remaining-count",
+  ];
+  // Whole-ID matches only ("tabellify-monitor-used" must not match a longer ID that starts the same).
+  const has = (text, id) => new RegExp(`${id}(?![\\w-])`).test(text);
+  // "tabellify-monitor-used" is also the kept ELEMENT id of the summary's first part (spec:
+  // element IDs that stay), so for it only Fluent uses are checked in the code.
+  const keptElementIds = new Set(["tabellify-monitor-used"]);
+  for (const id of removedFluent) {
+    assert.ok(!ftlIds.has(id), `${id} is still in tabellify.ftl`);
+    assert.ok(!has(ftl, id), `${id} is still mentioned in tabellify.ftl`);
+    if (keptElementIds.has(id)) {
+      assert.ok(!xhtml.includes(`data-l10n-id="${id}"`), `${id} is still a Fluent ID in workspace.xhtml`);
+      assert.ok(!new RegExp(`(?:text|formatValue)\\(\\s*"${id}"`).test(js), `${id} is still shown from workspace.js`);
+      const listed = /MONITOR_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+      assert.ok(!has(listed, id), `${id} is still in MONITOR_STRINGS`);
+      continue;
+    }
+    assert.ok(!has(js, id), `${id} is still used in workspace.js`);
+    assert.ok(!has(xhtml, id), `${id} is still used in workspace.xhtml`);
+  }
+  const removedElements = [
+    "tabellify-tag-monitor", "tabellify-monitor-header", "tabellify-monitor-groups",
+    "tabellify-monitor-remaining-total", "tabellify-codebook-add-row", "tabellify-codebook-group-input",
+    "tabellify-codebook-add-group", "tabellify-codebook-empty",
+  ];
+  for (const id of removedElements) {
+    assert.ok(!has(xhtml, id), `#${id} is still in workspace.xhtml`);
+    // Element lookups only ("tabellify-tag-monitor" is also the Notifier observer's debug label).
+    assert.ok(!js.includes(`el("${id}")`), `#${id} is still looked up in workspace.js`);
+  }
+  // The removed code paths: per-group cards, chip lists, the pick-from-library list,
+  // the delete confirmation, and the v1 edits.
+  assert.doesNotMatch(js, /usedTagLabel|tagList\(|pick-tag|add-tag|add-group|confirmDeleteGroupId|onCodebookChange/);
+  assert.doesNotMatch(js, /addTagToGroup|removeTagFromGroup|availableTags/);
+});
+
+test("F006a AC17: new Fluent IDs exist; JS-shown ones (and the parser's errors) are formatted at start-up", () => {
+  const added = [
+    "tabellify-script-label", "tabellify-script-placeholder", "tabellify-script-help",
+    "tabellify-script-error-unbalanced", "tabellify-script-error-empty-tag", "tabellify-script-error-empty-group",
+    "tabellify-script-error-nested", "tabellify-script-error-missing-comma", "tabellify-script-error-unclosed-quote",
+    "tabellify-script-error-duplicate", "tabellify-script-nothing-new", "tabellify-script-moved",
+    "tabellify-pills-label", "tabellify-pill-ungrouped", "tabellify-pill-tags", "tabellify-table-ungrouped-header",
+    "tabellify-codebook-edit", "tabellify-codebook-ungrouped",
+  ];
+  for (const id of added) {
+    assert.match(id, /^tabellify-/);
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+  }
+  // Set in workspace.xhtml with data-l10n-id.
+  for (const id of ["tabellify-script-label", "tabellify-script-help", "tabellify-codebook-edit"]) {
+    assert.match(xhtml, new RegExp(`data-l10n-id="${id}"`), `${id} not used in workspace.xhtml`);
+  }
+  // Shown from JS: formatted once in CODEBOOK_STRINGS.
+  const list = /CODEBOOK_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const formatted = new Set([...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+  const errors = [...scriptJs.matchAll(/\bERR_\w+:\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(errors.length, 7, "parser error IDs not found (check is vacuous)");
+  for (const id of [...errors, ...added.filter((id) => !["tabellify-script-label", "tabellify-script-help", "tabellify-codebook-edit"].includes(id))]) {
+    assert.ok(formatted.has(id), `${id} is not in CODEBOOK_STRINGS`);
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+  }
+  // The heading text (spec Q9); the tab title stays "Tabellify".
+  assert.match(read("locale/en-US/tabellify.ftl"), /^tabellify-workspace-title = Tabellify Codebook$/m);
+  assert.match(read("locale/en-US/tabellify.ftl"), /^tabellify-tab-title = Tabellify$/m);
+});
+
+test("F006a AC17: script box markup and listener symmetry (keydown + input on the section)", () => {
+  assert.match(xhtml, /<html:input id="tabellify-script-input" type="text" data-action="script-input"/);
+  assert.match(xhtml, /aria-describedby="tabellify-script-help tabellify-script-error"/);
+  assert.match(xhtml, /<html:p id="tabellify-script-error" role="alert" hidden="hidden"><\/html:p>/);
+  assert.match(xhtml, /<html:ul id="tabellify-group-pills"/);
+  assert.match(xhtml, /<html:details id="tabellify-codebook-editor">\s*<html:summary data-l10n-id="tabellify-codebook-edit">/);
+  // The script box sits inside the codebook fieldset (disabled while saving / unloadable).
+  const fieldset = /<html:fieldset id="tabellify-codebook-controls"[^>]*>([\s\S]*?)<\/html:fieldset>/.exec(xhtml)?.[1] ?? "";
+  assert.match(fieldset, /id="tabellify-script-input"/);
+  assert.match(fieldset, /id="tabellify-codebook-editor"/);
+  // Refresh and the checkbox sit in the collection row.
+  const row = /<html:div id="tabellify-collection-row">([\s\S]*?)<\/html:div>/.exec(xhtml)?.[1] ?? "";
+  assert.match(row, /id="tabellify-monitor-refresh"/);
+  assert.match(row, /id="tabellify-monitor-count-item-tags"/);
+  assert.match(row, /id="tabellify-monitor-summary"/);
+  // Layout order: heading, collection row, codebook (script box, pills, editor), toolbar, table.
+  const order = ["tabellify-workspace-title", "tabellify-collection-row", "tabellify-script-input",
+    "tabellify-group-pills", "tabellify-codebook-editor", "tabellify-table-toolbar", "tabellify-items-table"]
+    .map((id) => xhtml.search(new RegExp(`"${id}"`)));
+  assert.ok(order.every((p) => p >= 0), "an element is missing");
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "layout order");
+  const onUnload = /onUnload:\s*\(\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  for (const [type, handler] of [["click", "onCodebookClick"], ["keydown", "onCodebookKeydown"], ["input", "onCodebookInput"]]) {
+    assert.match(js, new RegExp(`section\\.addEventListener\\("${type}", this\\.${handler}\\)`), `${type} not added`);
+    assert.match(onUnload, new RegExp(`section\\?\\.removeEventListener\\("${type}", TabellifyWorkspace\\.${handler}\\)`), `${type} not removed`);
+  }
+  assert.doesNotMatch(js, /addEventListener\("change", this\.onCodebookChange\)/);
 });

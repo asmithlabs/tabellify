@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Tabellify states gallery (Feature 005d, spec Q8). NOT shipped in the .xpi.
+<!-- Tabellify states gallery (Feature 005d, spec Q8; updated for Feature 006a). NOT shipped in the .xpi.
      Open this file in any web browser. It loads the real token and workspace stylesheets
      from src/content/, so what you see is what the Tabellify tab uses. It follows the
      OPERATING SYSTEM's light/dark setting (a browser page), not Zotero's Color Scheme.
@@ -72,34 +72,67 @@
   light and dark mode to see both. Hover the table rows; press Tab to move the real focus
   ring through the grips and buttons.</p>
 
-  <h2>Summary cards</h2>
-  <p id="tabellify-monitor-summary">
-    <span id="tabellify-monitor-used">Tags used 4/6</span>
-    <span id="tabellify-monitor-remaining-total">Remaining 2</span>
-    <span id="tabellify-monitor-papers">Papers: 12</span>
+  <h2>Collection row and summary line</h2>
+  <div id="tabellify-collection-row">
+    <label for="gallery-collection">Collection</label>
+    <select id="gallery-collection"><option>F005 test</option></select>
+    <button type="button">Refresh</button>
+    <label id="tabellify-monitor-count-item-tags-label"><input type="checkbox"><span>Also count tags on the paper itself</span></label>
+    <p id="tabellify-monitor-summary">
+      <span id="tabellify-monitor-used">Tags used 4/6</span>
+      <span id="tabellify-monitor-papers">Papers 12</span>
+    </p>
+  </div>
+  <p class="gallery-label">All tags used</p>
+  <p id="gallery-summary-all" style="display: flex; gap: var(--tabellify-space-2)">
+    <span>Tags used 6/6</span>
     <span id="tabellify-monitor-all-used">All codebook tags are used.</span>
   </p>
   <p id="tabellify-monitor-warning">Some highlights could not be read, so their tags are not counted.</p>
 
-  <h2>Cards and chips</h2>
-  <div class="tabellify-codebook-group">
-    <h3 class="tabellify-codebook-group-name">Exposure (codebook group)</h3>
-    <ul class="tabellify-codebook-tags">
-      <li>Heat index <button type="button">×</button></li>
-      <li>Temperature <button type="button">×</button></li>
-    </ul>
+  <h2>Tag script box</h2>
+  <p class="gallery-label">Default with help line</p>
+  <div>
+    <label id="tabellify-script-label" for="tabellify-script-input">Tags and groups</label>
+    <input id="tabellify-script-input" type="text" placeholder="Exposure(heat index, temperature), age">
+    <p id="tabellify-script-help">Type a tag, several tags separated by commas, or Group(tag, tag), then press Enter. Your Zotero tags are never changed.</p>
   </div>
-  <div class="tabellify-monitor-group">
-    <h3 class="tabellify-monitor-group-name"><span>Outcome (monitor group)</span><span class="tabellify-monitor-count">1/3</span></h3>
-    <div class="tabellify-monitor-list tabellify-monitor-remaining">
-      <span class="tabellify-monitor-list-label">Remaining:</span>
-      <ul><li>Morbidity</li><li>Hospital admissions</li></ul>
-    </div>
-    <div class="tabellify-monitor-list tabellify-monitor-used">
-      <span class="tabellify-monitor-list-label">Used:</span>
-      <ul><li>Mortality · 2 papers</li></ul>
-    </div>
+  <p class="gallery-label">Inline error (the problem is selected in the box)</p>
+  <div>
+    <input id="gallery-script-error-input" type="text" value="Exposure(Heat index" aria-invalid="true"
+           aria-describedby="tabellify-script-error"
+           style="width: 100%; max-width: 60em; box-sizing: border-box; outline: var(--tabellify-focus-width) solid var(--tabellify-color-status-error); outline-offset: 0">
+    <p id="tabellify-script-error" role="alert">Check the brackets: every "(" needs a matching ")".</p>
   </div>
+
+  <h2>Group pills</h2>
+  <ul id="tabellify-group-pills" aria-label="Groups">
+    <li class="tabellify-pill tabellify-pill-ungrouped" aria-label="Ungrouped: 3 tags"><span class="tabellify-pill-name">Ungrouped</span><span class="tabellify-pill-count">3</span></li>
+    <li class="tabellify-pill" aria-label="Exposure: 2 tags"><span class="tabellify-pill-name">Exposure</span><span class="tabellify-pill-count">2</span></li>
+    <li class="tabellify-pill" aria-label="Outcome: 3 tags"><span class="tabellify-pill-name">Outcome</span><span class="tabellify-pill-count">3</span></li>
+    <li class="tabellify-pill" aria-label="Planned: 0 tags"><span class="tabellify-pill-name">Planned</span><span class="tabellify-pill-count">0</span></li>
+  </ul>
+
+  <h2>Edit groups and tags</h2>
+  <details id="tabellify-codebook-editor" open>
+    <summary>Edit groups and tags</summary>
+    <div class="tabellify-codebook-group tabellify-codebook-ungrouped">
+      <div class="tabellify-codebook-group-header"><h3 class="tabellify-codebook-group-name">Ungrouped</h3></div>
+      <ul class="tabellify-codebook-tags">
+        <li>age <button type="button">×</button></li>
+      </ul>
+    </div>
+    <div class="tabellify-codebook-group">
+      <div class="tabellify-codebook-group-header">
+        <h3 class="tabellify-codebook-group-name">Exposure</h3>
+        <button type="button">Rename</button><button type="button">Delete</button>
+      </div>
+      <ul class="tabellify-codebook-tags">
+        <li>Heat index <button type="button">×</button></li>
+        <li>Temperature <button type="button">×</button></li>
+      </ul>
+    </div>
+  </details>
 
   <h2>Grid table</h2>
   <p class="gallery-label">Default, stripes, hover (live), sorted header (Title ▲), ✓ cells, complete k/M, current row (static copy), keyboard focus (static copy on a grip)</p>
@@ -179,6 +212,33 @@
       </tbody>
     </table>
   </div>
+
+  <h2>Ungrouped block (blank group header)</h2>
+  <p class="gallery-label">Tags without a group sit under a blank group header with only its grip</p>
+  <table class="tabellify-grid">
+    <thead>
+      <tr class="tabellify-group-row">
+        <th scope="col" rowspan="2" class="tabellify-col-title"><button type="button" class="tabellify-sort">Title</button></th>
+        <th scope="colgroup" colspan="2" class="tabellify-col-group tabellify-group-start tabellify-col-group-ungrouped" aria-label="Ungrouped tags"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move group: Ungrouped tags"></span></th>
+        <th scope="colgroup" colspan="1" class="tabellify-col-group tabellify-group-start"><span class="tabellify-grip" tabindex="0" role="button" aria-label="Move group: Exposure"></span><span>Exposure</span></th>
+        <th scope="col" rowspan="2" class="tabellify-col-count"><button type="button" class="tabellify-sort">k/M</button></th>
+      </tr>
+      <tr class="tabellify-tag-row">
+        <th scope="col" class="tabellify-col-tag tabellify-group-start"><button type="button" class="tabellify-sort">age</button></th>
+        <th scope="col" class="tabellify-col-tag"><button type="button" class="tabellify-sort">sex</button></th>
+        <th scope="col" class="tabellify-col-tag tabellify-group-start"><button type="button" class="tabellify-sort">Heat index</button></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="tabellify-col-title">A paper</td>
+        <td class="tabellify-col-tag tabellify-group-start tabellify-tag-used" aria-label="age: Used"></td>
+        <td class="tabellify-col-tag" aria-label="sex: Not used"></td>
+        <td class="tabellify-col-tag tabellify-group-start" aria-label="Heat index: Not used"></td>
+        <td class="tabellify-col-count tabellify-monitor-count">1/3</td>
+      </tr>
+    </tbody>
+  </table>
 
   <h2>State panels</h2>
   <p class="gallery-label">Empty</p>
