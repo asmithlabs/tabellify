@@ -1,5 +1,5 @@
 /* Tabellify — workspace.js (F003 collection browser, F004 codebook, F005 tag monitor,
- * F006a workspace restructure)
+ * F006a workspace restructure, F006b script box suggestions)
  *
  * Runs inside chrome://tabellify/content/workspace.xhtml, both when that document is shown
  * in the main-window tab (inside an <iframe>) and in the F001 fallback window.
@@ -36,6 +36,10 @@
  *   the group pills show each group's tag count; "Edit groups and tags" renames and
  *   deletes groups and removes tags. Tags without a group (ADR-0016) form one block in
  *   the table under a blank group header.
+ * - F006b: while typing in the script box, a suggestion list under it offers the tag
+ *   names of My Library (read once, re-read after Refresh or a Zotero tag change), the
+ *   codebook's group names and "Create tag" (codebook only). What the list contains is
+ *   pure logic in script-suggest-model.js (TabellifyScriptSuggest).
  *
  * THE LIBRARY IS READ-ONLY. Every Zotero call here only reads (see the "Read-only
  * guarantee" row in docs/zotero-api-notes.md). Nothing is saved, changed or deleted in the
@@ -57,6 +61,8 @@
  *   called after this document is gone);
  * - at most one pending debounce timer of this window (cleared).
  * F005c adds at most one pending layout-save timer of this window (cleared in onUnload).
+ * F006b adds three delegated listeners on the codebook section (focusin, focusout,
+ * mousedown), removed in onUnload; no observer, timer or pref.
  * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
  * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
@@ -1549,6 +1555,10 @@ var TabellifyWorkspace = {
       }
       return;
     }
+    // F006b: a tag was added, removed or renamed somewhere in the library. Only note it;
+    // the suggestion list is re-read the next time the script box gets focus. This comes
+    // before the early return below, so it also works when no collection is chosen.
+    if (type === "item-tag") W.libraryTagsStale = true;
     if (W.currentCollection === "") return; // nothing to count yet
     if (W.recomputeTimer !== null) window.clearTimeout(W.recomputeTimer);
     // A function (never a string) is passed to setTimeout.
@@ -1566,6 +1576,9 @@ var TabellifyWorkspace = {
   /** "Refresh": read the library again now, for the chosen collection. */
   onRefreshClick: () => {
     const W = TabellifyWorkspace;
+    // F006b: Refresh also re-reads the tag list for the suggestions (not awaited: it
+    // never rejects, and the table does not depend on it).
+    W.loadLibraryTags();
     if (W.currentCollection === "") return;
     // A pending live update would only repeat this read.
     if (W.recomputeTimer !== null) {
@@ -1622,6 +1635,10 @@ var TabellifyWorkspace = {
     "tabellify-script-error-duplicate",
     "tabellify-script-nothing-new",
     "tabellify-script-moved",
+    "tabellify-script-suggestions-label",
+    "tabellify-script-create",
+    "tabellify-script-create-hint",
+    "tabellify-script-group-hint",
     "tabellify-pills-label",
     "tabellify-pill-ungrouped",
     "tabellify-pill-tags",
@@ -1663,10 +1680,25 @@ var TabellifyWorkspace = {
   renamingGroupId: null,
 
   /**
-   * Tag names used in My Library (read once when the workspace opens). Not shown in 006a;
-   * kept for the 006b autocomplete (spec F006a, "Zotero / Mozilla APIs used").
+   * F006b: the tag names of My Library, prepared for the suggestion list
+   * (TabellifyScriptSuggest.prepare), or null before the first successful read.
    */
-  libraryTagNames: [],
+  libraryIndex: null,
+
+  /**
+   * F006b "stale flag": true after Zotero reported a tag change. Instead of re-reading the
+   * tag list on every change, the list is re-read the next time the script box gets focus.
+   */
+  libraryTagsStale: false,
+
+  /** The running read of the tag list (a Promise), so two reads never overlap; or null. */
+  libraryTagsLoading: null,
+
+  /** F006b: the options shown in the suggestion list, the token they are for, and the
+   *  index of the highlighted option (-1 = none; spec Q1: none until ↓ is pressed). */
+  suggestOptions: [],
+  suggestToken: null,
+  suggestActive: -1,
 
   /** File functions and folder, set in initCodebook(). */
   codebookFs: null,
@@ -1691,12 +1723,19 @@ var TabellifyWorkspace = {
     section.addEventListener("click", this.onCodebookClick);
     section.addEventListener("keydown", this.onCodebookKeydown);
     section.addEventListener("input", this.onCodebookInput);
+    // F006b: the suggestion list. "focusin"/"focusout" are the versions of focus/blur that
+    // bubble up to the section (plain focus/blur do not bubble, so delegation would miss
+    // them). "mousedown" picks an option before the box would lose focus. Removed in onUnload.
+    section.addEventListener("focusin", this.onCodebookFocusin);
+    section.addEventListener("focusout", this.onCodebookFocusout);
+    section.addEventListener("mousedown", this.onCodebookMousedown);
     try {
       await Zotero.initializationPromise;
 
       await this.formatStrings([...this.CODEBOOK_STRINGS, ...this.codebookErrorIds()]);
       // A plain-text attribute value (never markup), set from Fluent text.
       this.el("tabellify-script-input").placeholder = this.text("tabellify-script-placeholder");
+      this.el("tabellify-script-suggestions").setAttribute("aria-label", this.text("tabellify-script-suggestions-label"));
 
       this.codebookFs = TabellifyCodebookStore.platformFs();
       this.codebookDir = TabellifyCodebookStore.dataDir();
@@ -1720,20 +1759,32 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * Tag names used in My Library (for the 006b autocomplete). Read-only: a SELECT query in
-   * Zotero (docs/zotero-api-notes.md). On failure the list stays empty and the rest of the
-   * codebook works.
+   * Read the tag names of My Library for the F006b suggestion list. Read-only: a SELECT
+   * query in Zotero (docs/zotero-api-notes.md); it includes highlight tags (RT-S1). On
+   * failure the previous list is kept (empty at first) and the rest of the codebook works.
+   *
+   * While a read is running, a second call gets the same Promise instead of starting
+   * another read. The stale flag is cleared when a read STARTS, so a tag change reported
+   * during the read marks the result stale again.
+   * @returns {Promise<void>}  Never rejects
    */
-  async loadLibraryTags() {
-    try {
-      const tags = await Zotero.Tags.getAll(Zotero.Libraries.userLibraryID);
-      this.libraryTagNames = tags.map((t) => String(t.tag ?? ""));
-      this.log(`codebook: ${this.libraryTagNames.length} tag name(s) in My Library`);
-    } catch (e) {
-      this.libraryTagNames = [];
-      this.log("codebook: could not list the tags in My Library");
-      Zotero.logError(e);
-    }
+  loadLibraryTags() {
+    if (this.libraryTagsLoading) return this.libraryTagsLoading;
+    this.libraryTagsStale = false;
+    this.libraryTagsLoading = (async () => {
+      try {
+        const tags = await Zotero.Tags.getAll(Zotero.Libraries.userLibraryID);
+        this.libraryIndex = TabellifyScriptSuggest.prepare(tags);
+        // Counts only, never tag names.
+        this.log(`codebook: ${this.libraryIndex.entries.length} tag name(s) in My Library for suggestions (${this.libraryIndex.skippedQuote} with a quotation mark left out)`);
+      } catch (e) {
+        this.log("codebook: could not list the tags in My Library");
+        Zotero.logError(e);
+      } finally {
+        this.libraryTagsLoading = null;
+      }
+    })();
+    return this.libraryTagsLoading;
   },
 
   /**
@@ -1854,7 +1905,10 @@ var TabellifyWorkspace = {
 
   /** Enable the editing controls only when the file loaded and no save is running. */
   updateCodebookControls() {
-    this.el("tabellify-codebook-controls").disabled = !this.codebookEditable || this.codebookBusy;
+    const disabled = !this.codebookEditable || this.codebookBusy;
+    this.el("tabellify-codebook-controls").disabled = disabled;
+    // F006b: no suggestion list while the box cannot be used.
+    if (disabled) this.closeSuggestions();
   },
 
   /**
@@ -2016,6 +2070,7 @@ var TabellifyWorkspace = {
    * and keeps the focus, so the next entry can be typed at once.
    */
   async commitScript() {
+    this.closeSuggestions();
     const input = this.el("tabellify-script-input");
     const text = String(input.value ?? "");
     const parsed = TabellifyTagScript.parse(text);
@@ -2043,6 +2098,246 @@ var TabellifyWorkspace = {
     const saved = await this.applyCodebookEdit(edit, moved > 0 ? "tabellify-script-moved" : null);
     if (saved) input.value = "";
     input.focus();
+  },
+
+  // ---- Feature 006b: the suggestion list under the script box ------------------------
+
+  /** True while the suggestion list is shown. */
+  suggestionsOpen() {
+    return this.suggestOptions.length > 0;
+  },
+
+  /**
+   * Work out the token at the cursor and show its suggestions (or close the list).
+   * Called after every edit of the box, after a group was accepted, and after a re-read
+   * of the tag list.
+   * @param {{ browse?: boolean }} [options]  browse: ↓ was pressed (spec Q7: an empty
+   *   token then lists the first library tags alphabetically)
+   */
+  updateSuggestions({ browse = false } = {}) {
+    const input = this.el("tabellify-script-input");
+    if (!this.codebook || !this.codebookEditable || this.codebookBusy) {
+      this.closeSuggestions();
+      return;
+    }
+    // Only for a plain cursor, not when a range of text is selected.
+    if (input.selectionStart !== input.selectionEnd) {
+      this.closeSuggestions();
+      return;
+    }
+    const token = TabellifyTagScript.tokenAt(String(input.value ?? ""), input.selectionStart);
+    // Read from the current codebook on every call, so codebook edits need no reload.
+    const groups = TabellifyCodebook.groups(this.codebook);
+    const codebookTags = new Set([
+      ...TabellifyCodebook.tagsIn(this.codebook, null),
+      ...groups.flatMap((g) => TabellifyCodebook.tagsIn(this.codebook, g.id)),
+    ]);
+    const options = TabellifyScriptSuggest.suggest(this.libraryIndex, token, {
+      codebookTags,
+      groupNames: groups.map((g) => g.name),
+      browse,
+    });
+    this.renderSuggestions(token, options);
+  },
+
+  /**
+   * Draw the options as <li role="option"> elements. Every name goes in as text only
+   * (textContent). Option IDs use the option's position, never its name (a tag name may
+   * contain any character, so it is never put into an ID or a CSS selector).
+   * @param {object | null} token
+   * @param {Array<{ kind: string, name: string }>} options
+   */
+  renderSuggestions(token, options) {
+    if (options.length === 0) {
+      this.closeSuggestions();
+      return;
+    }
+    const input = this.el("tabellify-script-input");
+    const list = this.el("tabellify-script-suggestions");
+    const items = options.map((option, i) => {
+      const li = this.html("li", "tabellify-suggest-option");
+      li.id = `tabellify-script-option-${i}`;
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", "false");
+      li.dataset.index = String(i);
+      const name = this.html("span", "tabellify-suggest-name");
+      li.append(name);
+      if (option.kind === "create") {
+        li.classList.add("tabellify-suggest-create");
+        name.textContent = `${this.text("tabellify-script-create")} "${option.name}"`;
+        li.append(this.suggestHint("tabellify-script-create-hint"));
+      } else {
+        name.textContent = option.name;
+        if (option.kind === "group") li.append(this.suggestHint("tabellify-script-group-hint"));
+      }
+      return li;
+    });
+    this.suggestOptions = options;
+    this.suggestToken = token;
+    this.suggestActive = -1;
+    list.replaceChildren(...items);
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    input.removeAttribute("aria-activedescendant");
+    this.log(`suggestions: ${options.length} options`); // a count, never typed text
+  },
+
+  /** A muted note after an option's name ("group", "codebook only"). */
+  suggestHint(id) {
+    const hint = this.html("span", "tabellify-suggest-hint");
+    hint.textContent = this.text(id);
+    return hint;
+  },
+
+  /** Hide the list and forget its options. Safe to call when it is already closed. */
+  closeSuggestions() {
+    const wasOpen = this.suggestionsOpen();
+    this.suggestOptions = [];
+    this.suggestToken = null;
+    this.suggestActive = -1;
+    if (!wasOpen) return;
+    const list = this.el("tabellify-script-suggestions");
+    list.hidden = true;
+    list.replaceChildren();
+    const input = this.el("tabellify-script-input");
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+  },
+
+  /**
+   * Highlight option `index` (-1 = none). The focus stays in the text box; the box's
+   * aria-activedescendant tells a screen reader which option is highlighted.
+   * @param {number} index
+   */
+  setActiveOption(index) {
+    const list = this.el("tabellify-script-suggestions");
+    const input = this.el("tabellify-script-input");
+    const items = list.children;
+    if (this.suggestActive >= 0) items[this.suggestActive]?.setAttribute("aria-selected", "false");
+    this.suggestActive = index;
+    const li = index >= 0 ? items[index] : null;
+    if (!li) {
+      this.suggestActive = -1;
+      input.removeAttribute("aria-activedescendant");
+      return;
+    }
+    li.setAttribute("aria-selected", "true");
+    input.setAttribute("aria-activedescendant", li.id);
+    // Scroll the list only as far as needed to show the option ("nearest").
+    li.scrollIntoView?.({ block: "nearest" });
+  },
+
+  /**
+   * Put option `index` into the box. Only the token at the cursor is replaced; the text
+   * before and after it stays. Nothing is saved: the entry reaches the codebook (never
+   * Zotero) only when the user presses Enter.
+   * @param {number} index
+   */
+  acceptOption(index) {
+    const option = this.suggestOptions[index];
+    const token = this.suggestToken;
+    const input = this.el("tabellify-script-input");
+    const value = String(input.value ?? "");
+    if (!option || !token || token.end > value.length) {
+      this.closeSuggestions();
+      return;
+    }
+    const result = TabellifyScriptSuggest.accept(value, token, option);
+    // setRangeText(text, start, end, "end") replaces those characters of the box and puts
+    // the cursor after the new text (standard DOM; it does not fire an "input" event).
+    input.setRangeText(result.text.slice(token.start, result.cursor), token.start, token.end, "end");
+    input.setSelectionRange(result.cursor, result.cursor);
+    this.hideScriptError();
+    this.log(`suggestions: accepted a ${option.kind} option`);
+    // A group reopens the list for its tags (as soon as a letter is typed); the others close it.
+    if (option.kind === "group") this.updateSuggestions();
+    else this.closeSuggestions();
+  },
+
+  /**
+   * Keys in the script box while suggestions are possible (spec "Behaviour", Q1).
+   * @param {KeyboardEvent} event
+   * @returns {boolean} true if the key was handled here (the caller does nothing more)
+   */
+  onScriptKeydown(event) {
+    // While an input method (e.g. for Japanese) is composing text, its keys belong to it.
+    if (event.isComposing) return true;
+    const open = this.suggestionsOpen();
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        if (!open) {
+          this.updateSuggestions({ browse: true });
+          if (this.suggestionsOpen()) this.setActiveOption(0);
+        } else {
+          this.setActiveOption(Math.min(this.suggestActive + 1, this.suggestOptions.length - 1));
+        }
+        return true;
+      case "ArrowUp":
+        if (!open) return false;
+        event.preventDefault();
+        // ↑ on the first option removes the highlight.
+        this.setActiveOption(this.suggestActive - 1);
+        return true;
+      case "Tab":
+        // Shift+Tab (and Tab with the list closed) keep their normal meaning: move focus.
+        if (!open || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false;
+        event.preventDefault();
+        this.acceptOption(this.suggestActive >= 0 ? this.suggestActive : 0);
+        return true;
+      case "Enter":
+        if (open && this.suggestActive >= 0) {
+          event.preventDefault();
+          this.acceptOption(this.suggestActive);
+          return true;
+        }
+        return false; // the caller commits the entry (commitScript closes the list)
+      case "Escape":
+        if (!open) return false;
+        // Handled here only: stopPropagation keeps Zotero from also reacting to Esc.
+        event.preventDefault();
+        event.stopPropagation();
+        this.closeSuggestions();
+        return true;
+      default:
+        return false;
+    }
+  },
+
+  /** Focus enters the script box: re-read a stale tag list once, then refresh the list. */
+  onCodebookFocusin: (event) => {
+    const W = TabellifyWorkspace;
+    if (event.target?.dataset?.action !== "script-input") return;
+    if (!W.libraryTagsStale || W.libraryTagsLoading) return;
+    const input = event.target;
+    W.loadLibraryTags().then(() => {
+      // Only if the box still has focus (and this document still exists).
+      try {
+        if (document.activeElement === input && input.value) W.updateSuggestions();
+      } catch (e) {
+        // The document is gone (tab closed while reading): nothing to update.
+      }
+    });
+  },
+
+  /** Focus leaves the script box (e.g. a click elsewhere on the page): close the list. */
+  onCodebookFocusout: (event) => {
+    const W = TabellifyWorkspace;
+    if (event.target?.dataset?.action !== "script-input") return;
+    W.closeSuggestions();
+  },
+
+  /**
+   * A mouse press on an option accepts it. preventDefault() on "mousedown" stops the
+   * browser from moving the focus away from the text box, so the cursor stays there.
+   */
+  onCodebookMousedown: (event) => {
+    const W = TabellifyWorkspace;
+    const li = event.target?.closest?.('li[role="option"]');
+    if (!li || !W.suggestionsOpen()) return;
+    event.preventDefault();
+    const index = Number(li.dataset.index);
+    if (Number.isInteger(index)) W.acceptOption(index);
   },
 
   /**
@@ -2083,6 +2378,8 @@ var TabellifyWorkspace = {
     const W = TabellifyWorkspace;
     const { action, groupId } = event.target.dataset ?? {};
     if (!action || !W.codebook) return;
+    // F006b: arrows, Tab, Enter on a highlighted option and Esc for the suggestion list.
+    if (action === "script-input" && W.onScriptKeydown(event)) return;
     // Only the text boxes are handled; Enter on a button keeps its normal "click".
     if (event.key === "Enter" && action === "script-input") {
       event.preventDefault();
@@ -2096,11 +2393,15 @@ var TabellifyWorkspace = {
     }
   },
 
-  /** Editing the script box hides its error (the text no longer matches the message). */
+  /**
+   * Editing the script box hides its error (the text no longer matches the message) and
+   * (F006b) updates the suggestion list for the token at the cursor.
+   */
   onCodebookInput: (event) => {
     const W = TabellifyWorkspace;
     if (event.target?.dataset?.action !== "script-input") return;
     W.hideScriptError();
+    W.updateSuggestions();
   },
 
   /**
@@ -2130,6 +2431,9 @@ var TabellifyWorkspace = {
     section?.removeEventListener("click", TabellifyWorkspace.onCodebookClick);
     section?.removeEventListener("keydown", TabellifyWorkspace.onCodebookKeydown);
     section?.removeEventListener("input", TabellifyWorkspace.onCodebookInput);
+    section?.removeEventListener("focusin", TabellifyWorkspace.onCodebookFocusin);
+    section?.removeEventListener("focusout", TabellifyWorkspace.onCodebookFocusout);
+    section?.removeEventListener("mousedown", TabellifyWorkspace.onCodebookMousedown);
     window.removeEventListener("load", TabellifyWorkspace.onLoad);
     window.removeEventListener("unload", TabellifyWorkspace.onUnload);
   },

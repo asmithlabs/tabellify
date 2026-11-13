@@ -258,6 +258,75 @@
   content: "! ";
 }
 
+/* Feature 006b: the suggestion list under the script box. The box is the positioning
+   reference ("position: relative"), and the list is taken out of the flow ("position:
+   absolute") so it floats over the help line instead of pushing the page down. With no
+   `top` given, an absolutely positioned element stays where it would have been in the
+   flow: right under the input. z-index keeps it above the table's sticky header. Flat
+   (no shadow), as every surface in ADR-0015. */
+#tabellify-script-box {
+  position: relative;
+}
+
+#tabellify-script-suggestions {
+  position: absolute;
+  inset-inline-start: 0;
+  z-index: 3;
+  width: 100%;
+  max-width: 60em;
+  max-height: 20em; /* about 10 options; the rest scroll */
+  overflow-y: auto;
+  box-sizing: border-box;
+  margin: var(--tabellify-space-1) 0 0;
+  padding: var(--tabellify-space-1) 0;
+  list-style: none;
+  background-color: var(--tabellify-color-surface);
+  color: var(--tabellify-color-text);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border-strong);
+  border-radius: var(--tabellify-radius-md);
+}
+
+#tabellify-script-suggestions[hidden] {
+  display: none;
+}
+
+.tabellify-suggest-option {
+  padding: var(--tabellify-space-2) var(--tabellify-space-3);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.tabellify-suggest-option:hover {
+  background-color: var(--tabellify-color-surface-hover);
+}
+
+/* The highlighted option (↓/↑): the same "selected" look as the focused table row. */
+.tabellify-suggest-option[aria-selected="true"] {
+  background-color: var(--tabellify-color-selected-bg);
+  color: var(--tabellify-color-selected-text);
+  box-shadow: inset var(--tabellify-selected-bar-width) 0 0 var(--tabellify-color-selected-bar);
+}
+
+/* "group" and "codebook only": muted notes after the name. */
+.tabellify-suggest-hint {
+  margin-inline-start: var(--tabellify-space-3);
+  font-size: var(--tabellify-font-size-sm);
+  color: var(--tabellify-color-text-muted);
+}
+
+.tabellify-suggest-option[aria-selected="true"] .tabellify-suggest-hint {
+  color: inherit;
+}
+
+/* "Create tag" is set apart from the library tags by a line above it. */
+.tabellify-suggest-option.tabellify-suggest-create {
+  border-block-start: var(--tabellify-border-width) solid var(--tabellify-color-border);
+}
+
+.tabellify-suggest-option.tabellify-suggest-create:first-child {
+  border-block-start: 0;
+}
+
 /* Group pills: "Exposure · 2". Rounded outline, the count in tabular figures; the "·" is
    decorative CSS content. The ungrouped pill has a dashed outline (a shape cue, not only
    a different word). */

@@ -139,10 +139,23 @@ class FakeElement {
     for (let node = this; node; node = node.parentNode) if (matches(node, selector)) return node;
     return null;
   }
-  focus() { this.focused = true; }
+  focus() { this.focused = true; activeElement = this; }
   // Text inputs (the script box): the selected range, set by setSelectionRange.
-  setSelectionRange(start, end) { this.selection = [start, end]; }
+  setSelectionRange(start, end) {
+    this.selection = [start, end];
+    this.selectionStart = start;
+    this.selectionEnd = end;
+  }
+  // F006b: replace characters [start, end) of the value; "end" puts the cursor after them.
+  setRangeText(text, start, end, mode) {
+    const value = String(this.value ?? "");
+    this.value = value.slice(0, start) + text + value.slice(end);
+    if (mode === "end") this.setSelectionRange(start + text.length, start + text.length);
+  }
 }
+
+/** The fake document's focused element (set by focus()). */
+let activeElement = null;
 
 /** The parts of workspace.xhtml the table code uses, built like the real markup. */
 function makeDocument() {
@@ -176,6 +189,8 @@ function makeDocument() {
     },
     querySelectorAll: () => [], // the ".tabellify-status" paragraphs are not needed here
     createElementNS: (_ns, tag) => new FakeElement(tag),
+    get activeElement() { return activeElement; },
+    defaultView: {}, // the document is "alive" (onNotify checks this)
   };
 }
 
@@ -185,10 +200,12 @@ function makeDocument() {
 
 function load() {
   const document = makeDocument();
+  activeElement = null;
   const debug = [];
-  const sandbox = vm.createContext({ document, Zotero: { debug: (m) => debug.push(m), logError: () => {} } });
-  for (const name of ["codebook-model.js", "codebook-store.js", "tag-script-model.js", "tag-monitor-model.js",
-    "table-layout-model.js", "workspace.js"]) {
+  const Zotero = { debug: (m) => debug.push(m), logError: () => {} };
+  const sandbox = vm.createContext({ document, Zotero });
+  for (const name of ["codebook-model.js", "codebook-store.js", "tag-script-model.js", "script-suggest-model.js",
+    "tag-monitor-model.js", "table-layout-model.js", "workspace.js"]) {
     const file = join(contentDir, name);
     vm.runInContext(readFileSync(file, "utf8"), sandbox, { filename: file });
   }
@@ -211,7 +228,7 @@ function load() {
   W.layoutEditable = false; // no layout file in these tests: layoutChanged() does nothing
   return {
     W, T: sandbox.TabellifyTagMonitor, L: sandbox.TabellifyTableLayout, C: sandbox.TabellifyCodebook,
-    document, debug,
+    S: sandbox.TabellifyScriptSuggest, Zotero, document, debug,
   };
 }
 
@@ -756,4 +773,253 @@ test("AC16: the editor lists ungrouped tags first; Delete ungroups a group's tag
   s.W.onCodebookClick({ target: remove });
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   assert.deepEqual(boxes().find((b) => b[0] === "Outcome"), ["Outcome", []]);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 006b AC11: the suggestion list under the script box
+// ---------------------------------------------------------------------------------------
+
+/** A script setup with a library tag list. GROUPS() has Mortality in the codebook. */
+function suggestSetup(libraryNames = ["Mortality", "Morbidity", "<b>mor</b>", "Hospitalization", "Exposure time"]) {
+  const data = codebookData(GROUPS());
+  const s = scriptSetup({ onDisk: data, codebook: data });
+  s.W.libraryIndex = s.S.prepare(libraryNames.map((tag) => ({ tag, type: 0 })));
+  s.list = s.document.getElementById("tabellify-script-suggestions");
+  s.input.setAttribute("aria-expanded", "false");
+  s.input.focus();
+  return s;
+}
+
+/** Type `text` into the box (cursor at `cursor`) and fire the "input" handler. */
+function typeInto(s, text, cursor = text.length) {
+  s.input.value = text;
+  s.input.setSelectionRange(cursor, cursor);
+  s.W.onCodebookInput({ target: s.input });
+}
+
+/** A keydown on the script box through the real delegated handler. */
+function press(s, key, extra = {}) {
+  const event = {
+    key, target: s.input, prevented: false, stopped: false,
+    preventDefault() { this.prevented = true; },
+    stopPropagation() { this.stopped = true; },
+    ...extra,
+  };
+  s.W.onCodebookKeydown(event);
+  return event;
+}
+
+const optionTexts = (s) => s.list.children.map((li) => li.textContent);
+const tick = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+
+test("F006b AC11: typing opens the list (aria-expanded); codebook tags excluded; text only; IDs by index", () => {
+  const s = suggestSetup();
+  typeInto(s, "Outcome(mor");
+  assert.equal(s.list.hidden, false);
+  assert.equal(s.input.getAttribute("aria-expanded"), "true");
+  // Mortality is in the codebook: not offered. Starts-with, then contains, then Create.
+  assert.deepEqual(optionTexts(s), ["Morbidity", "<b>mor</b>", 'tabellify-script-create "mor"tabellify-script-create-hint']);
+  s.list.children.forEach((li, i) => {
+    assert.equal(li.id, `tabellify-script-option-${i}`);
+    assert.equal(li.getAttribute("role"), "option");
+    assert.equal(li.getAttribute("aria-selected"), "false");
+  });
+  // The markup-looking name is one plain text span (no child elements parsed from it).
+  const evil = s.list.children[1].children[0];
+  assert.equal(evil.textContent, "<b>mor</b>");
+  assert.equal(evil.children.length, 0);
+  assert.ok(!s.list.children.some((li) => /Morbidity|<b>/.test(li.id)), "an option ID contains a tag name");
+  assert.equal(s.list.children[2].classList.contains("tabellify-suggest-create"), true);
+  // Debug Output has counts only, never the typed text or tag names.
+  assert.ok(s.debug.some((m) => m.includes("suggestions: 3 options")), s.debug.join("\n"));
+  assert.ok(!s.debug.some((m) => /mor|Morbidity/.test(m)), s.debug.join("\n"));
+  // No match and nothing typed: the list closes again.
+  typeInto(s, "Outcome(");
+  assert.equal(s.list.hidden, true);
+  assert.equal(s.input.getAttribute("aria-expanded"), "false");
+});
+
+test("F006b AC11: ↓/↑ move aria-activedescendant and aria-selected; ↑ on the first removes the highlight", () => {
+  const s = suggestSetup();
+  typeInto(s, "Outcome(mor");
+  assert.equal(s.input.hasAttribute("aria-activedescendant"), false, "nothing highlighted at first (Q1)");
+  assert.equal(press(s, "ArrowDown").prevented, true);
+  assert.equal(s.input.getAttribute("aria-activedescendant"), "tabellify-script-option-0");
+  assert.equal(s.list.children[0].getAttribute("aria-selected"), "true");
+  press(s, "ArrowDown");
+  assert.equal(s.input.getAttribute("aria-activedescendant"), "tabellify-script-option-1");
+  assert.equal(s.list.children[0].getAttribute("aria-selected"), "false");
+  assert.equal(s.list.children[1].getAttribute("aria-selected"), "true");
+  press(s, "ArrowDown");
+  press(s, "ArrowDown"); // stays on the last option
+  assert.equal(s.input.getAttribute("aria-activedescendant"), "tabellify-script-option-2");
+  press(s, "ArrowUp");
+  press(s, "ArrowUp");
+  assert.equal(s.input.getAttribute("aria-activedescendant"), "tabellify-script-option-0");
+  press(s, "ArrowUp");
+  assert.equal(s.input.hasAttribute("aria-activedescendant"), false);
+  assert.ok(s.list.children.every((li) => li.getAttribute("aria-selected") === "false"));
+});
+
+test("F006b AC11: Tab accepts the first option when none is highlighted; Shift+Tab is not intercepted", () => {
+  const s = suggestSetup();
+  typeInto(s, "Outcome(mor");
+  assert.equal(press(s, "Tab", { shiftKey: true }).prevented, false);
+  assert.equal(s.list.hidden, false);
+  const tab = press(s, "Tab");
+  assert.equal(tab.prevented, true);
+  assert.equal(s.input.value, "Outcome(Morbidity");
+  assert.deepEqual([s.input.selectionStart, s.input.selectionEnd], [17, 17]);
+  assert.equal(s.list.hidden, true);
+  assert.equal(s.input.getAttribute("aria-expanded"), "false");
+  // With the list closed, Tab keeps its normal meaning.
+  assert.equal(press(s, "Tab").prevented, false);
+});
+
+test("F006b AC11: Enter accepts a highlighted option, and otherwise commits the entry", async () => {
+  const s = suggestSetup();
+  let commits = 0;
+  s.W.commitScript = async () => { commits++; };
+  typeInto(s, "a, Hosp");
+  press(s, "ArrowDown");
+  const accept = press(s, "Enter");
+  assert.equal(accept.prevented, true);
+  assert.equal(s.input.value, "a, Hospitalization");
+  assert.equal(commits, 0, "accepting does not commit");
+  // List open, nothing highlighted: Enter commits.
+  typeInto(s, "a, Hosp");
+  assert.equal(s.list.hidden, false);
+  assert.equal(press(s, "Enter").prevented, true);
+  assert.equal(commits, 1);
+  // List closed: Enter commits.
+  typeInto(s, "a, ");
+  assert.equal(s.list.hidden, true);
+  press(s, "Enter");
+  assert.equal(commits, 2);
+});
+
+test("F006b AC11: a real commit closes the list and saves the accepted name to the codebook only", async () => {
+  const s = suggestSetup();
+  typeInto(s, "Outcome(Hosp");
+  press(s, "Tab");
+  typeInto(s, "Outcome(Hospitalization)");
+  assert.equal(s.list.hidden, true, "after ) no list");
+  typeInto(s, "zz tabellify test");
+  assert.deepEqual(optionTexts(s), ['tabellify-script-create "zz tabellify test"tabellify-script-create-hint']);
+  press(s, "Tab"); // Create: the text stays the cleaned name, the list closes
+  assert.equal(s.input.value, "zz tabellify test");
+  assert.equal(s.list.hidden, true);
+  press(s, "Enter");
+  await tick();
+  const saved = JSON.parse(s.files.get("/d/codebooks.json"));
+  assert.ok(saved.codebooks[0].tags.some((t) => t.name === "zz tabellify test" && t.group === null));
+  assert.deepEqual(s.writes.map((w) => w[0]), ["/d/codebooks.json"], "only Tabellify's own file");
+});
+
+test("F006b AC11: Esc closes an open list without changing the text; Esc with the list closed is not handled", () => {
+  const s = suggestSetup();
+  typeInto(s, "Outcome(mor");
+  const esc = press(s, "Escape");
+  assert.equal(esc.prevented, true);
+  assert.equal(esc.stopped, true);
+  assert.equal(s.list.hidden, true);
+  assert.equal(s.input.value, "Outcome(mor");
+  const again = press(s, "Escape");
+  assert.equal(again.prevented, false);
+  assert.equal(again.stopped, false);
+});
+
+test("F006b AC11: keys are ignored while an input method is composing", () => {
+  const s = suggestSetup();
+  let commits = 0;
+  s.W.commitScript = async () => { commits++; };
+  typeInto(s, "Outcome(mor");
+  assert.equal(press(s, "ArrowDown", { isComposing: true }).prevented, false);
+  assert.equal(s.input.hasAttribute("aria-activedescendant"), false);
+  press(s, "Enter", { isComposing: true });
+  assert.equal(commits, 0);
+  assert.equal(s.list.hidden, false);
+});
+
+test("F006b AC11: group names first at the top level; accepting one inserts Name( and reopens on typing", () => {
+  const s = suggestSetup();
+  typeInto(s, "Exp");
+  assert.deepEqual(optionTexts(s).slice(0, 2), ["Exposuretabellify-script-group-hint", "Exposure time"]);
+  press(s, "Tab");
+  assert.equal(s.input.value, "Exposure(");
+  assert.equal(s.input.selectionStart, 9);
+  assert.equal(s.list.hidden, true, "empty token: closed until a letter is typed");
+  typeInto(s, "Exposure(h");
+  assert.equal(s.list.hidden, false);
+  assert.equal(optionTexts(s).some((t) => t.includes("group-hint")), false, "no groups inside a group");
+  // ↓ in an empty token lists the library tags (Q7).
+  typeInto(s, "Exposure(");
+  press(s, "ArrowDown");
+  assert.equal(s.list.hidden, false);
+  assert.equal(s.input.getAttribute("aria-activedescendant"), "tabellify-script-option-0");
+});
+
+test("F006b AC11: mousedown on an option accepts it and keeps focus; focusout closes the list", () => {
+  const s = suggestSetup();
+  typeInto(s, "x, mor");
+  const li = s.list.children[0];
+  let prevented = false;
+  s.W.onCodebookMousedown({ target: li.children[0], preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(s.input.value, "x, Morbidity");
+  assert.equal(s.document.activeElement, s.input);
+  typeInto(s, "x, mor");
+  s.W.onCodebookFocusout({ target: s.input });
+  assert.equal(s.list.hidden, true);
+  assert.equal(s.input.value, "x, mor");
+});
+
+test("F006b AC11: the list closes when the box is disabled (saving or not loaded)", () => {
+  const s = suggestSetup();
+  typeInto(s, "x, mor");
+  s.W.codebookBusy = true;
+  s.W.updateCodebookControls();
+  assert.equal(s.list.hidden, true);
+  typeInto(s, "x, mor");
+  assert.equal(s.list.hidden, true, "no list while saving");
+});
+
+test("F006b AC11: an item-tag notify marks the tag list stale even with no collection chosen", () => {
+  const s = suggestSetup();
+  s.W.currentCollection = "";
+  s.W.onNotify("add", "collection-item", [1], {});
+  assert.equal(s.W.libraryTagsStale, false);
+  s.W.onNotify("add", "item-tag", ["1-2"], {});
+  assert.equal(s.W.libraryTagsStale, true);
+});
+
+test("F006b AC11: focus with a stale list reloads it once, then refreshes the suggestions; Refresh reloads too", async () => {
+  const s = suggestSetup();
+  let calls = 0;
+  s.Zotero.Libraries = { userLibraryID: 1 };
+  s.Zotero.Tags = {
+    getAll: async (libraryID) => {
+      calls++;
+      assert.equal(libraryID, 1);
+      return [{ tag: "zz-tabellify-fresh", type: 0 }, { tag: "auto", type: 1 }];
+    },
+  };
+  // Not stale: focus does not read.
+  s.W.onCodebookFocusin({ target: s.input });
+  assert.equal(calls, 0);
+  typeInto(s, "zz-tab");
+  assert.deepEqual(optionTexts(s), ['tabellify-script-create "zz-tab"tabellify-script-create-hint']);
+  s.W.libraryTagsStale = true;
+  s.W.onCodebookFocusin({ target: s.input });
+  s.W.onCodebookFocusin({ target: s.input }); // a second focus while reading: no second read
+  await tick();
+  assert.equal(calls, 1);
+  assert.equal(s.W.libraryTagsStale, false);
+  assert.deepEqual(optionTexts(s), ["zz-tabellify-fresh", 'tabellify-script-create "zz-tab"tabellify-script-create-hint']);
+  assert.ok(s.debug.some((m) => m.includes("1 tag name(s) in My Library for suggestions")), s.debug.join("\n"));
+  // Refresh re-reads the tag list, also when no collection is chosen.
+  s.W.currentCollection = "";
+  s.W.onRefreshClick();
+  await tick();
+  assert.equal(calls, 2);
 });
