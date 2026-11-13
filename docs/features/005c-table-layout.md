@@ -1,6 +1,6 @@
 # Feature 005c: Per-paper table layout (formatting, column and row drag-and-drop)
 
-- **Status:** Draft (for owner approval)
+- **Status:** Approved (owner, 2026-11-13: Q1 = C — layout saved via ADR-0014; Q2–Q6 recommended answers accepted)
 - **Branch:** `feat/005c-table-layout`
 - **Related ADRs:** 0009 (workspace tab), 0003 (no bundler, no dependency), 0011 (security),
   0012 (data storage; **not touched** under the recommended option), **0014 (Proposed, only

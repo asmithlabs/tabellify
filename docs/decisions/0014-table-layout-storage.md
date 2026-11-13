@@ -1,6 +1,6 @@
 # ADR-0014: Saving the per-paper table layout (`layout.json`)
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-13: F005c Q1 = C, layout saved in layout.json)
 - **Date:** 2026-11-12
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** ADR-0012 (Accepted: how Tabellify stores its own data; this ADR extends its
