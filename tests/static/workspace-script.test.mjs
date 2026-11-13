@@ -13,7 +13,9 @@
 //   - tag-monitor-model.js loads after codebook-model.js and before workspace.js, and uses
 //     no Zotero / DOM / IOUtils globals
 //   - the tag monitor's Fluent IDs (MONITOR_STRINGS) exist; the allow-list gains exactly
-//     `Zotero.Items.get` (attachments → items)
+//     `Zotero.Items.get` (attachments → items) and the two Notifier methods
+//   - lifecycle symmetry for the Notifier observer: exactly one registerObserver( call, at
+//     least one unregisterObserver( call, and onUnload unregisters it
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -104,6 +106,9 @@ test("F003: workspace.js uses only the Zotero APIs recorded for F003", () => {
     "Zotero.Tags.getAll",
     // F005: attachment IDs → attachment items, to reach their annotations (read-only).
     "Zotero.Items.get",
+    // F005: live updates (an observer only listens; registered and unregistered here).
+    "Zotero.Notifier.registerObserver",
+    "Zotero.Notifier.unregisterObserver",
   ]);
   const used = new Set([...js.matchAll(/\bZotero(?:\.[A-Za-z_$][\w$]*)+/g)].map((m) => m[0]));
   assert.ok(used.size > 0, "no Zotero calls found (check is vacuous)");
@@ -146,4 +151,20 @@ test("F005: every MONITOR_STRINGS ID exists in tabellify.ftl and starts with tab
 test("F005: Fluent is used without arguments (no formatValue(id, args), no setAttributes)", () => {
   assert.doesNotMatch(js, /formatValue\(\s*[^)]*,/);
   assert.doesNotMatch(js, /\bsetAttributes\s*\(/);
+});
+
+test("F005: Notifier observer symmetry (one register, unregister on unload, debounce cleared)", () => {
+  assert.equal((js.match(/\bregisterObserver\s*\(/g) ?? []).length, 1, "exactly one registerObserver( call");
+  assert.ok((js.match(/\bunregisterObserver\s*\(/g) ?? []).length >= 1, "at least one unregisterObserver( call");
+  // onUnload must call the unregister helper.
+  const onUnload = /onUnload:\s*\(\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  assert.ok(onUnload.length > 0, "onUnload not found (check is vacuous)");
+  assert.match(onUnload, /unregisterMonitorObserver\(/);
+  // The helper clears the pending debounce timer, and onNotify checks its document first.
+  const helper = /unregisterMonitorObserver\(reason\)\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  assert.match(helper, /clearTimeout\(/);
+  assert.match(helper, /Zotero\.Notifier\.unregisterObserver\(/);
+  const onNotify = /onNotify:\s*\([^)]*\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  assert.match(onNotify, /document\.defaultView/);
+  assert.match(onNotify, /unregisterMonitorObserver\(/);
 });

@@ -29,10 +29,15 @@
  * or `new Option(text, value)`. The browser never parses those as HTML.
  * (tests/static/no-html-sinks.test.mjs fails if a markup-parsing API appears in src/.)
  *
- * Lifecycle: everything here lives exactly as long as this document. The only listeners
+ * Lifecycle: everything here lives exactly as long as this document. The DOM listeners
  * are on this document's own window and elements, and they are removed on "unload".
- * No timers.
- * Nothing is added to Zotero or to the main window, so bootstrap.js has nothing to undo.
+ * F005 adds two things with a life of their own, both ended in onUnload:
+ * - one Zotero.Notifier observer (Zotero keeps it in a global list, so it would outlive
+ *   this document if we did not unregister it; it also unregisters itself if it is ever
+ *   called after this document is gone);
+ * - at most one pending debounce timer of this window (cleared).
+ * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
+ * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
  * Why the pure helpers live in this file and not in src/modules/: bootstrap.js registers
  * only src/content/ as chrome://tabellify/content/, so a file in src/modules/ has no URL
@@ -199,6 +204,8 @@ var TabellifyWorkspace = {
         select.append(new Option(label, value));
       }
       select.disabled = false;
+      // F005: from now on, library changes re-count the chosen collection (live updates).
+      this.registerMonitorObserver();
     } catch (e) {
       this.showStatus("tabellify-load-error");
       Zotero.logError(e);
@@ -581,10 +588,107 @@ var TabellifyWorkspace = {
     }
   },
 
+  // ---------------------------------------------------------------------------------------
+  // Feature 005: live updates (Zotero.Notifier observer + debounce). See the spec's
+  // "Live updates" section for which library changes fire which events.
+  // ---------------------------------------------------------------------------------------
+
+  /** Wait this long after the LAST library change before re-reading (spec Q-new-4). */
+  RECOMPUTE_DELAY_MS: 500,
+
+  /** The key Zotero.Notifier.registerObserver returned (needed to unregister), or null. */
+  notifierKey: null,
+
+  /** The pending debounce timer's ID, or null. */
+  recomputeTimer: null,
+
+  /**
+   * Ask Zotero to tell us about library changes that can change the counts: tags added to /
+   * removed from items or highlights ("item-tag"), papers added to / removed from
+   * collections ("collection-item"), papers trashed ("item"), and subcollection changes
+   * ("collection"). An observer only listens; it cannot change the library.
+   * Paired with unregisterMonitorObserver() in onUnload (lifecycle symmetry).
+   */
+  registerMonitorObserver() {
+    if (this.notifierKey !== null) return;
+    this.notifierKey = Zotero.Notifier.registerObserver(
+      { notify: this.onNotify },
+      ["item-tag", "collection-item", "item", "collection"],
+      "tabellify-tag-monitor", // only a label in Zotero's debug output
+    );
+    this.log("tag monitor: notifier observer registered");
+  },
+
+  /**
+   * Stop listening and drop a pending recompute. Safe to call more than once.
+   * @param {string} reason  For Debug Output
+   */
+  unregisterMonitorObserver(reason) {
+    if (this.recomputeTimer !== null) {
+      try {
+        window.clearTimeout(this.recomputeTimer);
+      } catch (e) {
+        // The window may already be gone; its timers went with it.
+      }
+      this.recomputeTimer = null;
+    }
+    if (this.notifierKey === null) return;
+    const key = this.notifierKey;
+    this.notifierKey = null;
+    Zotero.Notifier.unregisterObserver(key);
+    this.log(`tag monitor: notifier observer unregistered (${reason})`);
+  },
+
+  /**
+   * Called by Zotero after library changes (signature from notifier.js:
+   * notify(event, type, ids, extraData)). It does not re-read at once: a single user action
+   * can fire several events in a row (e.g. a sync), so it (re)starts a short timer and
+   * re-reads once, RECOMPUTE_DELAY_MS after the last event ("debouncing"). No filtering by
+   * ID: one re-read of the chosen collection is cheap and always correct.
+   */
+  onNotify: (event, type, ids, extraData) => {
+    const W = TabellifyWorkspace;
+    // Belt and braces: if this document is gone (closed without our unload handler
+    // running), unregister instead of touching a dead page. `defaultView` is the window
+    // showing this document; it is null once the document is unloaded. Accessing a
+    // closed window's objects can also throw ("dead object"), hence the try.
+    let alive = false;
+    try {
+      alive = document.defaultView != null;
+    } catch (e) {
+      alive = false;
+    }
+    if (!alive) {
+      try {
+        W.unregisterMonitorObserver("workspace document is gone");
+      } catch (e) {
+        // Nothing more we can do; Zotero logs errors thrown by observers.
+      }
+      return;
+    }
+    if (W.currentCollection === "") return; // nothing to count yet
+    if (W.recomputeTimer !== null) window.clearTimeout(W.recomputeTimer);
+    // A function (never a string) is passed to setTimeout.
+    W.recomputeTimer = window.setTimeout(W.onRecomputeTimer, W.RECOMPUTE_DELAY_MS);
+  },
+
+  /** The debounce timer fired: re-read the chosen collection. */
+  onRecomputeTimer: () => {
+    const W = TabellifyWorkspace;
+    W.recomputeTimer = null;
+    if (W.currentCollection === "") return;
+    W.showCollection(W.currentCollection, "library change");
+  },
+
   /** "Refresh": read the library again now, for the chosen collection. */
   onRefreshClick: () => {
     const W = TabellifyWorkspace;
     if (W.currentCollection === "") return;
+    // A pending live update would only repeat this read.
+    if (W.recomputeTimer !== null) {
+      window.clearTimeout(W.recomputeTimer);
+      W.recomputeTimer = null;
+    }
     W.showCollection(W.currentCollection, "refresh");
   },
 
@@ -1087,8 +1191,12 @@ var TabellifyWorkspace = {
     W.applyCodebookEdit(TabellifyCodebook.addTagToGroup(W.codebook, groupId, event.target.value));
   },
 
-  /** Remove our listeners when the document goes away (lifecycle symmetry). */
+  /**
+   * Remove our listeners and the Notifier observer when the document goes away
+   * (lifecycle symmetry).
+   */
   onUnload: () => {
+    TabellifyWorkspace.unregisterMonitorObserver("workspace closed");
     TabellifyWorkspace.el("tabellify-collection-select")
       ?.removeEventListener("change", TabellifyWorkspace.onCollectionChange);
     TabellifyWorkspace.el("tabellify-monitor-refresh")
