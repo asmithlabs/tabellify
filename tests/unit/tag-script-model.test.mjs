@@ -152,3 +152,94 @@ test("AC12: very long input (10 000 characters) parses without error", () => {
   const long = "x".repeat(10000);
   assert.deepEqual(items(long), [tag(long)]);
 });
+
+// ---- Feature 006b AC8: tokenAt (the name being typed at the cursor) ----------------------
+
+/** tokenAt with the cursor at the "|" in `marked` (the "|" itself is removed). */
+const tokenAtMark = (marked) => {
+  const cursor = marked.indexOf("|");
+  const text = marked.slice(0, cursor) + marked.slice(cursor + 1);
+  return { text, token: plain(P.tokenAt(text, cursor)) };
+};
+
+test("AC8: tokenAt at the top level and inside a group", () => {
+  assert.deepEqual(tokenAtMark("mor|").token,
+    { start: 0, end: 3, prefix: "mor", value: "mor", quoted: false, inGroup: false, groupName: "" });
+  assert.deepEqual(tokenAtMark("Outcome(mor|").token,
+    { start: 8, end: 11, prefix: "mor", value: "mor", quoted: false, inGroup: true, groupName: "Outcome" });
+  // A later tag of the group, and a group after an earlier item.
+  assert.deepEqual(tokenAtMark("a, Outcome(x, mo|)").token,
+    { start: 14, end: 16, prefix: "mo", value: "mo", quoted: false, inGroup: true, groupName: "Outcome" });
+  // A quoted group name is unquoted and cleaned.
+  assert.equal(tokenAtMark('" Smith, J. "(ab|').token.groupName, "Smith, J.");
+  // Back at the top level after a closed group and a comma.
+  assert.deepEqual(tokenAtMark("G(a), b|").token,
+    { start: 6, end: 7, prefix: "b", value: "b", quoted: false, inGroup: false, groupName: "" });
+});
+
+test("AC8: tokenAt right after ( and after a comma gives an empty prefix; leading spaces skipped", () => {
+  assert.deepEqual(tokenAtMark("Outcome(|").token,
+    { start: 8, end: 8, prefix: "", value: "", quoted: false, inGroup: true, groupName: "Outcome" });
+  assert.deepEqual(tokenAtMark("a,|").token,
+    { start: 2, end: 2, prefix: "", value: "", quoted: false, inGroup: false, groupName: "" });
+  assert.deepEqual(tokenAtMark("a,   he|").token,
+    { start: 5, end: 7, prefix: "he", value: "he", quoted: false, inGroup: false, groupName: "" });
+  assert.deepEqual(tokenAtMark("|").token,
+    { start: 0, end: 0, prefix: "", value: "", quoted: false, inGroup: false, groupName: "" });
+});
+
+test("AC8: tokenAt with the cursor in the middle of a name: end = end of the name", () => {
+  const { token } = tokenAtMark("x, Mor|tality  , y");
+  assert.equal(token.start, 3);
+  assert.equal(token.end, 12); // trailing spaces before the comma are not part of it
+  assert.equal(token.prefix, "Mor");
+  assert.equal(token.value, "Mortality");
+  assert.equal(tokenAtMark("G(Mor|tality)").token.end, 11);
+});
+
+test("AC8: tokenAt with a quoted token, with and without its closing quote", () => {
+  assert.deepEqual(tokenAtMark('"Smith, J|"').token,
+    { start: 0, end: 10, prefix: "Smith, J", value: "Smith, J", quoted: true, inGroup: false, groupName: "" });
+  assert.deepEqual(tokenAtMark('G("a (b|').token,
+    { start: 2, end: 7, prefix: "a (b", value: "a (b", quoted: true, inGroup: true, groupName: "G" });
+  // Separators inside quotes are ignored: still at the top level, one token.
+  assert.deepEqual(tokenAtMark('"x(y), z", ab|').token,
+    { start: 11, end: 13, prefix: "ab", value: "ab", quoted: false, inGroup: false, groupName: "" });
+  // After a closed quote, or a stray quote inside a bare name: no list.
+  assert.equal(P.tokenAt('"ab" ', 5), null);
+  assert.equal(tokenAtMark('"ab"|').token, null);
+  assert.equal(tokenAtMark('ab"c|').token, null);
+});
+
+test("AC8: tokenAt is null after ), before (, in a nested group, and for a cursor out of range", () => {
+  assert.equal(tokenAtMark("G(a)|").token, null);
+  assert.equal(tokenAtMark("G(a) |").token, null);
+  assert.equal(tokenAtMark("Exp|osure(a)").token, null);
+  assert.equal(tokenAtMark("Exposure |(a)").token, null);
+  assert.equal(tokenAtMark("A(B(c|").token, null);
+  assert.equal(P.tokenAt("abc", -1), null);
+  assert.equal(P.tokenAt("abc", 4), null);
+  assert.equal(P.tokenAt("abc", 1.5), null);
+  assert.equal(P.tokenAt("abc", undefined), null);
+  // After a nested group is closed again, the top level works again.
+  assert.equal(tokenAtMark("A(B(c)), x|").token.prefix, "x");
+});
+
+test("AC8: tokenAt prefix is NFC-cleaned", () => {
+  const decomposed = "Caf" + "é";
+  const text = `G(${decomposed}`;
+  const token = P.tokenAt(text, text.length);
+  assert.equal(token.prefix, "Café");
+  assert.equal(token.prefix.length, 4);
+});
+
+test("AC8: tokenAt on a 10 000-character line", () => {
+  const parts = [];
+  for (let k = 0; parts.join(", ").length < 10000; k++) parts.push(k % 5 === 0 ? `G${k}(t${k}a, t${k}b)` : `tag ${k}`);
+  const text = `${parts.join(", ")}, Last(mo`;
+  assert.ok(text.length >= 10000);
+  const token = P.tokenAt(text, text.length);
+  assert.equal(token.prefix, "mo");
+  assert.equal(token.groupName, "Last");
+  assert.equal(token.end, text.length);
+});
