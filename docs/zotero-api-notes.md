@@ -81,6 +81,15 @@ reaches the workspace document) were checked on 2026-11-12 against Zotero source
 `src/`. If ADR-0015 is accepted, the "System colours" row's advice "The plugin should not set
 `background-color` itself" applies only to `:root`/`window` (ADR-0015 §5, §7).
 
+The Feature 006a–008 rows (workspace restructure, tag script, optional groups, ADR-0016
+**Proposed**; plus rows needed by the later phases 006b autocomplete, 008 CSV export and
+007a "View table" modal, recorded ahead so their specs can cite them) were checked on
+2026-11-13 against Zotero source at tag **`10.0.9`** (`tags.js`, `resource/schema/userdata.sql`,
+`modules/filePicker.mjs`, `fileInterface.js`), the Z7 guide, and Firefox **ESR 140**
+(`IOUtils.webidl`). Line numbers are approximate (counted by a fetch tool); search for the
+quoted identifier. 006a itself adds **no** new `Zotero.*` call. Runtime checks: RT-S1–RT-S3
+(end of this file; all read-only, none needed before 006a).
+
 Abbreviations used in the Source column:
 `Z7`/`Z8`/`Z10` = the dev guides above; `src:` = `https://github.com/zotero/zotero/blob/10.0.8/`;
 `src10:` = `https://github.com/zotero/zotero/blob/10.0.9/`;
@@ -183,6 +192,16 @@ Abbreviations used in the Source column:
 | Standard CSS for the design tokens: custom properties + `var()`, `:focus-visible`, `:focus-within`, `font-variant-numeric: tabular-nums`, `@media (prefers-reduced-motion: reduce)`, `transition`, `@keyframes` | F005d: `tokens.css` and the workspace restyle | Verified (docs) | Firefox ESR 140 (Zotero 10.0.9) | MDN: [Using CSS custom properties](https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties), [`:focus-visible`](https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible), [`:focus-within`](https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-within), [`font-variant-numeric`](https://developer.mozilla.org/en-US/docs/Web/CSS/font-variant-numeric), [`prefers-reduced-motion`](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion), [`transition`](https://developer.mozilla.org/en-US/docs/Web/CSS/transition), [`@keyframes`](https://developer.mozilla.org/en-US/docs/Web/CSS/@keyframes) | All long supported in Firefox. `:focus-visible` and `tabular-nums` are already used in `workspace.css`. Zotero's own SCSS compiles to custom properties on `:root` (row above), so custom properties in chrome documents are Zotero's own practice. Whether `prefers-reduced-motion` follows the macOS "Reduce motion" setting in a chrome document is checked in spec F005d AC5 |
 | `Services.prefs.getIntPref(name, defaultValue)` | **Runtime check RT-D1 only**, never in `src/` | Verified (source) | ESR 140 | moz:[`modules/libpref/nsIPrefBranch.idl`](https://searchfox.org/mozilla-esr140/source/modules/libpref/nsIPrefBranch.idl) (`[optional_argc,binaryname(GetIntPrefWithDefault)] long getIntPref(in string aPrefName, [optional] in long aDefaultValue);`, "@param aDefaultValue The value to return if the preference is not set.") | Read-only |
 | `window.matchMedia(query).matches` | **Runtime checks RT-D1/RT-D2 only**, never in `src/` | Verified (docs) | ESR 140 | [MDN `Window.matchMedia()`](https://developer.mozilla.org/en-US/docs/Web/API/Window/matchMedia) | Standard DOM; read-only |
+| Zotero tag-name identity: a name is cleaned with `(data.tag + '').trim().normalize()` (Unicode NFC) and then looked up **exactly** (no case folding); the database column `tags.name` is `TEXT NOT NULL UNIQUE` with no `COLLATE` clause (SQLite's default binary, case-sensitive comparison) | F006a: the tag script and codebook use the same rule (trim + NFC, case-sensitive), so `Heat` and `heat` are two tags, as in Zotero (answers F004 Q3, which was UNVERIFIED) | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/data/tags.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/tags.js) (`cleanData` ~L800: `cleanedData.tag = (data.tag + '').trim().normalize();`; `getID` ~L80–97: cleans the name with `this.cleanData({` then `var id = _idsByTag.get(data.tag);`; no `toLowerCase` anywhere in the file; `getAllWithin` sorts with `ORDER BY name COLLATE NOCASE`, for display order only); [src10:`resource/schema/userdata.sql`](https://github.com/zotero/zotero/blob/10.0.9/resource/schema/userdata.sql) (~L248: `CREATE TABLE tags (tagID INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, nameNormalized TEXT);`) | `nameNormalized` is filled by `Zotero.Utilities.Internal.normalizeForSearchStorage` for **search**, not identity. `Zotero.Tags.MAX_SYNC_LENGTH = 255` (~L33): longer tags exist locally but are not synced; Tabellify sets no limit (F004 Q4). Tabellify only reads this behaviour; it never calls `cleanData` or `getID` |
+| `Zotero.Tags.getAll(libraryID)` includes **annotation (highlight) tags** and tags used only on **trashed** items (re-check of the F004 row for 006b) | F006b: autocomplete from all tags in My Library | Verified (source, by composition); **runtime RT-S1** | 10.0.9 | [src10:`chrome/content/zotero/xpcom/data/tags.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/tags.js) (`getAll` → `getAllWithin({ libraryID, types })`; `getAllWithin` ~L151–158: `"SELECT DISTINCT tagID \|\| ':' \|\| type FROM itemTags "` + `"JOIN items USING (itemID) WHERE libraryID = ? "`; no `deletedItems` condition); [src10:`resource/schema/userdata.sql`](https://github.com/zotero/zotero/blob/10.0.9/resource/schema/userdata.sql) (~L229–243: `CREATE TABLE itemAnnotations (itemID INTEGER PRIMARY KEY, parentItemID INT NOT NULL, …` with `FOREIGN KEY (itemID) REFERENCES items(itemID)`; ~L265: `itemTags (itemID INT NOT NULL, tagID INT NOT NULL, type INT NOT NULL, …)`) | Annotations are rows in `items`, and their tags are rows in `itemTags`, so the library-wide query returns them. The query has no trash filter, so tags only on trashed items are listed too (upgrades the F004 row's "UNVERIFIED (R9)" to Verified (source); 006b may filter nothing, since a trashed paper's tag is still a real Zotero tag). Manual and automatic tags both appear (de-duplicate by name). Read-only `SELECT` |
+| `String.prototype.normalize()` (default form NFC) | F006a: clean typed names the way Zotero does | Verified (docs) | ECMAScript; Firefox ESR 140; Node | [MDN `String.prototype.normalize()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/normalize) | Standard JavaScript, available in the Node test sandbox too |
+| `HTMLInputElement.setSelectionRange(start, end)`, `.selectionStart` / `.selectionEnd`, `.setRangeText(text, start, end, "end")`; ARIA `aria-invalid`, `aria-describedby`, `role="alert"`; WAI-ARIA combobox pattern (`role="combobox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant`, `role="listbox"` / `"option"`) | F006a: highlight a script error; F006b: replace the token at the cursor, suggestion list | Verified (docs) | Firefox ESR 140 | MDN: [`setSelectionRange`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/setSelectionRange), [`setRangeText`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/setRangeText), [`selectionStart`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/selectionStart); [WAI-ARIA APG combobox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) | Standard DOM; no Zotero API. Our inputs are `html:input` elements in the XUL document, like the F004 inputs |
+| HTML `<details>` / `<summary>` | F006a: "Edit groups and tags" disclosure (spec Q1) | Verified (docs); **runtime = spec F006a AC5** | Firefox ESR 140 | [MDN `<details>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/details) | Standard HTML, used as `html:details` in our XUL document. Not checked inside a chrome XUL document; AC5 opens it |
+| `IOUtils.writeJSON(path, value, { mode: "create" })` (refuses to overwrite) and `IOUtils.writeUTF8(path, string, options)` → `Promise<unsigned long long>` | F006a: one-time `codebooks.v1.json` copy (ADR-0016 §3; `mode: "create"`); F008: write the CSV file (`writeUTF8`) | Verified (source) | ESR 140 | moz:[`dom/chrome-webidl/IOUtils.webidl`](https://searchfox.org/mozilla-esr140/source/dom/chrome-webidl/IOUtils.webidl) (`Promise<unsigned long long> writeUTF8(DOMString path, UTF8String string, optional WriteOptions options = {});`; `WriteOptions`: `WriteMode mode = "overwrite";`, `DOMString tmpPath;`, `DOMString backupFile;`; `enum WriteMode { "overwrite", "append", "appendOrCreate", "create", };` "create": "Create a new file. This mode will refuse to overwrite an existing file.") | Writes. 006a: only in `codebook-store.js` (already allow-listed; no new entry). 008: only in the CSV writer file, allow-listed by ADR-0017 (outline in spec F006a). The failure for an existing file under `mode: "create"` is a rejected promise (error name not checked; treat any rejection as "copy not made") |
+| `FilePicker` (Zotero module wrapping `nsIFilePicker`): `ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs")` → `{ FilePicker }`; `new FilePicker()`, `fp.init(window, title, fp.modeSave)`, `fp.appendFilter(title, "*.csv")`, `fp.defaultString`, `await fp.show()` → `fp.returnOK` (0) / `returnCancel` (1) / `returnReplace` (2), `fp.file` (string path) | F008: "Export CSV" save dialog | Verified (docs + source); **in the tab iframe UNVERIFIED (runtime): RT-S2** | 10.0.9 | Z7 ("The import line for `FilePicker` has changed:" `var { FilePicker } = ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs');`); [src10:`chrome/content/zotero/modules/filePicker.mjs`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/modules/filePicker.mjs) (~L40 `export class FilePicker {`; constructor wraps `Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker)`; ~L50 `init(parentWindow, title, mode)` → `this._fp.init(parentWindow.browsingContext, title, mode)`; ~L82 `async show()` returns a Promise of the return constant; ~L100–114 `modeSave = 1`, `returnOK = 0`, `returnCancel = 1`, `returnReplace = 2`; `file` getter returns `val.path`); Zotero's own export uses it: [src10:`chrome/content/zotero/fileInterface.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/fileInterface.js) (`Zotero_File_Exporter.prototype.save`: `var fp = new FilePicker();`, `fp.init(window, …, fp.modeSave);`, `var rv = await fp.show();`, `if (rv != fp.returnOK && rv != fp.returnReplace) { return; }`) | The picker itself writes nothing; it returns a path. `init` needs a window with a `browsingContext` (our document's window has one; RT-S2 checks the dialog opens from the tab iframe). Not proposed for 006a |
+| `ChromeUtils.importESModule(url)` | F008: load the `FilePicker` module | Verified (docs) | Zotero 7+ (Firefox 115+; ESR 140) | Z7 ("Most Mozilla JSM modules have been renamed to `.sys.mjs` and must be imported with `ChromeUtils.importESModule()`") | Privileged documents only (ours is one) |
+| HTML `<dialog>` with `showModal()` / `close()` | F007a: "View table" modal (option) | Verified (docs) for the element; **in our chrome XUL document inside the tab iframe UNVERIFIED (runtime): RT-S3** | Firefox ESR 140 | [MDN `<dialog>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog), [`HTMLDialogElement.showModal()`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLDialogElement/showModal) | Fallback without any new API: an in-page overlay panel. Not proposed for 006a |
+| `Downloads.getPreferredDownloadsDirectory()` (`resource://gre/modules/Downloads.sys.mjs`) | F008 alternative (save to Downloads automatically, PRD sketch) | **UNVERIFIED** (not read) | — | To verify: moz:`toolkit/components/downloads/Downloads.sys.mjs`, search `getPreferredDownloadsDirectory` | **Not proposed**: the file picker (architecture §5) is recommended |
 
 ## Runtime checks for owner
 
@@ -536,3 +555,70 @@ frame.contentWindow.getComputedStyle(frame.contentDocument.getElementById("tabel
 Expect `"rgb(245, 247, 250)"` in Light and `"rgb(36, 48, 54)"` in Dark (the proposed
 `--tabellify-color-page`). Same value both times = no live update (spec F005d AC3 then records
 "reopen needed").
+
+### F006a–008 runtime checks (owner, dev profile, read-only)
+None is needed for 006a. RT-S1 is for 006b, RT-S2 for 008, RT-S3 for 007a. Tools →
+Developer → Run JavaScript, "Run as async function" ticked.
+
+**RT-S1: Does the library tag list include highlight (annotation) tags? (006b; any build).**
+Needs at least one highlight with a manual tag in some collection of the dev library (use one
+that exists; do not create data for this). Reads only. Expect `annotationTagNames` non-empty
+and `missingFromGetAll` empty.
+```js
+const libID = Zotero.Libraries.userLibraryID;
+await Zotero.Libraries.get(libID).waitForDataLoad("item");
+const all = new Set((await Zotero.Tags.getAll(libID)).map((t) => t.tag));
+const annotationTagNames = new Set();
+for (const c of Zotero.Collections.getByLibrary(libID, true)) {
+  for (const item of c.getChildItems().filter((i) => i.isRegularItem())) {
+    for (const att of Zotero.Items.get(item.getAttachments()).filter((a) => a.isFileAttachment())) {
+      for (const ann of att.getAnnotations()) for (const t of ann.getTags()) annotationTagNames.add(t.tag);
+    }
+  }
+}
+return {
+  libraryTagCount: all.size,
+  annotationTagNames: [...annotationTagNames].slice(0, 10),
+  missingFromGetAll: [...annotationTagNames].filter((n) => !all.has(n)),
+};
+```
+Pass = `missingFromGetAll` is `[]`. Record the result here and change the `Zotero.Tags.getAll`
+annotation row's status (owner).
+
+**RT-S2: Does Zotero's save dialog open from the Tabellify tab? (008; any build with the tab).**
+Open the Tabellify tab first. The dialog only chooses a path; **press Cancel**, so nothing is
+written. Expect `{ rv: 1, cancel: 1 }`.
+```js
+const frame = Zotero.getMainWindow().document.querySelector('iframe[src="chrome://tabellify/content/workspace.xhtml"]');
+if (!frame) return "Tabellify tab not open";
+const { FilePicker } = ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs");
+const fp = new FilePicker();
+fp.init(frame.contentWindow, "Tabellify RT-S2: press Cancel", fp.modeSave);
+fp.appendFilter("CSV", "*.csv");
+fp.defaultString = "rt-s2.csv";
+const rv = await fp.show();
+return { rv, cancel: fp.returnCancel };
+```
+Pass = a save dialog appears in front of Zotero and Cancel returns `rv: 1`. If it throws or
+nothing appears, record the error; 008 then opens the picker with the main window
+(`Zotero.getMainWindow()`) instead (to be checked the same way).
+
+**RT-S3: Does `<dialog>.showModal()` work in the Tabellify tab? (007a; any build with the tab).**
+Creates a temporary element in the Tabellify tab only (nothing saved), shows it, and removes
+it after 3 seconds. Expect a small box with the text "RT-S3" over the tab, then
+`{ open: true, closed: true }`.
+```js
+const frame = Zotero.getMainWindow().document.querySelector('iframe[src="chrome://tabellify/content/workspace.xhtml"]');
+if (!frame) return "Tabellify tab not open";
+const doc = frame.contentDocument;
+const dlg = doc.createElementNS("http://www.w3.org/1999/xhtml", "dialog");
+dlg.textContent = "RT-S3";
+doc.getElementById("tabellify-workspace-main").append(dlg);
+dlg.showModal();
+const open = dlg.open;
+await new Promise((r) => frame.contentWindow.setTimeout(r, 3000));
+dlg.close();
+dlg.remove();
+return { open, closed: !dlg.open };
+```
+Pass = the box is visible and `open: true`. Otherwise 007a uses an in-page overlay panel.
