@@ -101,7 +101,8 @@
     </html:div>
 
     <!-- Feature 005: Tag monitor. The summary, messages and group list are filled by
-         workspace.js with plain text. "Refresh" is always present: it re-reads the
+         workspace.js with plain text. Feature 005d: each summary span is shown as a card;
+         "Remaining r" (tabellify-monitor-remaining-total) is the codebook tags not used yet. "Refresh" is always present: it re-reads the
          library at once (live updates also re-read it on their own). -->
     <html:section id="tabellify-tag-monitor">
       <html:div id="tabellify-monitor-header">
@@ -121,6 +122,7 @@
       <html:p id="tabellify-monitor-summary" role="status" hidden="hidden">
         <html:span id="tabellify-monitor-used"></html:span>
         <html:span id="tabellify-monitor-all-used" hidden="hidden"></html:span>
+        <html:span id="tabellify-monitor-remaining-total" hidden="hidden"></html:span>
         <html:span id="tabellify-monitor-papers"></html:span>
       </html:p>
       <html:p id="tabellify-monitor-warning" hidden="hidden"></html:p>

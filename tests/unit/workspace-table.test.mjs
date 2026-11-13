@@ -438,3 +438,59 @@ test("sort: when the sorted tag leaves the codebook, the table falls back to the
   assert.equal(W.sortKey, T.DEFAULT_SORT.key);
   assert.deepEqual(rowTitles(document), ["Paper 1", "Paper 3", "Paper 2"]);
 });
+
+// ---------------------------------------------------------------------------------------
+// Feature 005d AC14: the "complete" k/M cell (spec Q6) and the Remaining card (Q5)
+// ---------------------------------------------------------------------------------------
+
+/** Title → [k/M text, has tabellify-count-complete] for every row. */
+function countCells(doc) {
+  return Object.fromEntries(bodyRows(doc).map((tr) => {
+    const cell = tr.children.at(-1);
+    return [tr.children[1].textContent, [cell.textContent, cell.classList.contains("tabellify-count-complete")]];
+  }));
+}
+
+test("F005d AC14: k/M is marked complete exactly when the paper has every codebook tag (highlights only)", () => {
+  // Paper 2 has both Exposure tags on highlights; Paper 1 has "Heat index" only on the item.
+  const { document } = setup({ groups: [{ id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] }] });
+  assert.deepEqual(countCells(document), {
+    "Paper 1": ["0/2", false],
+    "Paper 2": ["2/2", true],
+    "Paper 3": ["0/2", false],
+  });
+});
+
+test("F005d AC14: with item tags counted, a paper becomes complete through its item tag", () => {
+  const groups = [{ id: "g2", name: "Exposure", tags: ["Heat index"] }, { id: "g3", name: "Outcome", tags: ["Mortality"] }];
+  const off = setup({ groups });
+  assert.deepEqual(countCells(off.document), {
+    "Paper 1": ["1/2", false],
+    "Paper 2": ["1/2", false],
+    "Paper 3": ["0/2", false],
+  });
+  const on = setup({ groups, countItemTags: true });
+  assert.deepEqual(countCells(on.document), {
+    "Paper 1": ["2/2", true],
+    "Paper 2": ["1/2", false],
+    "Paper 3": ["0/2", false],
+  });
+});
+
+test("F005d AC14: never complete without codebook tags (k/M shows –)", () => {
+  const { document } = setup({ groups: [{ id: "g2", name: "Exposure", tags: [] }] });
+  for (const [text, complete] of Object.values(countCells(document))) {
+    assert.equal(text, "–");
+    assert.equal(complete, false);
+  }
+});
+
+test("F005d Q5: the Remaining card shows M − k and hides when every tag is used", () => {
+  const { W, document } = setup(); // 3 codebook tags, all 3 used across the collection
+  const card = document.getElementById("tabellify-monitor-remaining-total");
+  assert.equal(card.hidden, true, "all used: no Remaining card");
+  W.codebook = codebookData([{ id: "g2", name: "Exposure", tags: ["Heat index", "Humidity", "Wind"] }]);
+  W.renderMonitor();
+  assert.equal(card.hidden, false);
+  assert.equal(card.textContent, "tabellify-monitor-remaining-count 2"); // test strings: ID as text
+});

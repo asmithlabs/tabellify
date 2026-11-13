@@ -339,6 +339,7 @@ var TabellifyWorkspace = {
     "tabellify-monitor-papers",
     "tabellify-monitor-used",
     "tabellify-monitor-remaining",
+    "tabellify-monitor-remaining-count",
     "tabellify-monitor-none",
     "tabellify-monitor-paper-one",
     "tabellify-monitor-paper-other",
@@ -575,6 +576,11 @@ var TabellifyWorkspace = {
     const allUsed = this.el("tabellify-monitor-all-used");
     allUsed.hidden = !result.allUsed;
     allUsed.textContent = this.text("tabellify-monitor-all-used");
+    // F005d (spec Q5): "Remaining r" card, r = codebook tags not used yet. Hidden when
+    // every tag is used (the "All codebook tags are used." card shows instead).
+    const remaining = this.el("tabellify-monitor-remaining-total");
+    remaining.hidden = result.total - result.used <= 0;
+    remaining.textContent = `${this.text("tabellify-monitor-remaining-count")} ${result.total - result.used}`;
     this.el("tabellify-monitor-papers").textContent =
       `${this.text("tabellify-monitor-papers")} ${result.paperCount}`;
     warning.hidden = data.annotationErrors === 0;
@@ -675,6 +681,9 @@ var TabellifyWorkspace = {
       }));
       const count = this.html("td", "tabellify-col-count tabellify-monitor-count");
       count.textContent = counting ? `${paper.count}/${paper.total}` : "–";
+      // F005d (spec Q6): a paper with every codebook tag gets the "complete" look (green
+      // plus a CSS ✓ in workspace.css). Only a class: no text or data changes.
+      count.classList.toggle("tabellify-count-complete", counting && paper.total > 0 && paper.count === paper.total);
       tr.append(this.rowGripCell(paper), title, ...tagCells, count);
       body.append(tr);
     });
