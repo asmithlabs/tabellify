@@ -27,6 +27,10 @@
 //   - every listener added to the table and the table toolbar is removed in onUnload
 //   - workspace.js never reads drag data back (no `getData(`), and sets only the private
 //     application/x-tabellify-* drag types
+// Feature 005c T6 (ADR-0014) adds:
+//   - layout-store.js loads after table-layout-model.js and before workspace.js, and uses
+//     no Zotero global at all (workspace.js passes it the folder from the codebook store)
+//   - the pending layout-save timer is cleared on unload; layout messages are formatted
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -46,6 +50,7 @@ const modelJs = code("content/codebook-model.js");
 const storeJs = code("content/codebook-store.js");
 const monitorJs = code("content/tag-monitor-model.js");
 const layoutModelJs = code("content/table-layout-model.js");
+const layoutStoreJs = code("content/layout-store.js");
 const ftlIds = new Set([...read("locale/en-US/tabellify.ftl").matchAll(/^(tabellify-[\w-]+)\s*=/gm)].map((m) => m[1]));
 
 test("F003: workspace.xhtml loads include.js, then workspace.js, inside <window>", () => {
@@ -274,4 +279,32 @@ test("F005c AC11: drag data is never read back; only private drag types are set"
   const setData = [...js.matchAll(/\.setData\(\s*([^,]+),/g)].map((m) => m[1].trim());
   assert.ok(setData.length === 2, "expected two setData calls (column and row)");
   for (const arg of setData) assert.match(arg, /^W\.(?:COLUMN|ROW)_DRAG_TYPE$/);
+});
+
+test("F005c T6: layout-store.js loads after table-layout-model.js, before workspace.js; no Zotero in it", () => {
+  const pos = (file) => xhtml.search(new RegExp(`<script\\s+src="${file.replace(/[./]/g, "\\$&")}"\\s*/>`));
+  const model = pos("chrome://tabellify/content/table-layout-model.js");
+  const store = pos("chrome://tabellify/content/layout-store.js");
+  const own = pos("chrome://tabellify/content/workspace.js");
+  assert.ok(model >= 0 && store >= 0 && own >= 0, "a script tag is missing");
+  assert.ok(model < store, "layout-store.js must come after table-layout-model.js (it uses the model)");
+  assert.ok(store < own, "layout-store.js must come before workspace.js");
+  assert.match(layoutStoreJs, /var TabellifyLayoutStore\b/, "store not found (check is vacuous)");
+  assert.doesNotMatch(layoutStoreJs, /\bZotero\b/);
+  // The folder comes from the codebook store (one place reads the data directory).
+  assert.match(js, /this\.layoutDir = TabellifyCodebookStore\.dataDir\(\)/);
+});
+
+test("F005c T6: the layout-save timer is cleared on unload; layout messages are formatted", () => {
+  const onUnload = /onUnload:\s*\(\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  assert.match(onUnload, /stopLayoutSaveTimer\(/);
+  const helper = /stopLayoutSaveTimer\(\)\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
+  assert.match(helper, /clearTimeout\(this\.layoutSaveTimer\)/);
+  const list = /LAYOUT_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const ids = new Set([...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+  const shown = [...js.matchAll(/showLayoutStatus\(\s*"(tabellify-[^"]+)"/g)].map((m) => m[1]);
+  assert.ok(shown.length >= 3, "showLayoutStatus calls not found (check is vacuous)");
+  for (const id of shown) assert.ok(ids.has(id), `${id} is not in LAYOUT_STRINGS`);
+  // Ternary IDs passed through a variable are listed too.
+  for (const id of ["tabellify-table-layout-newer", "tabellify-table-layout-load-error"]) assert.ok(ids.has(id), id);
 });

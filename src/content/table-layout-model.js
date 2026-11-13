@@ -6,7 +6,9 @@
  * (Alt+arrow keys). See docs/features/005c-table-layout.md.
  *
  * This file holds only the RULES (which order results from a move, where a drop lands,
- * how far to auto-scroll, which rows are shaded). workspace.js does the DOM work.
+ * how far to auto-scroll, which rows are shaded) and the checks for the saved layout file
+ * layout.json (ADR-0014). workspace.js does the DOM work; layout-store.js does the file
+ * work.
  *
  * PURE: no Zotero, DOM, IOUtils or PathUtils globals, so tests/unit/table-layout-model.test.mjs
  * can run it in Node. IMMUTABLE STYLE (as in tag-monitor-model.js): no function changes its
@@ -20,7 +22,7 @@
 /**
  * One global object (a property of the window, or of the Node test's sandbox, because it is
  * declared with `var`). workspace.xhtml loads this file after tag-monitor-model.js and before
- * workspace.js.
+ * layout-store.js and workspace.js.
  */
 var TabellifyTableLayout = {
   /**
@@ -32,6 +34,9 @@ var TabellifyTableLayout = {
 
   /** Sort-state key that means "the hand-made order" instead of a column sort. */
   MANUAL: "manual",
+
+  /** Version of the layout.json format this code writes (ADR-0014 §2). */
+  SCHEMA_VERSION: 1,
 
   // ---------------------------------------------------------------------------------------
   // Columns
@@ -231,5 +236,104 @@ var TabellifyTableLayout = {
       }
       return current;
     });
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // layout.json (ADR-0014): validation, migration, building the data to save
+  // ---------------------------------------------------------------------------------------
+
+  /** A new, empty layout (what is used when there is no file yet). Nothing is written. */
+  emptyLayout() {
+    return {
+      schemaVersion: this.SCHEMA_VERSION,
+      revision: 0,
+      perPaperTable: { columnOrder: [...this.COLUMN_IDS], manualOrders: {} },
+    };
+  },
+
+  /**
+   * Top-level checks of a layout.json value. Only the frame is checked strictly; the
+   * contents (column IDs, keys) are cleaned up by migrateLayout(), because a bad entry
+   * there only costs part of the layout (ADR-0014 §3).
+   * - `{ ok: true }`
+   * - `{ ok: false, newer: true, reason }`: made by a newer Tabellify; never overwrite.
+   * - `{ ok: false, reason }`: not a layout file; never overwrite.
+   * `reason` is English for Debug Output only.
+   * @param {unknown} data
+   * @returns {{ ok: boolean, newer?: boolean, reason?: string }}
+   */
+  validateLayout(data) {
+    const fail = (reason) => ({ ok: false, reason });
+    const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+    if (!isObject(data)) return fail("top level is not an object");
+    if (!Number.isInteger(data.schemaVersion) || data.schemaVersion < 1) {
+      return fail("schemaVersion is not a positive integer");
+    }
+    if (data.schemaVersion > this.SCHEMA_VERSION) {
+      return { ok: false, newer: true, reason: `schemaVersion ${data.schemaVersion} is newer than ${this.SCHEMA_VERSION}` };
+    }
+    if (!Number.isInteger(data.revision) || data.revision < 0) return fail("revision is not a non-negative integer");
+    if (!isObject(data.perPaperTable)) return fail("perPaperTable is not an object");
+    if (!Array.isArray(data.perPaperTable.columnOrder)) return fail("perPaperTable.columnOrder is not an array");
+    if (!isObject(data.perPaperTable.manualOrders)) return fail("perPaperTable.manualOrders is not an object");
+    return { ok: true };
+  },
+
+  /**
+   * Bring VALID data (validateLayout first) up to SCHEMA_VERSION and clean its contents:
+   * the column order is normalized; each manual order keeps only non-empty string keys,
+   * without duplicates; entries with an empty key or an empty/non-array order are dropped.
+   * Only version 1 exists, so there is no migration step yet.
+   * @param {any} data
+   * @returns {{ schemaVersion: number, revision: number,
+   *   perPaperTable: { columnOrder: string[], manualOrders: Record<string, string[]> } }}
+   */
+  migrateLayout(data) {
+    if (data.schemaVersion !== this.SCHEMA_VERSION) {
+      throw new Error(`no migration from schemaVersion ${data.schemaVersion}`);
+    }
+    const manualOrders = {};
+    for (const [collectionKey, order] of Object.entries(data.perPaperTable.manualOrders)) {
+      const keys = this.cleanKeys(order);
+      if (collectionKey !== "" && keys.length > 0) manualOrders[collectionKey] = keys;
+    }
+    return {
+      schemaVersion: this.SCHEMA_VERSION,
+      revision: data.revision,
+      perPaperTable: {
+        columnOrder: this.normalizeColumnOrder(data.perPaperTable.columnOrder),
+        manualOrders,
+      },
+    };
+  },
+
+  /**
+   * Non-empty strings only, first occurrence kept.
+   * @param {unknown} list
+   * @returns {string[]}
+   */
+  cleanKeys(list) {
+    if (!Array.isArray(list)) return [];
+    return [...new Set(list.filter((k) => typeof k === "string" && k !== ""))];
+  },
+
+  /**
+   * The `perPaperTable` object to save. Collections that no longer exist are pruned here:
+   * when `knownCollectionKeys` is given (a fresh snapshot of the library's collections),
+   * orders of other collections are left out. Empty orders are left out too.
+   * @param {unknown} columnOrder
+   * @param {Iterable<[string, unknown]>} manualOrders  e.g. a Map of collection key → item keys
+   * @param {Set<string> | null} [knownCollectionKeys]
+   * @returns {{ columnOrder: string[], manualOrders: Record<string, string[]> }}
+   */
+  layoutData(columnOrder, manualOrders, knownCollectionKeys = null) {
+    const out = {};
+    for (const [collectionKey, order] of manualOrders) {
+      if (typeof collectionKey !== "string" || collectionKey === "") continue;
+      if (knownCollectionKeys && !knownCollectionKeys.has(collectionKey)) continue;
+      const keys = this.cleanKeys(order);
+      if (keys.length > 0) out[collectionKey] = keys;
+    }
+    return { columnOrder: this.normalizeColumnOrder(columnOrder), manualOrders: out };
   },
 };

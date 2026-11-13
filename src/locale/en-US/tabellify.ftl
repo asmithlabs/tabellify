@@ -138,6 +138,12 @@ tabellify-table-clear-manual = Clear manual order
 tabellify-table-reset-columns = Reset columns
 tabellify-table-moved-to = moved to position
 tabellify-table-of = of
+# Saved table layout (layout.json, ADR-0014). The load-error and newer messages are
+# followed by the file's path.
+tabellify-table-layout-load-error = The saved table layout could not be read, so the default layout is shown. Layout changes will not be saved, and the file is left unchanged:
+tabellify-table-layout-newer = The saved table layout was made by a newer version of Tabellify, so the default layout is shown. Layout changes will not be saved, and the file is left unchanged:
+tabellify-table-layout-save-error = The table layout could not be saved. See Help → Debug Output Logging for details.
+tabellify-table-layout-conflict = The table layout was changed in another Tabellify tab and has been reloaded.
 
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two

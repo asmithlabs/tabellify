@@ -46,7 +46,8 @@
        in the fallback window. codebook-model.js (pure rules), codebook-store.js (file
        load/save, uses the model) and tag-monitor-model.js (pure tag-monitor logic) each
        define one global that workspace.js uses, so they come before it. table-layout-model.js
-       (F005c: pure rules for column/row order) also defines one global for workspace.js.
+       (F005c: pure rules for column/row order) and layout-store.js (F005c, ADR-0014: loads
+       and saves layout.json, uses the model) also define one global each for workspace.js.
        workspace.js only waits for "load" here, so the elements further down exist when it
        starts. -->
   <script src="chrome://zotero/content/include.js"/>
@@ -54,6 +55,7 @@
   <script src="chrome://tabellify/content/codebook-store.js"/>
   <script src="chrome://tabellify/content/tag-monitor-model.js"/>
   <script src="chrome://tabellify/content/table-layout-model.js"/>
+  <script src="chrome://tabellify/content/layout-store.js"/>
   <script src="chrome://tabellify/content/workspace.js"/>
 
   <html:main id="tabellify-workspace-main">
@@ -136,6 +138,13 @@
          The last element is visually hidden: workspace.js writes a short plain-text
          message into it after each keyboard move, and role="status" makes screen readers
          (VoiceOver) read it out. -->
+    <!-- Feature 005c (ADR-0014): problems with the saved layout file layout.json (could
+         not be read, made by a newer Tabellify, could not be saved, changed in another
+         tab). Filled by workspace.js with plain text; the file path follows in <code>. -->
+    <html:p id="tabellify-layout-status" role="status" hidden="hidden">
+      <html:span id="tabellify-layout-status-text"></html:span>
+      <html:code id="tabellify-layout-status-path" hidden="hidden"></html:code>
+    </html:p>
     <html:div id="tabellify-table-toolbar" hidden="hidden">
       <html:button id="tabellify-table-manual-order" data-action="manual-order"
                    aria-pressed="false" hidden="hidden"

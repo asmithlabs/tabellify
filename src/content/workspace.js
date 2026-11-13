@@ -20,7 +20,9 @@
  *   (or Alt+Left/Right on it) to move the column, drag a paper's grip (or Alt+Up/Down) to
  *   put the papers in a hand-made "manual order" per collection. The rules are pure logic
  *   in table-layout-model.js (TabellifyTableLayout). Only Tabellify's own arrays change:
- *   nothing is written to the library.
+ *   nothing is written to the library. The layout is saved in Tabellify's own
+ *   layout.json (ADR-0014) by layout-store.js (TabellifyLayoutStore), one second after the
+ *   last move; a file that cannot be read means "default layout" and is never overwritten.
  * - F004: shows and edits the codebook (super-tag groups and their planned tags). The rules
  *   live in codebook-model.js (TabellifyCodebook); the file is read and written by
  *   codebook-store.js (TabellifyCodebookStore): Tabellify's own codebooks.json in
@@ -45,6 +47,7 @@
  *   this document if we did not unregister it; it also unregisters itself if it is ever
  *   called after this document is gone);
  * - at most one pending debounce timer of this window (cleared).
+ * F005c adds at most one pending layout-save timer of this window (cleared in onUnload).
  * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
  * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
@@ -210,7 +213,9 @@ var TabellifyWorkspace = {
       this.untitledText = (await document.l10n?.formatValue("tabellify-untitled")) ?? "";
       // F005: the tag monitor's texts, formatted once (see MONITOR_STRINGS).
       await this.formatStrings(this.MONITOR_STRINGS);
-      await this.formatStrings(this.LAYOUT_STRINGS);
+      // F005c: the saved layout (and its strings) must be ready before the first table is
+      // shown. initLayout never throws (it has its own try/catch).
+      await this.layoutLoading;
       this.monitorReady = true;
       this.renderMonitor();
 
@@ -719,11 +724,15 @@ var TabellifyWorkspace = {
   ROW_DRAG_TYPE: "application/x-tabellify-row",
   COLUMN_DRAG_TYPE: "application/x-tabellify-column",
 
-  /** Fluent IDs used from JavaScript by the layout code (formatted once in init()). */
+  /** Fluent IDs used from JavaScript by the layout code (formatted once in initLayout()). */
   LAYOUT_STRINGS: [
     "tabellify-table-move-paper",
     "tabellify-table-moved-to",
     "tabellify-table-of",
+    "tabellify-table-layout-load-error",
+    "tabellify-table-layout-newer",
+    "tabellify-table-layout-save-error",
+    "tabellify-table-layout-conflict",
   ],
 
   /** Order of the five data columns: one order for the whole tab (not per collection). */
@@ -850,6 +859,7 @@ var TabellifyWorkspace = {
     this.columnOrder = order;
     this.renderMonitor();
     this.log(`layout: column ${movedId} moved to position ${order.indexOf(movedId) + 1} of ${order.length} (${how})`);
+    this.layoutChanged();
     return true;
   },
 
@@ -878,6 +888,7 @@ var TabellifyWorkspace = {
       `layout: paper ${paperId} moved to position ${next.indexOf(key) + 1} of ${next.length} ` +
       `in collection ${this.currentCollection} (${how}); showing manual order`,
     );
+    this.layoutChanged();
     return true;
   },
 
@@ -1106,6 +1117,7 @@ var TabellifyWorkspace = {
         // The two manual-order buttons are now hidden: keep the focus in the toolbar.
         W.el("tabellify-table-reset-columns").focus();
         W.log(`layout: manual order cleared for collection ${W.currentCollection}`);
+        W.layoutChanged();
         break;
       }
       case "reset-columns":
@@ -1113,8 +1125,197 @@ var TabellifyWorkspace = {
         W.columnOrder = [...TabellifyTableLayout.COLUMN_IDS];
         W.renderMonitor();
         W.log("layout: columns reset to the default order");
+        W.layoutChanged();
         break;
     }
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // Feature 005c (ADR-0014): saving the layout in Tabellify's own layout.json.
+  // File work: TabellifyLayoutStore. Checks: TabellifyTableLayout.validateLayout/migrateLayout.
+  // Written only after a user action (a move, "Reset columns", "Clear manual order"),
+  // LAYOUT_SAVE_DELAY_MS after the last one; never on load, never because the library
+  // changed. Never the Zotero library.
+  // ---------------------------------------------------------------------------------------
+
+  /** Several quick keyboard moves give one write (ADR-0014 §4). */
+  LAYOUT_SAVE_DELAY_MS: 1000,
+
+  /** Resolves when initLayout() has finished (set in onLoad; init() waits for it). */
+  layoutLoading: null,
+
+  /** File functions and folder, set in initLayout(). */
+  layoutFs: null,
+  layoutDir: "",
+
+  /** `revision` of layout.json as last loaded or saved (0 = no file yet). */
+  layoutRevision: 0,
+
+  /** False when layout.json could not be loaded: it must never be overwritten. */
+  layoutEditable: false,
+
+  /** The pending save timer's ID, or null. */
+  layoutSaveTimer: null,
+
+  /** True while a save runs; a change meanwhile sets layoutSaveAgain. */
+  layoutSaving: false,
+  layoutSaveAgain: false,
+
+  /**
+   * Start-up of the saved layout, called on "load". Own try/catch: a layout problem only
+   * means the default layout; the table keeps working.
+   */
+  async initLayout() {
+    try {
+      await Zotero.initializationPromise;
+      await this.formatStrings(this.LAYOUT_STRINGS);
+      this.layoutFs = TabellifyLayoutStore.platformFs();
+      // The same folder as codebooks.json (ADR-0012/0014). Asking the codebook store keeps
+      // the internal data-directory property in one place.
+      this.layoutDir = TabellifyCodebookStore.dataDir();
+      await this.loadLayout();
+    } catch (e) {
+      this.layoutEditable = false;
+      this.log("layout: could not load the saved layout; using the default layout, saving disabled");
+      this.showLayoutStatus("tabellify-table-layout-load-error", this.layoutDir || null);
+      Zotero.logError(e);
+    }
+  },
+
+  /**
+   * Read layout.json and use it. Never writes: a missing file means the default layout.
+   * A damaged or newer file also gives the default layout, and saving is turned off so the
+   * file stays as it is (the .bak next to it allows a manual recovery).
+   * @returns {Promise<boolean>} true if layout changes can be saved
+   */
+  async loadLayout() {
+    const result = await TabellifyLayoutStore.load(this.layoutFs, this.layoutDir);
+    if (result.status === "ok") {
+      this.applyLayout(result.data);
+      this.layoutRevision = result.data.revision;
+      this.layoutEditable = true;
+      if (result.existed) {
+        this.log(`layout: loaded ${result.path} (revision ${this.layoutRevision}, ${this.manualOrders.size} manual order(s))`);
+      } else {
+        this.log(`layout: no file yet at ${result.path}; using the default layout (nothing written)`);
+      }
+      this.showLayoutStatus(null);
+    } else {
+      this.applyLayout(TabellifyTableLayout.emptyLayout());
+      this.layoutEditable = false;
+      this.log(`layout: could not load ${result.path} (${result.status}): ${result.reason}; using the default layout, saving disabled`);
+      const id = result.status === "newer" ? "tabellify-table-layout-newer" : "tabellify-table-layout-load-error";
+      this.showLayoutStatus(id, result.path);
+    }
+    this.renderMonitor();
+    return this.layoutEditable;
+  },
+
+  /**
+   * Use loaded layout data (already cleaned by migrateLayout). If the chosen collection is
+   * in manual order but no longer has one, fall back to the default sort.
+   * @param {{ perPaperTable: { columnOrder: string[], manualOrders: Record<string, string[]> } }} data
+   */
+  applyLayout(data) {
+    this.columnOrder = TabellifyTableLayout.normalizeColumnOrder(data.perPaperTable.columnOrder);
+    this.manualOrders = new Map(Object.entries(data.perPaperTable.manualOrders));
+    if (this.sortKey === TabellifyTableLayout.MANUAL && !this.currentManualOrder()) {
+      this.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
+      this.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
+    }
+  },
+
+  /**
+   * The user changed the layout: save it LAYOUT_SAVE_DELAY_MS after the last change
+   * ("debouncing"). Does nothing when the file could not be loaded.
+   */
+  layoutChanged() {
+    if (!this.layoutEditable) return;
+    if (this.layoutSaveTimer !== null) window.clearTimeout(this.layoutSaveTimer);
+    // A function (never a string) is passed to setTimeout.
+    this.layoutSaveTimer = window.setTimeout(this.onLayoutSaveTimer, this.LAYOUT_SAVE_DELAY_MS);
+  },
+
+  /** The save timer fired. */
+  onLayoutSaveTimer: () => {
+    const W = TabellifyWorkspace;
+    W.layoutSaveTimer = null;
+    W.saveLayout();
+  },
+
+  /**
+   * Write the current layout. Collections that no longer exist are left out (pruned);
+   * the chosen collection's missing papers were already dropped by the move itself.
+   */
+  async saveLayout() {
+    if (!this.layoutEditable) return;
+    if (this.layoutSaving) {
+      this.layoutSaveAgain = true; // save once more when the running save is done
+      return;
+    }
+    this.layoutSaving = true;
+    try {
+      const known = this.collectionKeys.size > 0 ? new Set(this.collectionKeys.values()) : null;
+      const data = TabellifyTableLayout.layoutData(this.columnOrder, this.manualOrders, known);
+      const result = await TabellifyLayoutStore.saveData(this.layoutFs, this.layoutDir, data, this.layoutRevision);
+      if (result.status === "saved") {
+        this.layoutRevision = result.data.revision;
+        this.log(`layout: saved revision ${this.layoutRevision} to ${result.path}`);
+        this.showLayoutStatus(null);
+      } else if (result.status === "conflict") {
+        // Another Tabellify tab saved first (or the file changed or broke on disk): do not
+        // overwrite; reload what is on disk and re-apply nothing (ADR-0014 §5).
+        this.log(`layout: not saved, file changed elsewhere (${result.reason}); reloading`);
+        this.layoutSaveAgain = false;
+        if (await this.loadLayout()) this.showLayoutStatus("tabellify-table-layout-conflict");
+      } else {
+        // Write failed: the file on disk is unchanged (atomic write). The layout stays on
+        // screen; the next change tries again.
+        this.log(`layout: could not save ${result.path}`);
+        Zotero.logError(result.error);
+        this.showLayoutStatus("tabellify-table-layout-save-error");
+      }
+    } catch (e) {
+      this.log("layout: save failed unexpectedly");
+      Zotero.logError(e);
+      this.showLayoutStatus("tabellify-table-layout-save-error");
+    } finally {
+      this.layoutSaving = false;
+      if (this.layoutSaveAgain) {
+        this.layoutSaveAgain = false;
+        this.saveLayout();
+      }
+    }
+  },
+
+  /**
+   * Show one layout-file message (or hide it with `null`), plain text, with the file path.
+   * @param {string | null} id  Fluent ID (one of LAYOUT_STRINGS)
+   * @param {string | null} [path]
+   */
+  showLayoutStatus(id, path = null) {
+    this.el("tabellify-layout-status").hidden = id === null;
+    this.el("tabellify-layout-status-text").textContent = id === null ? "" : this.text(id);
+    const pathEl = this.el("tabellify-layout-status-path");
+    pathEl.textContent = path ?? "";
+    pathEl.hidden = !path;
+  },
+
+  /**
+   * On close: stop the save timer. If a change was still waiting, start its save now. This
+   * is best effort: the document is going away, so the save may not get to finish (the
+   * file then simply keeps its previous, complete version, because writes are atomic).
+   */
+  stopLayoutSaveTimer() {
+    if (this.layoutSaveTimer === null) return;
+    try {
+      window.clearTimeout(this.layoutSaveTimer);
+    } catch (e) {
+      // The window may already be gone; its timers went with it.
+    }
+    this.layoutSaveTimer = null;
+    this.log("layout: workspace closing with an unsaved layout change; trying to save it now (may not complete)");
+    this.saveLayout();
   },
 
   // ---------------------------------------------------------------------------------------
@@ -1725,6 +1926,7 @@ var TabellifyWorkspace = {
    */
   onUnload: () => {
     TabellifyWorkspace.unregisterMonitorObserver("workspace closed");
+    TabellifyWorkspace.stopLayoutSaveTimer();
     TabellifyWorkspace.el("tabellify-collection-select")
       ?.removeEventListener("change", TabellifyWorkspace.onCollectionChange);
     TabellifyWorkspace.el("tabellify-monitor-refresh")
@@ -1750,7 +1952,9 @@ var TabellifyWorkspace = {
   },
 
   onLoad: () => {
-    // Two independent start-ups: the codebook and the F003 collection browser.
+    // Independent start-ups: the saved table layout (F005c; init() waits for it before the
+    // first table), the codebook and the F003 collection browser.
+    TabellifyWorkspace.layoutLoading = TabellifyWorkspace.initLayout();
     TabellifyWorkspace.initCodebook();
     TabellifyWorkspace.init();
   },

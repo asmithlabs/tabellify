@@ -145,3 +145,87 @@ test("AC10: stripeFlags shades every other paper row; detail rows copy their pap
   );
   assert.deepEqual(plain(L.stripeFlags(frozen([]))), []);
 });
+
+// ---------------------------------------------------------------------------------------
+// F005c T6 (ADR-0014): layout.json validation, migration and the data to save
+// ---------------------------------------------------------------------------------------
+
+const layout = (over = {}) => ({
+  schemaVersion: 1,
+  revision: 7,
+  perPaperTable: { columnOrder: ["count", "title", "collections", "tags", "details"], manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] } },
+  ...over,
+});
+
+test("T6: emptyLayout is schema 1, revision 0, default columns, no manual orders", () => {
+  assert.deepEqual(plain(L.emptyLayout()), {
+    schemaVersion: 1, revision: 0, perPaperTable: { columnOrder: DEFAULT, manualOrders: {} },
+  });
+  assert.equal(L.SCHEMA_VERSION, 1);
+});
+
+test("T6: validateLayout accepts the ADR-0014 example and rejects broken frames", () => {
+  assert.deepEqual(plain(L.validateLayout(frozen(layout()))), { ok: true });
+  const bad = [
+    null, [], "x", 3,
+    {},
+    layout({ schemaVersion: 0 }),
+    layout({ schemaVersion: "1" }),
+    layout({ revision: -1 }),
+    layout({ revision: 1.5 }),
+    layout({ revision: undefined }),
+    layout({ perPaperTable: [] }),
+    layout({ perPaperTable: null }),
+    layout({ perPaperTable: { columnOrder: "title", manualOrders: {} } }),
+    layout({ perPaperTable: { columnOrder: [], manualOrders: [] } }),
+    layout({ perPaperTable: { columnOrder: [] } }),
+  ];
+  for (const data of bad) {
+    const r = L.validateLayout(data);
+    assert.equal(r.ok, false, JSON.stringify(data));
+    assert.ok(!r.newer, JSON.stringify(data));
+    assert.equal(typeof r.reason, "string");
+  }
+});
+
+test("T6: validateLayout flags a newer schema as newer (never overwrite)", () => {
+  const r = L.validateLayout(layout({ schemaVersion: 2 }));
+  assert.equal(r.ok, false);
+  assert.equal(r.newer, true);
+});
+
+test("T6: migrateLayout cleans contents: columns normalized, bad keys and orders dropped", () => {
+  const raw = frozen(layout({
+    perPaperTable: {
+      columnOrder: ["tags", "bogus", "tags"],
+      manualOrders: {
+        "1/AAAA1111": ["K1", 5, "K1", "", null, "K2"],
+        "1/BBBB2222": [],
+        "1/CCCC3333": "not an array",
+        "": ["K9"],
+      },
+    },
+  }));
+  assert.deepEqual(plain(L.migrateLayout(raw)), {
+    schemaVersion: 1,
+    revision: 7,
+    perPaperTable: {
+      columnOrder: ["tags", "title", "count", "collections", "details"],
+      manualOrders: { "1/AAAA1111": ["K1", "K2"] },
+    },
+  });
+  assert.throws(() => L.migrateLayout({ ...layout(), schemaVersion: 2 }));
+});
+
+test("T6: layoutData prunes unknown collections and empty orders, normalizes columns", () => {
+  const orders = new Map([["1/AAAA1111", ["K1", "K2", "K1"]], ["1/GONE0000", ["K3"]], ["1/EMPTY000", []]]);
+  assert.deepEqual(plain(L.layoutData(frozen(["count"]), orders, new Set(["1/AAAA1111", "1/EMPTY000"]))), {
+    columnOrder: ["count", "title", "collections", "tags", "details"],
+    manualOrders: { "1/AAAA1111": ["K1", "K2"] },
+  });
+  // Without a snapshot of the collections nothing is pruned by collection.
+  assert.deepEqual(plain(L.layoutData(DEFAULT, orders).manualOrders), { "1/AAAA1111": ["K1", "K2"], "1/GONE0000": ["K3"] });
+  // The input Map is not changed.
+  assert.equal(orders.size, 3);
+  assert.deepEqual(orders.get("1/AAAA1111"), ["K1", "K2", "K1"]);
+});
