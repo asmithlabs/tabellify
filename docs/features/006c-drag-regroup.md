@@ -17,6 +17,19 @@
   that is an ordinary layout save after a user action (ADR-0014 §4), not a new rule. No new
   storage, file, dependency, UI surface or `Zotero.*` call.
 
+
+## Amendment 2026-11-13 (owner, smoke test): nest makes B a group name only
+Owner smoke test: after a nest, "alpha" appeared both as the super-header and as a sub-column
+("it should be one or the other"). Owner chose option 1: **B becomes only the group name.**
+- Nest (A dropped below ungrouped tag B, mouse or Alt+Down): the group named B is created (or
+  the existing group with that name, ignoring case, is reused, Q2); **tag B is removed from the
+  codebook** (no column, no longer counted in k/M); A joins the group. B is also pruned from
+  `layout.json` orders. Nothing in the Zotero library changes.
+- If B is already in a group, A joins that group (unchanged). B is never removed in that case.
+- The drop hint and status text say B becomes a group name (e.g. "Make alpha a group name").
+- This replaces "B stays first" in the table below and the 006a "B stays as a sub-column of
+  itself" choice.
+
 ## Owner's rules (2026-11-13, verbatim)
 - Sideways drag reorders columns (existing behaviour). Dragging a sub-column into another
   group's span moves it into that group.
