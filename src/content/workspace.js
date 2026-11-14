@@ -633,40 +633,18 @@ var TabellifyWorkspace = {
     this.tableCounting = counting;
     // F005c: shade every other paper row (pure rule in TabellifyTableLayout.stripeFlags).
     const stripes = TabellifyTableLayout.stripeFlags(shown.map(() => "paper"));
-    const usedText = this.text("tabellify-table-tag-used");
-    const notUsedText = this.text("tabellify-table-tag-not-used");
+    // F006c: each tag cell names its column, so a tag column dropped on it can nest under
+    // that tag. dataset values are attributes: plain strings, never used in a selector.
+    const nameColumn = (cell, group, tag) => {
+      cell.dataset.groupId = group.id;
+      cell.dataset.tag = tag;
+    };
     shown.forEach((paper, index) => {
       const tr = this.html("tr");
       tr.dataset.paperId = String(paper.id);
       tr.classList.toggle("tabellify-row-alt", stripes[index]);
-      // F005c: each cell carries its column class (tabellify-col-<kind>), which sets its
-      // wrapping and alignment in workspace.css.
-      const title = this.html("td", "tabellify-col-title");
-      // `textContent` puts the string in as text, never as markup (see SECURITY above).
-      title.textContent = paper.untitled ? this.untitledText : paper.title;
-      if (paper.untitled) title.classList.add("tabellify-untitled");
-      const present = new Set(paper.groups.flatMap((g) => g.present));
-      const tagCells = groups.flatMap((group) => group.tags.map((tag, i) => {
-        const has = present.has(tag);
-        const cell = this.html("td", "tabellify-col-tag");
-        if (i === 0) cell.classList.add("tabellify-group-start");
-        if (has) cell.classList.add("tabellify-tag-used"); // CSS draws the ✓
-        // Tooltip and screen-reader text, e.g. "Heat index: Used". Attribute values are
-        // plain text, never parsed as markup.
-        const label = `${tag}: ${has ? usedText : notUsedText}`;
-        cell.title = label;
-        cell.setAttribute("aria-label", label);
-        // F006c: the cell names its column, so a tag column dropped on it can nest under
-        // that tag. dataset values are attributes: plain strings, never used in a selector.
-        cell.dataset.groupId = group.id;
-        cell.dataset.tag = tag;
-        return cell;
-      }));
-      const count = this.html("td", "tabellify-col-count tabellify-monitor-count");
-      count.textContent = counting ? `${paper.count}/${paper.total}` : "–";
-      // F005d (spec Q6): a paper with every codebook tag gets the "complete" look (green
-      // plus a CSS ✓ in workspace.css). Only a class: no text or data changes.
-      count.classList.toggle("tabellify-count-complete", counting && paper.total > 0 && paper.count === paper.total);
+      // Title, tag cells and k/M come from paperCells (shared with the F007a copy).
+      const { title, tagCells, count } = this.paperCells(paper, groups, counting, nameColumn);
       tr.append(this.rowGripCell(paper), title, ...tagCells, count);
       body.append(tr);
     });
@@ -854,6 +832,128 @@ var TabellifyWorkspace = {
   },
 
   /**
+   * F007a: the shape of the table header for `groups`, shared by the page table
+   * (renderTableHeader) and the read-only "View table" copy (viewTableRows), so the two
+   * can never disagree.
+   * - `oneRow`: no real group has columns (only ungrouped tags, one run): the tag headers
+   *   sit in the first row and there are no group headers.
+   * - `twoRows`: a group header row above a tag header row.
+   * Neither (no tag columns at all): one row with only the fixed cells.
+   * @param {Array<{ id: string, tags: string[] }>} groups
+   * @returns {{ oneRow: boolean, twoRows: boolean, tagCount: number }}
+   */
+  headerShape(groups) {
+    const oneRow = groups.length > 0 && groups.every((g) => this.isUngrouped(g));
+    const tagCount = groups.reduce((n, g) => n + g.tags.length, 0);
+    return { oneRow, twoRows: tagCount > 0 && !oneRow, tagCount };
+  },
+
+  /**
+   * The cells of one paper row after the grip: Title, one cell per tag column (in `groups`
+   * order) and k/M. Shared by the page table and the "View table" copy (F007a), so both
+   * show the same ✓, labels and numbers. Text goes in with `textContent` or attributes only.
+   * @param {{ title: string, untitled: boolean, groups: Array<{ present: string[] }>, count: number, total: number }} paper
+   * @param {Array<{ id: string, tags: string[] }>} groups
+   * @param {boolean} counting
+   * @param {(cell: Element, group: object, tag: string) => void} [decorate]  Extra
+   *   attributes for a tag cell (the page table adds data-group-id and data-tag)
+   * @returns {{ title: Element, tagCells: Element[], count: Element }}
+   */
+  paperCells(paper, groups, counting, decorate = null) {
+    const usedText = this.text("tabellify-table-tag-used");
+    const notUsedText = this.text("tabellify-table-tag-not-used");
+    // F005c: each cell carries its column class (tabellify-col-<kind>), which sets its
+    // wrapping and alignment in workspace.css.
+    const title = this.html("td", "tabellify-col-title");
+    // `textContent` puts the string in as text, never as markup (see SECURITY above).
+    title.textContent = paper.untitled ? this.untitledText : paper.title;
+    if (paper.untitled) title.classList.add("tabellify-untitled");
+    const present = new Set(paper.groups.flatMap((g) => g.present));
+    const tagCells = groups.flatMap((group) => group.tags.map((tag, i) => {
+      const has = present.has(tag);
+      const cell = this.html("td", "tabellify-col-tag");
+      if (i === 0) cell.classList.add("tabellify-group-start");
+      if (has) cell.classList.add("tabellify-tag-used"); // CSS draws the ✓
+      // Tooltip and screen-reader text, e.g. "Heat index: Used". Attribute values are
+      // plain text, never parsed as markup.
+      const label = `${tag}: ${has ? usedText : notUsedText}`;
+      cell.title = label;
+      cell.setAttribute("aria-label", label);
+      if (decorate) decorate(cell, group, tag);
+      return cell;
+    }));
+    const count = this.html("td", "tabellify-col-count tabellify-monitor-count");
+    count.textContent = counting ? `${paper.count}/${paper.total}` : "–";
+    // F005d (spec Q6): a paper with every codebook tag gets the "complete" look (green
+    // plus a CSS ✓ in workspace.css). Only a class: no text or data changes.
+    count.classList.toggle("tabellify-count-complete", counting && paper.total > 0 && paper.count === paper.total);
+    return { title, tagCells, count };
+  },
+
+  /**
+   * F007a: the rows of the read-only "View table" copy, built from the same in-memory
+   * snapshot the CSV export uses (tableGroups, tableRows, tableCounting), so the copy, the
+   * page and the CSV always show the same table. A CLEAN copy, not a clone of the page
+   * table: plain-text header cells (no sort buttons, no grips), no grip column, and no
+   * id, draggable, tabindex, role or data-* attributes anywhere.
+   * @param {{ count: string, countLabel: string }} texts  The k/M header text ("k/M") and
+   *   its longer tooltip / screen-reader name
+   * @returns {{ head: Element[], body: Element[] }}  <tr> elements for <thead> and <tbody>
+   */
+  viewTableRows(texts) {
+    const groups = this.tableGroups;
+    const { oneRow, twoRows } = this.headerShape(groups);
+    const top = this.html("tr");
+    const second = this.html("tr");
+    const fixed = (className, text) => {
+      const th = this.html("th", className);
+      th.setAttribute("scope", "col");
+      th.rowSpan = twoRows ? 2 : 1;
+      th.textContent = text;
+      return th;
+    };
+    top.append(fixed("tabellify-col-title", this.text("tabellify-column-title")));
+    for (const group of groups) {
+      if (!oneRow) {
+        // Group header over its tags; a run of ungrouped tags shows the muted "Ungrouped"
+        // label exactly as on the page (spec Q6).
+        const th = this.html("th", "tabellify-col-group tabellify-group-start");
+        th.setAttribute("scope", "colgroup");
+        th.colSpan = group.tags.length;
+        if (this.isUngrouped(group)) {
+          th.classList.add("tabellify-col-group-ungrouped");
+          th.textContent = this.text("tabellify-table-ungrouped-label");
+        } else {
+          th.title = group.name;
+          th.textContent = group.name; // codebook text: plain text only (see SECURITY)
+        }
+        top.append(th);
+      }
+      group.tags.forEach((tag, i) => {
+        const th = this.html("th", "tabellify-col-tag");
+        if (i === 0) th.classList.add("tabellify-group-start");
+        th.setAttribute("scope", "col");
+        th.textContent = tag;
+        (oneRow ? top : second).append(th);
+      });
+    }
+    const count = fixed("tabellify-col-count", texts.count);
+    count.title = texts.countLabel;
+    count.setAttribute("aria-label", texts.countLabel);
+    top.append(count);
+
+    const stripes = TabellifyTableLayout.stripeFlags(this.tableRows.map(() => "paper"));
+    const body = this.tableRows.map((paper, index) => {
+      const tr = this.html("tr");
+      tr.classList.toggle("tabellify-row-alt", stripes[index]);
+      const { title, tagCells, count: countCell } = this.paperCells(paper, groups, this.tableCounting);
+      tr.append(title, ...tagCells, countCell);
+      return tr;
+    });
+    return { head: twoRows ? [top, second] : [top], body };
+  },
+
+  /**
    * Build the group and tag header cells and the <col> elements for `groups` (already in
    * the user's order). The fixed cells (grip column, Title, k/M) come from workspace.xhtml
    * and stay. Only rebuilt when the columns changed, because rebuilding drops the keyboard
@@ -877,12 +977,11 @@ var TabellifyWorkspace = {
     const countHeader = this.el("tabellify-items-count-header");
     for (const th of groupRow.querySelectorAll("th[data-group-id]")) th.remove();
     tagRow.replaceChildren();
-    // One header row when no real group has columns (only ungrouped tags, one run).
-    const oneRow = groups.length > 0 && groups.every((g) => this.isUngrouped(g));
+    // One or two header rows: the rule is shared with the "View table" copy (F007a).
+    const { oneRow, twoRows, tagCount } = this.headerShape(groups);
     // <col> elements: with `table-layout: fixed` the column widths come from them
     // (workspace.css), because the first header row has cells that span several columns.
     const cols = [this.html("col", "tabellify-col-grip"), this.html("col", "tabellify-col-title")];
-    let tagCount = 0;
     for (const group of groups) {
       const ungrouped = this.isUngrouped(group);
       if (!oneRow) {
@@ -920,13 +1019,11 @@ var TabellifyWorkspace = {
         if (oneRow) groupRow.insertBefore(tagTh, countHeader);
         else tagRow.append(tagTh);
         cols.push(this.html("col", "tabellify-col-tag"));
-        tagCount++;
       });
     }
     cols.push(this.html("col", "tabellify-col-count"));
     this.el("tabellify-items-cols").replaceChildren(...cols);
     // Without a second header row the fixed cells span one row.
-    const twoRows = tagCount > 0 && !oneRow;
     tagRow.hidden = !twoRows;
     for (const th of groupRow.querySelectorAll("th.tabellify-fixed-header")) th.rowSpan = twoRows ? 2 : 1;
     // A CSS custom property (variable): workspace.css makes the table at least wide enough

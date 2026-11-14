@@ -1889,3 +1889,152 @@ test("008 AC16: Debug Output during an export holds no title, tag, group, collec
   assert.ok(env.debug.some((m) => /export: CSV built: 3 paper\(s\), 3 tag column\(s\), 2 group\(s\), 2 header row\(s\)$/.test(m)));
   assert.ok(env.debug.some((m) => /export: CSV written: \d+ bytes \(replaced an existing file: yes\)$/.test(m)));
 });
+
+// ---------------------------------------------------------------------------------------
+// Feature 007a AC12: the read-only copy for the "View table" modal (viewTableRows)
+// ---------------------------------------------------------------------------------------
+
+const VIEW_TEXTS = { count: "k/M", countLabel: "Codebook tags used on the paper (k of M)" };
+
+/** The copy's rows as arrays of this realm (the sandbox's arrays fail deepEqual). */
+function viewRows(W) {
+  const { head, body } = W.viewTableRows(VIEW_TEXTS);
+  return { head: [...head], body: [...body] };
+}
+
+/** setup() plus the strings the copy uses; returns the env and the copy's rows. */
+function viewSetup(options) {
+  const env = setup(options);
+  Object.assign(env.W.strings, { "tabellify-column-title": "Title" });
+  env.W.untitledText = "(untitled)";
+  env.W.renderMonitor();
+  return { ...env, view: viewRows(env.W) };
+}
+
+/** Every element of the copy, rows included. */
+const viewElements = (view) => [...view.head, ...view.body].flatMap((tr) => [tr, ...tr.descendants()]);
+
+/** The page's group-row headers without the fixed cells: text, colSpan, ungrouped look. */
+const pageSuperHeaders = (doc) => headerRow(doc, "tabellify-items-group-row")
+  .filter((th) => !th.classList.contains("tabellify-fixed-header") && !th.hasAttribute("data-tag"))
+  .map((th) => [th.textContent, th.colSpan, th.classList.contains("tabellify-col-group-ungrouped")]);
+
+test("007a AC12: two header rows when a real group has columns: Title, groups over their tags, k/M", () => {
+  const { W, document, view } = viewSetup();
+  assert.equal(view.head.length, 2);
+  const [top, second] = view.head;
+  const title = top.children[0];
+  const count = top.children.at(-1);
+  assert.equal(title.textContent, "Title");
+  assert.equal(title.rowSpan, 2);
+  assert.equal(count.textContent, "k/M");
+  assert.equal(count.rowSpan, 2);
+  assert.equal(count.title, VIEW_TEXTS.countLabel);
+  assert.equal(count.getAttribute("aria-label"), VIEW_TEXTS.countLabel);
+  const supers = top.children.slice(1, -1);
+  assert.deepEqual(supers.map((th) => [th.textContent, th.colSpan, th.getAttribute("scope")]),
+    [["Exposure", 2, "colgroup"], ["Outcome", 1, "colgroup"]]);
+  // Same as the page header (built through the same headerShape rule).
+  assert.deepEqual(supers.map((th) => [th.textContent, th.colSpan, false]), pageSuperHeaders(document));
+  assert.deepEqual(second.children.map((th) => th.textContent), tagHeaders(document));
+  assert.deepEqual(second.children.map((th) => th.classList.contains("tabellify-group-start")), [true, false, true]);
+  assert.deepEqual(plainJson(W.headerShape(W.tableGroups)), { oneRow: false, twoRows: true, tagCount: 3 });
+});
+
+test("007a AC12: rows follow tableRows: titles, ✓ cells, aria-labels and k/M as on the page", () => {
+  const { W, T, document } = setup();
+  Object.assign(W.strings, { "tabellify-column-title": "Title" });
+  W.sortKey = T.tagSortKey("Heat index");
+  W.sortDirection = "desc";
+  W.renderMonitor();
+  const view = viewRows(W);
+  assert.deepEqual(view.body.map((tr) => tr.children[0].textContent), rowTitles(document));
+  // Page rows minus the grip cell: the same ✓ pattern and k/M text.
+  assert.deepEqual(view.body.map((tr) => [tr.children[0].textContent, ...tr.children.slice(1).map((td) =>
+    td.classList.contains("tabellify-col-tag") ? (td.classList.contains("tabellify-tag-used") ? "✓" : "·") : td.textContent)].join(" | ")),
+  bodyRows(document).map(rowText));
+  const page = bodyRows(document).map((tr) => tr.children.slice(2, -1).map((td) => td.getAttribute("aria-label")));
+  assert.deepEqual(view.body.map((tr) => tr.children.slice(1, -1).map((td) => td.getAttribute("aria-label"))), page);
+  assert.ok(page.flat().includes("Heat index: Used") && page.flat().includes("Mortality: Not used"));
+  // Stripes on every other row.
+  assert.deepEqual(view.body.map((tr) => tr.classList.contains("tabellify-row-alt")), [false, true, false]);
+});
+
+test("007a AC12: only ungrouped tags → one header row; Title and k/M span one row", () => {
+  const { W, document, view } = viewSetup({ groups: [], ungrouped: ["age", "sex"] });
+  assert.equal(view.head.length, 1);
+  assert.deepEqual(view.head[0].children.map((th) => th.textContent), ["Title", "age", "sex", "k/M"]);
+  assert.deepEqual(view.head[0].children.map((th) => th.rowSpan), [1, 1, 1, 1]);
+  assert.equal(document.byId.get("tabellify-items-tag-row").hidden, true, "page also has one row");
+  assert.deepEqual(plainJson(W.headerShape(W.tableGroups)), { oneRow: true, twoRows: false, tagCount: 2 });
+});
+
+test("007a AC12: each ungrouped run gets the muted \"Ungrouped\" label with its colSpan, as on the page", () => {
+  const env = setup({ ungrouped: ["age", "sex"] });
+  const { W, L, document } = env;
+  Object.assign(W.strings, { "tabellify-column-title": "Title" });
+  // Put the Outcome group between the two ungrouped tags: runs [age], Outcome, [sex], Exposure.
+  W.columnLayout = L.moveTopItem(W.columnLayout, W.codebookGroups(), { group: "g3" }, 1);
+  W.renderMonitor();
+  const view = viewRows(W);
+  const supers = view.head[0].children.slice(1, -1)
+    .map((th) => [th.textContent, th.colSpan, th.classList.contains("tabellify-col-group-ungrouped")]);
+  assert.deepEqual(supers, pageSuperHeaders(document));
+  assert.deepEqual(supers.filter((s) => s[2]).map((s) => [s[0], s[1]]), [["Ungrouped", 1], ["Ungrouped", 1]]);
+  assert.deepEqual(view.head[1].children.map((th) => th.textContent), tagHeaders(document));
+});
+
+test("007a AC12: without counting k/M shows \"–\"; a complete paper gets tabellify-count-complete", () => {
+  const none = viewSetup({ groups: [] });
+  assert.equal(none.view.head.length, 1);
+  assert.deepEqual(none.view.head[0].children.map((th) => th.textContent), ["Title", "k/M"]);
+  assert.deepEqual(none.view.body.map((tr) => tr.children.at(-1).textContent), ["–", "–", "–"]);
+  assert.ok(none.view.body.every((tr) => !tr.children.at(-1).classList.contains("tabellify-count-complete")));
+
+  const one = viewSetup({ groups: [{ id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] }] });
+  const counts = Object.fromEntries(one.view.body.map((tr) => [tr.children[0].textContent, tr.children.at(-1)]));
+  assert.equal(counts["Paper 2"].textContent, "2/2");
+  assert.equal(counts["Paper 2"].classList.contains("tabellify-count-complete"), true);
+  assert.equal(counts["Paper 3"].classList.contains("tabellify-count-complete"), false);
+});
+
+test("007a AC12: no id, draggable, tabindex, role, data-* or <button> anywhere in the copy", () => {
+  const { view } = viewSetup({ ungrouped: ["age"] });
+  const all = viewElements(view);
+  assert.ok(all.length > 20, "copy is not empty");
+  for (const el of all) {
+    assert.notEqual(el.localName, "button");
+    for (const attr of el.attrs.keys()) {
+      assert.ok(!["id", "draggable", "tabindex", "role"].includes(attr) && !attr.startsWith("data-"), `${el.localName}[${attr}]`);
+    }
+  }
+});
+
+test("007a AC12: markup in titles, tags and group names stays text; never \"null\" or \"undefined\"", () => {
+  const env = load();
+  const { W, L } = env;
+  Object.assign(W.strings, { "tabellify-column-title": "Title" });
+  W.untitledText = "(untitled)";
+  W.codebook = codebookData([{ id: "g2", name: "<i>G</i>", tags: ["<b>t</b>"] }], ["<b>u</b>"]);
+  const data = monitorData();
+  data.papers = [
+    { id: 101, title: "<b>x</b>", collectionId: 1, itemTags: [], annotationTags: [{ tag: "<b>t</b>" }] },
+    { id: 102, title: "", collectionId: 1, itemTags: [], annotationTags: [] },
+  ];
+  W.monitorData = data;
+  W.collectionKeys = data.collectionKeys;
+  W.currentCollection = "1";
+  W.columnLayout = L.emptyColumnLayout();
+  W.renderMonitor();
+  const view = viewRows(W);
+  const all = viewElements(view);
+  const texts = all.map((el) => el.text);
+  for (const s of ["<b>x</b>", "<i>G</i>", "<b>t</b>", "<b>u</b>", "(untitled)"]) assert.ok(texts.includes(s), s);
+  const untitled = view.body.map((tr) => tr.children[0]).find((td) => td.textContent === "(untitled)");
+  assert.equal(untitled.classList.contains("tabellify-untitled"), true);
+  for (const el of all) {
+    for (const value of [el.text, ...el.attrs.values()]) {
+      assert.ok(!/\bnull\b|\bundefined\b/.test(value), `"${value}" on ${el.localName}`);
+    }
+  }
+});

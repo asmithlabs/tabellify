@@ -753,6 +753,30 @@
 #tabellify-items-table col.tabellify-col-count { width: 5.5em; }
 
 /* ---------------------------------------------------------------------------------------
+   Read-only copy in the "View table" modal (#tabellify-view-grid, Feature 007a)
+   Same .tabellify-grid look as the page table, but it has no <col> elements, so the
+   browser sizes the columns from their content (`table-layout: auto`). At least as wide as
+   its scroll area; tag columns, k/M and the header names stay on one line, and the Title
+   column keeps a minimum width so long titles wrap instead of squeezing the tag columns.
+   A very wide table scrolls sideways inside the modal. No sticky header rows (spec Q8).
+   --------------------------------------------------------------------------------------- */
+
+#tabellify-view-grid {
+  table-layout: auto;
+  min-width: 100%;
+}
+
+#tabellify-view-grid th,
+#tabellify-view-grid td.tabellify-col-tag,
+#tabellify-view-grid td.tabellify-col-count {
+  white-space: nowrap;
+}
+
+#tabellify-view-grid .tabellify-col-title {
+  min-width: 16em;
+}
+
+/* ---------------------------------------------------------------------------------------
    Misc
    --------------------------------------------------------------------------------------- */
 
