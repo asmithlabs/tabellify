@@ -76,7 +76,7 @@ per-paper table (column widths per `<col>`, the two sticky header rows) stay on
   (`th.tabellify-col-group-ungrouped`, `data-run`, Feature 006c Amendment 2): the text
   "Ungrouped" in `text-muted`, no grip
 
-## 5a. Workspace page components (Features 006a, 006b, 007a)
+## 5a. Workspace page components (Features 006a, 006b, 007a, 007b)
 The per-group summary cards and the Remaining/Used chip lists of Feature 005/005d were
 removed in Feature 006a. The page now uses:
 - the **summary line** in the collection row ("Tags used 4/6 · Papers 12"; the "·" is CSS)
@@ -104,6 +104,21 @@ removed in Feature 006a. The page now uses:
   (the only part that scrolls, both ways; focus ring from the shared rule), the read-only
   copy `#tabellify-view-grid` (`.tabellify-grid` look, content-sized columns, no grips or
   sort buttons, no sticky header), and "Export CSV" / "Close" with the export status card
+- (Feature 007b) the **"Saved tables" list** (`#tabellify-saved`, a closed `<details>` under
+  the collection row): the summary in `action` bold like "Edit groups and tags", the count
+  after a CSS "·" in tabular figures; a filter select; one flat card per saved table
+  (`.tabellify-saved-item`: `surface`, `border`, `radius-md`) with the Name in bold, a muted
+  `font-size-sm` meta line ("F005 test · 12 papers · 7 columns · Saved …", the dots are CSS)
+  and native Open / Export CSV / Delete buttons. The **confirm state**
+  (`.tabellify-saved-confirm`) turns the card border and the question
+  (`.tabellify-saved-question`, bold, "!") to `status-error`, so it is not colour alone.
+  Messages (`#tabellify-saved-message`, error look `.tabellify-saved-error`) and the status
+  line (`#tabellify-saved-status`) reuse the state-panel and export-status rules. In the
+  modal's saved mode the muted `#tabellify-view-meta` line ("Snapshot from … · F005 test")
+  replaces the "not saved" note, and "Save table" / "Save changes" comes first in the actions.
+  "Show live" is a toggle (`aria-pressed`): while pressed it is bold with a 1px `action`
+  outline (as "Manual order"), and the muted `#tabellify-view-live-note` names saved columns
+  that left the codebook or why live is not possible
 All of them are in the states gallery.
 
 ## 6. Light and dark

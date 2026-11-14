@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Tabellify states gallery (Feature 005d, spec Q8; updated for Features 006a, 006b, 006c incl. Amendment 2, and 007a). NOT shipped in the .xpi.
+<!-- Tabellify states gallery (Feature 005d, spec Q8; updated for Features 006a, 006b, 006c incl. Amendment 2, 007a and 007b). NOT shipped in the .xpi.
      Open this file in any web browser. It loads the real token and workspace stylesheets
      from src/content/, so what you see is what the Tabellify tab uses. It follows the
      OPERATING SYSTEM's light/dark setting (a browser page), not Zotero's Color Scheme.
@@ -360,13 +360,64 @@
     </tbody>
   </table>
 
+  <h2>Saved tables list (Feature 007b)</h2>
+  <p class="gallery-note">The closed-by-default disclosure, opened here. One entry in its normal
+  state, one asking for delete confirmation, one whose collection was deleted, and the status
+  line under the list.</p>
+  <details id="tabellify-saved" open>
+    <summary id="tabellify-saved-summary"><span>Saved tables</span><span id="tabellify-saved-count">3</span></summary>
+    <div id="tabellify-saved-controls">
+      <label for="gallery-saved-filter">Show</label>
+      <select id="gallery-saved-filter"><option>All collections</option><option>This collection</option></select>
+    </div>
+    <ul id="tabellify-saved-list" aria-labelledby="tabellify-saved-summary">
+      <li class="tabellify-saved-item">
+        <span class="tabellify-saved-text">
+          <span class="tabellify-saved-name">Heat test A</span>
+          <span class="tabellify-saved-meta"><span>F005 test</span><span>12 papers</span><span>7 columns</span><span>Saved 14 Nov 2026, 15:40</span></span>
+        </span>
+        <span class="tabellify-saved-actions">
+          <button type="button" aria-label="Open: Heat test A">Open</button>
+          <button type="button" aria-label="Export CSV: Heat test A">Export CSV</button>
+          <button type="button" aria-label="Delete: Heat test A">Delete</button>
+        </span>
+      </li>
+      <li class="tabellify-saved-item tabellify-saved-confirm">
+        <span class="tabellify-saved-text">
+          <span class="tabellify-saved-name">Heat test B2</span>
+          <span class="tabellify-saved-meta"><span>F005 test</span><span>13 papers</span><span>8 columns</span><span>Saved 15 Nov 2026, 09:12</span></span>
+        </span>
+        <span class="tabellify-saved-actions">
+          <span class="tabellify-saved-question">Delete this saved table? This cannot be undone.</span>
+          <button type="button" aria-label="Delete: Heat test B2">Delete</button>
+          <button type="button" aria-label="Cancel: Heat test B2">Cancel</button>
+        </span>
+      </li>
+      <li class="tabellify-saved-item">
+        <span class="tabellify-saved-text">
+          <span class="tabellify-saved-name">A table whose collection is gone</span>
+          <span class="tabellify-saved-meta"><span>F007b temp (collection not found)</span><span>1 papers</span><span>3 columns</span><span>Saved 13 Nov 2026, 11:02</span></span>
+        </span>
+        <span class="tabellify-saved-actions">
+          <button type="button">Open</button>
+          <button type="button">Export CSV</button>
+          <button type="button">Delete</button>
+        </span>
+      </li>
+    </ul>
+    <p id="tabellify-saved-status" role="status"><span>CSV saved:</span><code>/Users/you/Desktop/Heat test A 2026-11-14.csv</code></p>
+  </details>
+  <p class="gallery-label">Messages above the list: empty, and a damaged file (with its path)</p>
+  <p class="tabellify-status">No saved tables yet. Open "View table" and click "Save table".</p>
+  <p id="tabellify-saved-message" class="tabellify-saved-error"><span>The saved tables file could not be read. Saving is turned off so the file is not overwritten. File:</span><code>/path/to/tables.json</code></p>
+
   <h2>View table modal (Feature 007a)</h2>
   <p class="gallery-note">Static copy (opened with the <code>open</code> attribute, not as a
   modal, so there is no backdrop here). Surface, strong border, the scrolling table area and
   the modal's export status line.</p>
   <dialog id="tabellify-view-dialog" class="gallery-dialog" open aria-labelledby="gallery-view-heading">
-    <h2 id="gallery-view-heading">View table</h2>
-    <p id="tabellify-view-note">Name and description are kept only while this tab is open. They are not saved yet.</p>
+    <h2 id="gallery-view-heading">Saved table</h2>
+    <p id="tabellify-view-meta">Snapshot from 14 Nov 2026, 15:40 · F005 test</p>
     <div id="tabellify-view-fields">
       <label for="tabellify-view-name">Name</label>
       <input id="tabellify-view-name" type="text" value="F005 test">
@@ -408,6 +459,7 @@
       </table>
     </div>
     <div id="tabellify-view-actions">
+      <button type="button">Save changes</button>
       <button type="button">Export CSV</button>
       <button type="button">Close</button>
       <p id="tabellify-view-export-status"><span>CSV saved:</span><code>/Users/you/Desktop/F005 test 2026-11-14.csv</code></p>

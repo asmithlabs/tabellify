@@ -24,6 +24,10 @@
 // one IOUtils.writeUTF8 call in src/content/csv-export.js, which writes the CSV file to the
 // path the user chose in the save dialog (outside Tabellify's folder, never the library).
 // That file has extra rules (the "F008 AC17" test below) that keep the write narrow.
+// Feature 007b (docs/features/007b-saved-tables.md, AC22; ADR-0018 §5) authorizes a fourth:
+// IOUtils writes in src/content/tables-store.js, which saves Tabellify's own tables.json
+// (the saved tables) in <data dir>/tabellify/ (never the Zotero library). Its extra rules
+// are in the "F007b AC22" test below.
 //
 // Pattern sources: Zotero's data-object API names (Zotero.DataObject save/erase family,
 // Zotero.Item tag/field/collection/relation setters, Zotero.Collection item membership,
@@ -101,6 +105,8 @@ const ALLOWLIST = [
   { file: "content/layout-store.js", pattern: "IOUtils write", spec: "docs/decisions/0014-table-layout-storage.md" },
   // F008 / ADR-0017: the CSV writer writes the user-chosen export file (+ its .tabellify-tmp).
   { file: "content/csv-export.js", pattern: "IOUtils write", spec: "docs/features/008-export-csv.md" },
+  // F007b / ADR-0018 §5: the saved tables store writes tables.json (+ .tmp/.bak) in the same folder.
+  { file: "content/tables-store.js", pattern: "IOUtils write", spec: "docs/features/007b-saved-tables.md" },
 ];
 
 /**
@@ -140,11 +146,12 @@ test("AC6: src/ contains no Zotero library-write calls (heuristic denylist)", ()
   assert.deepEqual(violations, [], `library-write calls found:\n${violations.join("\n")}`);
 });
 
-test("F004 AC11 / F005c T6 / F008 AC17: the allow-list has exactly the three entries, each really needed", () => {
+test("F004 AC11 / F005c T6 / F008 AC17 / F007b AC22: the allow-list has exactly the four entries, each really needed", () => {
   assert.deepEqual(ALLOWLIST, [
     { file: "content/codebook-store.js", pattern: "IOUtils write", spec: "docs/features/004-codebook.md" },
     { file: "content/layout-store.js", pattern: "IOUtils write", spec: "docs/decisions/0014-table-layout-storage.md" },
     { file: "content/csv-export.js", pattern: "IOUtils write", spec: "docs/features/008-export-csv.md" },
+    { file: "content/tables-store.js", pattern: "IOUtils write", spec: "docs/features/007b-saved-tables.md" },
   ]);
   // A stale entry (file no longer writes) would silently allow a future write: fail instead.
   for (const a of ALLOWLIST) {
@@ -152,7 +159,7 @@ test("F004 AC11 / F005c T6 / F008 AC17: the allow-list has exactly the three ent
     assert.ok(hits.length > 0, `allow-list entry ${a.file} [${a.pattern}] matches nothing`);
   }
   // Only the authorized pattern is allowed there: no other write kind in the store.
-  for (const file of ["content/codebook-store.js", "content/layout-store.js", "content/csv-export.js"]) {
+  for (const file of ["content/codebook-store.js", "content/layout-store.js", "content/csv-export.js", "content/tables-store.js"]) {
     const store = findWrites(readFileSync(join(srcDir, file), "utf8"));
     assert.deepEqual(store.filter((h) => h.pattern !== "IOUtils write"), [], file);
   }
@@ -180,6 +187,30 @@ function sourceFiles(skip) {
     .filter(([rel]) => /\.(?:m?js|xhtml)$/.test(rel) && rel !== skip)
     .map(([rel, f]) => [rel, readFileSync(f, "utf8")]);
 }
+
+test("F007b AC22 / ADR-0018 §5: tables-store.js writes only tables.json, in one narrow call", () => {
+  const raw = readFileSync(join(srcDir, "content/tables-store.js"), "utf8");
+  const code = codeOnly(raw);
+  const count = (re) => (code.match(re) ?? []).length;
+  assert.match(code, /FILE_NAME:\s*"tables\.json"/);
+  // Exactly one write of the data, to the store's own path with .tmp and .bak next to it.
+  assert.equal(count(/\bfs\.writeJSON\(/g), 1, "exactly one fs.writeJSON( call");
+  assert.match(code, /writeJSON\(path, clean, \{ tmpPath: path \+ "\.tmp", backupFile: path \+ "\.bak" \}\)/);
+  assert.match(code, /const path = fs\.join\(dir, this\.FILE_NAME\);/);
+  // The only IOUtils members are the read, the write and the folder creation of
+  // platformFs (as in layout-store.js); never remove, move or copy.
+  assert.deepEqual([...code.matchAll(/\bIOUtils\s*\.\s*(\w+)/g)].map((m) => m[1]), ["readJSON", "writeJSON", "makeDirectory"]);
+  assert.doesNotMatch(code, /\bIOUtils\.(?:remove|move|copy|setPermissions|write(?!JSON))\w*/);
+  // No mode option (no create / append tricks) and the data directory is not read here.
+  assert.doesNotMatch(code, /\bmode\s*:/);
+  assert.doesNotMatch(code, /\bZotero\b/);
+  assert.doesNotMatch(raw.replace(/\/\*[\s\S]*?\*\//g, ""), /DataDirectory/);
+  // No other file in src/ mentions tables.json except the store (and comments).
+  const offenders = sourceFiles("content/tables-store.js")
+    .filter(([, text]) => /tables\.json/.test(codeOnly(text)))
+    .map(([rel]) => rel);
+  assert.deepEqual(offenders, []);
+});
 
 test("F008 AC17 / ADR-0017 §3: csv-export.js writes only the user-chosen path, in one narrow call", () => {
   const raw = readFileSync(join(srcDir, "content/csv-export.js"), "utf8");
