@@ -1,8 +1,9 @@
 /* Tabellify — layout-store.js (Feature 005c, ADR-0014: load and save the table layout)
  *
  * Reads and writes <Zotero data directory>/tabellify/layout.json: the order of the
- * per-paper table's codebook tag columns (groups, and tags inside each group; schema 2,
- * ADR-0014 amendment 2026-11-13) and the hand-made paper order of each collection. Same rules as the
+ * per-paper table's codebook tag columns (schema 3, ADR-0019: one top-level order of
+ * groups and ungrouped tags, `topOrder`, plus the tags inside each group, `tagOrder`) and
+ * the hand-made paper order of each collection. Same rules as the
  * codebook file (ADR-0012), in a separate file so a damaged layout can never block the
  * codebook (and the other way round).
  * Owner's dev profile: ~/Zotero tabellify-dev/tabellify/layout.json
@@ -81,8 +82,9 @@ var TabellifyLayoutStore = {
     }
     const check = TabellifyTableLayout.validateLayout(raw);
     if (!check.ok) return { status: check.newer ? "newer" : "invalid", path, reason: check.reason };
-    // `fromVersion` < SCHEMA_VERSION means the data was migrated in memory (e.g. 1 → 2);
-    // the file itself is rewritten only by the next save after a user action.
+    // `fromVersion` < SCHEMA_VERSION means the data was migrated in memory (1 → 2 → 3,
+    // ADR-0019 §4); the file itself is rewritten only by the next save after a user
+    // action, which keeps the older file as layout.json.bak.
     return { status: "ok", data: TabellifyTableLayout.migrateLayout(raw), path, existed: true, fromVersion: raw.schemaVersion };
   },
 
@@ -94,14 +96,15 @@ var TabellifyLayoutStore = {
    * atomically with a backup. The saved data gets `revision = loadedRevision + 1`.
    * - `{ status: "saved", data, path }`: `data` is what was written (new revision).
    * - `{ status: "conflict", path, reason }`: nothing written; the caller should reload.
-   *   Also used when the file on disk has become unreadable or invalid, so a damaged file
-   *   is never overwritten.
+   *   Also used when the file on disk has become unreadable or invalid, or was made by a
+   *   newer Tabellify (schemaVersion above SCHEMA_VERSION), so such a file is never
+   *   overwritten. An older valid file (e.g. version 2) is overwritten as version 3.
    * - `{ status: "error", path, error }`: the write failed or the data is invalid; the
    *   file on disk is unchanged.
    * @param {LayoutFs} fs
    * @param {string} dir
-   * @param {{ groupOrder: string[], tagOrder: Record<string, string[]>,
-   *   manualOrders: Record<string, string[]> }} perPaperTable
+   * @param {{ topOrder: Array<{ group: string } | { tag: string }>,
+   *   tagOrder: Record<string, string[]>, manualOrders: Record<string, string[]> }} perPaperTable
    * @param {number} loadedRevision  revision last loaded or saved (0 = no file)
    * @returns {Promise<object>}
    */
