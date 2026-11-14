@@ -705,8 +705,9 @@ var TabellifyWorkspace = {
     // F006c Amendment 2: the "Ungrouped" run headers and the flip announcement.
     "tabellify-table-ungrouped-label",
     "tabellify-regroup-announce-group-name",
-    // Refusal: the drop would make a tag or a group disappear from the table.
-    "tabellify-regroup-error-would-hide",
+    // F006c Amendment 3: a group whose last tag leaves turns back into a tag.
+    "tabellify-regroup-group-to-tag",
+    "tabellify-drop-hint-group-to-tag",
   ],
 
   /** F006c: TabellifyRegroup.describe() hint → Fluent ID of the drop-hint text. */
@@ -1334,7 +1335,10 @@ var TabellifyWorkspace = {
     if (!id) return;
     const hint = this.el("tabellify-drop-hint");
     // The name is codebook text: textContent only (see SECURITY at the top).
-    hint.textContent = info.name ? `${this.text(id)} ${info.name}` : this.text(id);
+    let text = info.name ? `${this.text(id)} ${info.name}` : this.text(id);
+    // F006c Amendment 3: the drop empties a group, which turns back into a tag. Say so.
+    if (info.revived) text += ` ${this.text("tabellify-drop-hint-group-to-tag")} ${info.revived}`;
+    hint.textContent = text;
     hint.hidden = false;
   },
 
@@ -1515,6 +1519,13 @@ var TabellifyWorkspace = {
     const statusId = plan.named ? this.REGROUP_STATUS_IDS.created : this.REGROUP_STATUS_IDS[plan.effect];
     const shown = await this.applyCodebookEdit(plan.edit, statusId ?? null);
     if (!shown) return false;
+    // F006c Amendment 3: a group the drop emptied became a tag again. The status line can
+    // hold one extra text, so this one is appended as plain text after it.
+    const revivedText = plan.revived ? this.text("tabellify-regroup-group-to-tag") : "";
+    if (revivedText) {
+      const status = this.el("tabellify-codebook-status-text");
+      status.textContent = `${status.textContent} ${revivedText}`;
+    }
     this.columnLayout = plan.layout;
     this.renderMonitor();
     this.layoutChanged();
@@ -1525,6 +1536,10 @@ var TabellifyWorkspace = {
     // A nest removes the target tag from the codebook, a flip the dragged tag: that tag
     // became the group's name.
     if (plan.named === "below") this.log(`regroup: the nest target tag became the name of group ${plan.groupId} and left the codebook (${how})`);
+    if (plan.revived) {
+      this.log(`regroup: emptied group ${plan.revived.groupId} turned back into a tag` +
+        `${plan.revived.added ? "" : " (a tag with that name was already in the codebook)"} (${how})`);
+    }
     if (plan.named === "above") {
       this.log(`regroup: the dragged tag from block ${fromGroupId} became the name of group ${plan.groupId} and left the codebook (${how})`);
     } else {
@@ -1537,7 +1552,7 @@ var TabellifyWorkspace = {
     if (plan.named === "above") text = `${tag} ${this.text("tabellify-regroup-announce-group-name")}`;
     else if (plan.groupId === TabellifyCodebook.UNGROUPED_ID || !group) text = `${tag} ${this.text("tabellify-regroup-announce-ungrouped")}`;
     else text = `${tag} ${this.text("tabellify-regroup-announce-moved")} ${group.name}`;
-    this.el("tabellify-table-announce").textContent = text;
+    this.el("tabellify-table-announce").textContent = revivedText ? `${text}. ${revivedText}` : text;
     return true;
   },
 

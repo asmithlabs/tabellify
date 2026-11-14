@@ -1559,41 +1559,47 @@ test("006c AC31: names with markup reach the hint and announcements only as text
 // the western boundary ... they should never disappear". After a flip made "bmi" the name of
 // a group whose only column is smoker, dragging smoker out (e.g. to the left edge of the
 // "bmi" header) emptied the group, so the "bmi" header vanished from the table.
-test("never disappears: the only tag of a flipped group can't be dragged or keyed out; 'bmi' stays", async () => {
+// Spec Amendment 3 (owner, option B): the emptied group turns back into the tag "bmi".
+test("Amendment 3: dragging a flipped group's only tag west turns the group back into a tag", async () => {
   const s = regroupSetup({ ungrouped: A2_UNGROUPED });
+  Object.assign(s.W.strings, {
+    "tabellify-drop-hint-group-to-tag": "· Group becomes a tag:",
+    "tabellify-regroup-group-to-tag": "The group became a tag again.",
+  });
   startTagDrag(s.W, s.document, "bmi");
   s.W.onTableDrop(dragEvent(tagTh(s.document, "smoker"), ZONE.top));
   await tick();
   assert.equal(superTh(s.document, "g9").textContent, "bmi");
-  const writes = s.writes.length;
-  const headersBefore = groupHeaders(s.document);
-  const refusedAt = (target, zone) => {
-    const ev = over(s.W, target, zone);
-    return !ev.prevented && marked(s.document).length === 0 && s.hint.hidden;
-  };
   startTagDrag(s.W, s.document, "smoker");
-  // The west edge of every kind of cell, and the other ways out of the group.
-  assert.ok(refusedAt(superTh(s.document, "g9"), "left"), "left edge of its own group header");
-  assert.ok(refusedAt(superTh(s.document, "g9"), "right"), "right edge of its own group header");
-  assert.ok(refusedAt(tagTh(s.document, "age"), "left"), "first tag column (next to Title)");
-  assert.ok(refusedAt(tagTh(s.document, "diet"), "left"), "an ungrouped tag");
-  assert.ok(refusedAt(tagTh(s.document, "age"), "bottom"), "nest under an ungrouped tag");
-  assert.ok(refusedAt(tagTh(s.document, "Heat index"), "left"), "leftmost column of a group");
-  assert.ok(refusedAt(superTh(s.document, "g2"), "left"), "another group's header");
-  assert.ok(refusedAt(runTh(s.document, 0), "left"), "an 'Ungrouped' run header");
-  assert.ok(refusedAt(bodyCell(s.document, "Heat index"), "left"), "a body cell of another group");
-  // A drop there does nothing either (no save, same header).
+  // The hint says what will happen, including the group turning back into a tag.
+  const ev = over(s.W, superTh(s.document, "g9"), "left");
+  assert.equal(ev.prevented, true);
+  assert.equal(s.hint.textContent, "Move to Ungrouped · Group becomes a tag: bmi");
   s.W.onTableDrop(dragEvent(superTh(s.document, "g9"), ZONE.left));
   await tick();
-  assert.equal(s.writes.length, writes);
-  assert.deepEqual(groupHeaders(s.document), headersBefore);
-  // Alt+Up (leave the group) is refused with a status message; nothing is saved.
-  altKey(s.W, regroupTagGrip(s.document, "smoker"), "ArrowUp");
+  // "bmi" is a column again, where the group was; smoker right before it; no "bmi" group.
+  assert.deepEqual(tagHeaders(s.document).slice(0, 5), ["age", "sex", "smoker", "bmi", "diet"]);
+  assert.equal(tagTh(s.document, "bmi").dataset.groupId, "ungrouped");
+  assert.equal(superTh(s.document, "g9"), undefined);
+  const saved = JSON.parse(s.files.get("/d/codebooks.json")).codebooks[0];
+  assert.equal(saved.groups.some((g) => g.id === "g9"), false, "the group left the codebook");
+  assert.deepEqual(saved.tags.find((t) => t.name === "bmi"), { name: "bmi", group: null });
+  assert.equal(s.document.getElementById("tabellify-codebook-status-text").textContent,
+    "tabellify-codebook-saved tabellify-regroup-ungrouped The group became a tag again.");
+  assert.ok(s.debug.includes("Tabellify: workspace: regroup: emptied group g9 turned back into a tag (drag)"), s.debug.join("\n"));
+  assert.ok(!s.debug.some((m) => /regroup:/.test(m) && /bmi|smoker/.test(m)), "no names in Debug Output");
+  assert.ok(s.W.LAYOUT_STRINGS.includes("tabellify-regroup-group-to-tag"));
+  assert.ok(s.W.LAYOUT_STRINGS.includes("tabellify-drop-hint-group-to-tag"));
+});
+
+test("Amendment 3: Alt+Up on a group's only tag turns the group back into a tag (announced)", async () => {
+  const s = regroupSetup({ ungrouped: ["age"], groups: [{ id: "g7", name: "Solo", tags: ["only"] }, ...REGROUP_GROUPS()] });
+  s.W.strings["tabellify-regroup-group-to-tag"] = "The group became a tag again.";
+  altKey(s.W, regroupTagGrip(s.document, "only"), "ArrowUp");
   await tick();
-  assert.equal(s.writes.length, writes);
-  assert.deepEqual(groupHeaders(s.document), headersBefore);
-  assert.equal(superTh(s.document, "g9").textContent, "bmi");
-  assert.equal(tagTh(s.document, "smoker").dataset.groupId, "g9");
-  assert.equal(s.document.getElementById("tabellify-codebook-status-text").textContent, "tabellify-regroup-error-would-hide");
-  assert.ok(s.W.LAYOUT_STRINGS.includes(s.R.ERR_WOULD_HIDE), "the refusal text is formatted at start-up");
+  assert.deepEqual(tagHeaders(s.document).slice(0, 3), ["age", "only", "Solo"]);
+  assert.equal(tagTh(s.document, "Solo").dataset.groupId, "ungrouped");
+  assert.equal(regroupTagGrip(s.document, "only").focused, true);
+  assert.equal(s.document.byId.get("tabellify-table-announce").textContent, "only is now ungrouped. The group became a tag again.");
+  assert.deepEqual(pills(s.document).slice(0, 1), ["Ungrouped · 3 (u)"]);
 });
