@@ -11,8 +11,8 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
-import { join, dirname, relative, sep } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readZip } from "../helpers/zip.mjs";
 
@@ -43,18 +43,18 @@ before(() => {
   files = new Map(entries.filter((e) => !e.name.endsWith("/")).map((e) => [e.name, e.data]));
 });
 
-/** All regular files under src/, as archive paths ("/" separators), skipping OS clutter. */
-function listSrcFiles(dir = srcDir) {
-  /** @type {string[]} */
-  const out = [];
-  for (const d of readdirSync(dir, { withFileTypes: true })) {
-    if (d.name === ".DS_Store" || d.name === "Thumbs.db") continue;
-    const full = join(dir, d.name);
-    if (d.isDirectory()) out.push(...listSrcFiles(full));
-    else if (d.isFile()) out.push(relative(srcDir, full).split(sep).join("/"));
-  }
-  return out;
+/**
+ * Files git tracks under src/, as archive paths (FU-SEC-008: the build ships only these;
+ * an untracked file lying in src/ must NOT end up in the XPI).
+ */
+function listTrackedSrcFiles() {
+  const out = execFileSync("git", ["ls-files", "-z", "--", "src"], { cwd: repoRoot, encoding: "utf8" });
+  return out.split("\0").filter((p) => p !== "").map((p) => p.slice("src/".length));
 }
+
+// FU-SEC-008: the only file types allowed in the XPI. Keep in sync with
+// ALLOWED_EXTENSIONS in scripts/build-xpi.mjs (the build refuses anything else).
+const ALLOWED_EXTENSIONS = [".js", ".mjs", ".css", ".svg", ".xhtml", ".ftl", ".json"];
 
 test("AC1: XPI has manifest.json and bootstrap.js at the archive root", () => {
   assert.ok(files.has("manifest.json"), "manifest.json missing at XPI root");
@@ -73,8 +73,8 @@ test("AC1: XPI entries are intact (CRC-32 matches) and use only stored/deflate",
   }
 });
 
-test("AC1: XPI contains every src/ file byte-for-byte, and nothing else", () => {
-  const expected = listSrcFiles().sort();
+test("AC1: XPI contains every git-tracked src/ file byte-for-byte, and nothing else", () => {
+  const expected = listTrackedSrcFiles().sort();
   assert.deepEqual([...files.keys()].sort(), expected);
   for (const name of expected) {
     assert.ok(
@@ -122,4 +122,21 @@ test("AC1: versions agree (XPI file name, manifest, package.json)", () => {
 
 test("AC1: build is reproducible (two builds are byte-identical)", () => {
   assert.ok(build().equals(xpi), "second build differs from the first");
+});
+
+test("FU-SEC-008: every XPI file has an allowed extension", () => {
+  const bad = [...files.keys()].filter((n) => !ALLOWED_EXTENSIONS.includes(extname(n).toLowerCase()));
+  assert.deepEqual(bad, [], `file types not on the allow-list: ${bad.join(", ")}`);
+  // The build script must enforce the same list (not just this test).
+  const script = readFileSync(join(repoRoot, "scripts", "build-xpi.mjs"), "utf8");
+  const m = script.match(/const ALLOWED_EXTENSIONS = new Set\(\[([^\]]*)\]\)/);
+  assert.ok(m, "ALLOWED_EXTENSIONS not found in scripts/build-xpi.mjs");
+  const inScript = [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]).sort();
+  assert.deepEqual(inScript, [...ALLOWED_EXTENSIONS].sort(), "build script and test allow-lists differ");
+});
+
+test("FU-SEC-008: the build lists src/ with git ls-files, not a folder walk", () => {
+  const script = readFileSync(join(repoRoot, "scripts", "build-xpi.mjs"), "utf8");
+  assert.match(script, /execFileSync\("git", \["ls-files", "-z", "--", "src"\]/);
+  assert.doesNotMatch(script, /\breaddirSync\b/, "build must not walk the working folder");
 });
