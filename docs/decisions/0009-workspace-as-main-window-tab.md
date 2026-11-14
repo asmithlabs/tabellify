@@ -211,3 +211,10 @@ with strict guards.** Specifically:
   restore fallback for unknown types. If one ships, write a new ADR to move to it.
 - **Revisit when:** a Zotero release changes `tabs.js` / `session.js`; Zotero documents a tab
   API; or the owner wants the tab restored after restart (C5).
+
+## Notes
+- **2026-11-14 — session-restore risk accepted for the first public release.** The owner
+  accepted the residual session-restore risk (Feature 002 spec, Q3: a leftover Tabellify tab
+  entry in Zotero's saved session) for the first public release. Revisit later (for example
+  option C5 or a startup clean-up, each needing its own ADR). Re-diff `tabs.js` and
+  `session.js` on each `strict_max_version` raise (Decision §6).
