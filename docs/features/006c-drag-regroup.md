@@ -21,6 +21,19 @@
   Status: Proposed). Amendment 2 tasks T6–T9 wait for the owner's decision on ADR-0019.
 
 
+
+## Amendment 3 (2026-11-13, owner, after merge): an emptied group turns back into a tag
+Owner smoke test: dragging the only tag out of a group made the group vanish (the table hides
+0-column groups). Owner rule: tags never disappear; everything is a group, a grouped tag or an
+ungrouped tag. Owner chose option B:
+- When a drag or Alt+arrow move takes the **last** tag out of a group, that group is removed and
+  its name becomes an **ungrouped tag** in the codebook (unless a tag with that exact name
+  already exists, in which case the group is just removed), placed where the group was.
+- Applies to every group emptied by a drag/keyboard move, including groups typed in the script
+  box. Replaces Q3 ("G · 0" stays) for drag moves. The refusal added in fix `a8837ce` is
+  replaced by this rule; the "nothing ever vanishes" invariant and its exhaustive test stay.
+- Script-box and editor behaviour are unchanged.
+
 ## Amendment 2026-11-13 (owner, smoke test): nest makes B a group name only
 Owner smoke test: after a nest, "alpha" appeared both as the super-header and as a sub-column
 ("it should be one or the other"). Owner chose option 1: **B becomes only the group name.**
