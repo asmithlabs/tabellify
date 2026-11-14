@@ -1,4 +1,6 @@
-// Feature 006c AC13: unit tests for the pure regroup model (src/content/regroup-model.js).
+// Feature 006c Amendment 2 AC30: unit tests for the pure regroup model
+// (src/content/regroup-model.js): edge-based drops (Tables 1–4), fallbacks, and where things
+// land in layout.json schema 3 (A2.5).
 //
 // regroup-model.js is a classic browser script (no import/export) that uses three other
 // pure globals. Node runs all four here, in workspace.xhtml's order, in one empty node:vm
@@ -45,21 +47,24 @@ function book(groups, tags, nextId = 5) {
   });
 }
 
-/** The spec's Setup: Exposure(Heat index, Temperature), Outcome(Hospitalization, Mortality), age, sex. */
-function setup(extraUngrouped = []) {
+/**
+ * The Amendment 2 Setup: Exposure(Heat index, Temperature), Outcome(Hospitalization,
+ * Mortality), then age, sex, smoker, bmi, diet (ungrouped).
+ */
+function setup(ungrouped = ["age", "sex", "smoker", "bmi", "diet"]) {
   return book(
     [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Outcome" }],
     [
       ["Heat index", "g2"], ["Temperature", "g2"],
       ["Hospitalization", "g3"], ["Mortality", "g3"],
-      ["age", null], ["sex", null], ...extraUngrouped.map((t) => [t, null]),
+      ...ungrouped.map((t) => [t, null]),
     ],
   );
 }
 
-const EMPTY = frozen({ groupOrder: [], tagOrder: {} });
+const EMPTY = frozen({ topOrder: [], tagOrder: {} });
 
-/** What the table would show: [[blockId, tags]] in order. */
+/** What the table would show: [[blockId, tags]] in order (runs appear as "ungrouped"). */
 function shownAfter(codebook, layout) {
   return plain(L.orderedGroups(TM.codebookGroups(codebook), layout).map((g) => [g.id, g.tags]));
 }
@@ -71,221 +76,393 @@ function drop(codebook, layout, drag, target) {
   return { p, shown: p.layout ? shownAfter(data, p.layout) : null, data };
 }
 
-test("AC13: the model loads in an empty sandbox with its three pure helpers", () => {
+const tagCell = (groupId, tag, edge, side = edge === "right" ? "right" : "left") => ({ cell: "tag", groupId, tag, edge, side });
+const groupCell = (groupId, edge, side = edge === "right" ? "right" : "left") => ({ cell: "group", groupId, edge, side });
+const runCell = (run, edge, side = edge === "right" ? "right" : "left") => ({ cell: "run", groupId: U, run, edge, side });
+const START = [
+  [U, ["age", "sex", "smoker", "bmi", "diet"]],
+  ["g2", ["Heat index", "Temperature"]],
+  ["g3", ["Hospitalization", "Mortality"]],
+];
+
+test("AC30: the model loads in an empty sandbox with its three pure helpers", () => {
   assert.equal(typeof R.plan, "function");
   assert.equal(typeof R.describe, "function");
+  assert.equal(typeof R.keyboardTarget, "function");
+  assert.deepEqual(shownAfter(setup(), EMPTY), START);
 });
 
-test("AC13: tag header in the same block = reorder (layout only, codebook untouched)", () => {
-  const cb = setup();
-  const { p, shown } = drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "header", groupId: "g2", tag: "Heat index", side: "before" });
-  assert.equal(p.kind, "reorder");
-  assert.equal(p.edit, undefined, "no codebook edit");
-  assert.deepEqual(shown, [[U, ["age", "sex"]], ["g2", ["Temperature", "Heat index"]], ["g3", ["Hospitalization", "Mortality"]]]);
-});
+// ---------------------------------------------------------------------------------------
+// Table 1: an ungrouped tag B
+// ---------------------------------------------------------------------------------------
 
-test("AC13: tag header of another group = join, placed after T (AC2)", () => {
+test("AC30 Table 1 bottom: B becomes a group name at B's place, A under it (AC17)", () => {
   const cb = setup();
-  const { p, shown, data } = drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "header", groupId: "g3", tag: "Hospitalization", side: "after" });
+  const { p, shown, data } = drop(cb, EMPTY, { groupId: U, tag: "sex" }, tagCell(U, "age", "bottom"));
   assert.equal(p.kind, "regroup");
+  assert.equal(p.effect, "created");
+  assert.equal(p.named, "below");
+  assert.equal(p.edge, "bottom");
+  assert.equal(p.groupId, "g5");
+  assert.equal(C.findTag(data, "age"), undefined, "the tag age left the codebook");
+  assert.deepEqual(shown, [
+    ["g5", ["sex"]],
+    [U, ["smoker", "bmi", "diet"]],
+    ["g2", ["Heat index", "Temperature"]],
+    ["g3", ["Hospitalization", "Mortality"]],
+  ]);
+  assert.deepEqual(plain(p.layout.tagOrder), { g5: ["sex"] });
+  assert.ok(plain(p.layout.topOrder).some((e) => e.group === U), "home marker kept");
+  assert.deepEqual(plain(R.describe(cb, EMPTY, { groupId: U, tag: "sex" }, tagCell(U, "age", "bottom"))),
+    { kind: "regroup", hint: "new-group", effect: "created", name: "age", edge: "bottom", named: "below" });
+});
+
+test("AC30 Table 1 top (flip): A becomes a group name at B's place, B under it (AC18)", () => {
+  const cb = setup();
+  const { p, shown, data } = drop(cb, EMPTY, { groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top"));
+  assert.equal(p.kind, "regroup");
+  assert.equal(p.effect, "created");
+  assert.equal(p.named, "above");
+  assert.equal(p.edge, "top");
+  assert.equal(C.findTag(data, "bmi"), undefined, "the dragged tag left the codebook");
+  assert.deepEqual(shown, [
+    [U, ["age", "sex"]],
+    ["g5", ["smoker"]],
+    [U, ["diet"]],
+    ["g2", ["Heat index", "Temperature"]],
+    ["g3", ["Hospitalization", "Mortality"]],
+  ]);
+  assert.deepEqual(plain(p.layout.tagOrder), { g5: ["smoker"] });
+  const info = plain(R.describe(cb, EMPTY, { groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top")));
+  assert.equal(info.hint, "new-group");
+  assert.equal(info.name, "bmi");
+  assert.equal(info.named, "above");
+});
+
+test("AC30 Table 1 top: a grouped A leaves its group and becomes the name (A2-Q6)", () => {
+  const { p, shown, data } = drop(setup(), EMPTY, { groupId: "g3", tag: "Mortality" }, tagCell(U, "diet", "top"));
+  assert.equal(p.kind, "regroup");
+  assert.equal(C.findTag(data, "Mortality"), undefined);
+  assert.deepEqual(shown, [
+    [U, ["age", "sex", "smoker", "bmi"]],
+    ["g5", ["diet"]],
+    ["g2", ["Heat index", "Temperature"]],
+    ["g3", ["Hospitalization"]],
+  ]);
+});
+
+test("AC30 Table 1 left / right: beside B as an ungrouped tag (reorder or ungroup) (AC19)", () => {
+  const cb = setup();
+  // A grouped: codebook edit (ungrouped), lands right before diet in the same run.
+  const a = drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, tagCell(U, "diet", "left"));
+  assert.equal(a.p.kind, "regroup");
+  assert.equal(a.p.effect, "ungrouped");
+  assert.equal(a.p.named, null);
+  assert.equal(a.p.groupId, U);
+  assert.deepEqual(a.shown, [
+    [U, ["age", "sex", "smoker", "bmi", "Temperature", "diet"]],
+    ["g2", ["Heat index"]],
+    ["g3", ["Hospitalization", "Mortality"]],
+  ]);
+  assert.equal(R.describe(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, tagCell(U, "diet", "left")).hint, "to-ungrouped");
+  // A ungrouped: a reorder (layout only), after B with the right edge.
+  const b = drop(cb, EMPTY, { groupId: U, tag: "age" }, tagCell(U, "smoker", "right"));
+  assert.equal(b.p.kind, "reorder");
+  assert.equal(b.p.edge, "right");
+  assert.deepEqual(b.shown[0], [U, ["sex", "smoker", "age", "bmi", "diet"]]);
+  assert.equal(R.describe(cb, EMPTY, { groupId: U, tag: "age" }, tagCell(U, "smoker", "right")).hint, "reorder");
+});
+
+test("AC30 Table 1: A = B does nothing (no plan, no hint)", () => {
+  for (const edge of ["left", "right", "top", "bottom"]) {
+    assert.deepEqual(plain(R.plan(setup(), EMPTY, { groupId: U, tag: "age" }, tagCell(U, "age", edge))), { kind: "none" });
+    assert.equal(R.describe(setup(), EMPTY, { groupId: U, tag: "age" }, tagCell(U, "age", edge)), null);
+  }
+});
+
+test("AC30 Table 1 bottom / top into a reused group (Q2): it stays where it is, child at its end", () => {
+  const cb = book(
+    [{ id: "g2", name: "Country" }, { id: "g3", name: "Outcome" }],
+    [["Mortality", "g3"], ["nation", "g2"], ["country", null], ["region", null]],
+  );
+  const layout = frozen({ topOrder: [{ group: "g2" }, { tag: "country" }, { tag: "region" }, { group: "g3" }], tagOrder: {} });
+  const below = drop(cb, layout, { groupId: U, tag: "region" }, tagCell(U, "country", "bottom"));
+  assert.equal(below.p.effect, "joined");
+  assert.equal(below.p.named, "below");
+  assert.deepEqual(below.shown, [["g2", ["nation", "region"]], ["g3", ["Mortality"]]]);
+  assert.equal(R.describe(cb, layout, { groupId: U, tag: "region" }, tagCell(U, "country", "bottom")).name, "Country", "stored spelling");
+  // Flip: "Country" (reused) gets the target tag at its end.
+  const cb2 = book([{ id: "g2", name: "Region" }], [["x", "g2"], ["country", null], ["region", null]]);
+  const top = drop(cb2, EMPTY, { groupId: U, tag: "region" }, tagCell(U, "country", "top"));
+  assert.equal(top.p.effect, "joined");
+  assert.deepEqual(top.shown, [["g2", ["x", "country"]]]);
+});
+
+test("AC30: a reused group with no column yet (empty, 'Country · 0') appears at B's place (AC7)", () => {
+  const cb = book(
+    [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Country" }],
+    [["Heat index", "g2"], ["country", null], ["region", null], ["age", null]],
+  );
+  const { p, shown } = drop(cb, EMPTY, { groupId: U, tag: "region" }, tagCell(U, "country", "bottom"));
   assert.equal(p.effect, "joined");
   assert.equal(p.groupId, "g3");
-  assert.equal(p.edit.ok, true);
-  assert.deepEqual(plain(C.tagsIn(data, "g3")), ["Hospitalization", "Mortality", "Temperature"]);
-  assert.deepEqual(plain(C.validate(data)), { ok: true });
-  assert.deepEqual(shown, [[U, ["age", "sex"]], ["g2", ["Heat index"]], ["g3", ["Hospitalization", "Temperature", "Mortality"]]]);
+  assert.deepEqual(shown, [["g3", ["region"]], [U, ["age"]], ["g2", ["Heat index"]]]);
 });
 
-test("AC13: tag header of another group = join, placed before T", () => {
+// ---------------------------------------------------------------------------------------
+// Table 2: a group's super-header
+// ---------------------------------------------------------------------------------------
+
+test("AC30 Table 2 bottom: A joins G at its end; already in G = move to the end (AC20)", () => {
   const cb = setup();
-  const before = drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "header", groupId: "g3", tag: "Hospitalization", side: "before" });
-  assert.deepEqual(before.shown[2], ["g3", ["Temperature", "Hospitalization", "Mortality"]]);
-  const beforeLast = drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "header", groupId: "g3", tag: "Mortality", side: "before" });
-  assert.deepEqual(beforeLast.shown[2], ["g3", ["Hospitalization", "Temperature", "Mortality"]]);
+  const a = drop(cb, EMPTY, { groupId: "g2", tag: "Heat index" }, groupCell("g3", "bottom"));
+  assert.equal(a.p.kind, "regroup");
+  assert.equal(a.p.effect, "joined");
+  assert.equal(a.p.groupId, "g3");
+  assert.deepEqual(a.shown.at(-1), ["g3", ["Hospitalization", "Mortality", "Heat index"]]);
+  assert.deepEqual(plain(R.describe(cb, EMPTY, { groupId: "g2", tag: "Heat index" }, groupCell("g3", "bottom"))),
+    { kind: "regroup", hint: "join", effect: "joined", name: "Outcome", edge: "bottom", named: null });
+  const b = drop(cb, EMPTY, { groupId: "g3", tag: "Hospitalization" }, groupCell("g3", "bottom"));
+  assert.equal(b.p.kind, "reorder");
+  assert.deepEqual(b.shown.at(-1), ["g3", ["Mortality", "Hospitalization"]]);
+  // An ungrouped A joins too.
+  const c = drop(cb, EMPTY, { groupId: U, tag: "age" }, groupCell("g2", "bottom"));
+  assert.equal(c.p.kind, "regroup");
+  assert.deepEqual(c.shown[1], ["g2", ["Heat index", "Temperature", "age"]]);
 });
 
-test("AC13: tag header in the ungrouped block = becomes ungrouped at that place (AC3)", () => {
+test("AC30 Table 2 left / right: A beside G as an ungrouped top-level tag (AC20)", () => {
   const cb = setup();
-  const { p, shown, data } = drop(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, { zone: "header", groupId: U, tag: "age", side: "after" });
-  assert.equal(p.kind, "regroup");
-  assert.equal(p.effect, "ungrouped");
-  assert.equal(p.groupId, U);
-  assert.deepEqual(plain(C.tagsIn(data, null)), ["age", "sex", "Mortality"]);
-  assert.deepEqual(shown[0], [U, ["age", "Mortality", "sex"]]);
-  assert.deepEqual(shown[2], ["g3", ["Hospitalization"]]);
+  const a = drop(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, groupCell("g3", "right"));
+  assert.equal(a.p.kind, "regroup");
+  assert.equal(a.p.effect, "ungrouped");
+  assert.deepEqual(a.shown, [...START.slice(0, 2), ["g3", ["Hospitalization"]], [U, ["Mortality"]]]);
+  assert.equal(R.describe(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, groupCell("g3", "right")).hint, "to-ungrouped");
+  const b = drop(cb, EMPTY, { groupId: U, tag: "diet" }, groupCell("g3", "left"));
+  assert.equal(b.p.kind, "reorder");
+  assert.deepEqual(b.shown, [
+    [U, ["age", "sex", "smoker", "bmi"]], ["g2", ["Heat index", "Temperature"]], [U, ["diet"]], ["g3", ["Hospitalization", "Mortality"]],
+  ]);
 });
 
-test("AC13 (amended): body cell below an ungrouped B = B becomes only the name of a new group, right after B's block (AC4)", () => {
-  const cb = setup(["region"]);
-  const layout = frozen({ groupOrder: ["g3", U, "g2"], tagOrder: {} });
-  const { p, shown, data } = drop(cb, layout, { groupId: U, tag: "sex" }, { zone: "body", groupId: U, tag: "age" });
-  assert.equal(p.kind, "regroup");
-  assert.equal(p.effect, "created");
-  assert.equal(p.nest, true);
-  assert.equal(p.groupId, "g5", "id from nextId");
-  assert.equal(data.nextId, 6);
-  assert.deepEqual(plain(C.findGroup(data, "g5")), { id: "g5", name: "age" });
-  assert.equal(C.findTag(data, "age"), undefined, "the tag age left the codebook");
-  assert.deepEqual(plain(p.layout.tagOrder.g5), ["sex"]);
-  assert.deepEqual(shown, [["g3", ["Hospitalization", "Mortality"]], [U, ["region"]], ["g5", ["sex"]], ["g2", ["Heat index", "Temperature"]]]);
-  assert.deepEqual(plain(C.validate(data)), { ok: true });
-});
-
-test("AC13: nest with no saved order puts the new group right after the ungrouped block, not at the far right", () => {
-  const cb = setup(["region"]);
-  const { shown } = drop(cb, EMPTY, { groupId: U, tag: "sex" }, { zone: "body", groupId: U, tag: "age" });
-  assert.deepEqual(shown.map(([id]) => id), [U, "g5", "g2", "g3"]);
-});
-
-test("AC13: one-row header (only ungrouped tags): the first nest creates a group", () => {
-  const cb = book([], [["a", null], ["b", null], ["c", null]], 2);
-  const { p, shown } = drop(cb, EMPTY, { groupId: U, tag: "c" }, { zone: "body", groupId: U, tag: "a" });
-  assert.equal(p.effect, "created");
-  assert.deepEqual(shown, [[U, ["b"]], ["g2", ["c"]]]);
-});
-
-test("AC13: body cell below B in another group = join right after B (AC5)", () => {
+test("AC30 Table 2 top falls back to the pointer's side (never 'above a group')", () => {
   const cb = setup();
-  const { p, shown } = drop(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, { zone: "body", groupId: "g2", tag: "Heat index" });
-  assert.equal(p.kind, "regroup");
-  assert.equal(p.effect, "joined");
-  assert.equal(p.nest, false);
-  assert.equal(p.groupId, "g2");
-  assert.deepEqual(shown[1], ["g2", ["Heat index", "Mortality", "Temperature"]]);
-  assert.ok(C.findTag(p.edit.data, "Heat index"), "B in a group is never removed");
+  const left = R.describe(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, groupCell("g3", "top", "left"));
+  const right = R.describe(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, groupCell("g3", "top", "right"));
+  assert.equal(left.edge, "left");
+  assert.equal(right.edge, "right");
+  assert.equal(left.hint, "to-ungrouped");
+  const { shown } = drop(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, groupCell("g3", "top", "left"));
+  assert.deepEqual(shown, [...START.slice(0, 2), [U, ["Mortality"]], ["g3", ["Hospitalization"]]]);
+  // A group that is not shown (unknown / stale): nothing.
+  assert.equal(R.describe(cb, EMPTY, { groupId: U, tag: "age" }, groupCell("g9", "bottom")), null);
 });
 
-test("AC13: body cell below B in the same group = reorder right after B (Q7)", () => {
-  const cb = setup();
-  const { p, shown } = drop(cb, EMPTY, { groupId: "g2", tag: "Heat index" }, { zone: "body", groupId: "g2", tag: "Temperature" });
-  assert.equal(p.kind, "reorder");
-  assert.deepEqual(shown[1], ["g2", ["Temperature", "Heat index"]]);
-});
-
-test("AC13: super zone ungroups a grouped tag (end of the ungrouped block) and refuses an ungrouped one (AC6)", () => {
-  const cb = setup();
-  const { p, shown } = drop(cb, EMPTY, { groupId: "g2", tag: "Heat index" }, { zone: "super" });
-  assert.equal(p.kind, "regroup");
-  assert.equal(p.effect, "ungrouped");
-  assert.equal(p.groupId, U);
-  assert.deepEqual(shown[0], [U, ["age", "sex", "Heat index"]]);
-  // A saved order that lists Heat index first in the ungrouped block (stale) does not win.
-  const stale = frozen({ groupOrder: [], tagOrder: { [U]: ["Heat index", "sex", "age"] } });
-  assert.deepEqual(drop(cb, stale, { groupId: "g2", tag: "Heat index" }, { zone: "super" }).shown[0], [U, ["sex", "age", "Heat index"]]);
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: U, tag: "age" }, { zone: "super" })), { kind: "none" });
-});
-
-test("AC13: A = B (or dropping on its own header) does nothing", () => {
-  const cb = setup();
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "body", groupId: "g2", tag: "Temperature" })), { kind: "none" });
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: U, tag: "age" }, { zone: "body", groupId: U, tag: "age" })), { kind: "none" });
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "header", groupId: "g2", tag: "Temperature", side: "after" })), { kind: "none" });
-});
-
-test("AC13: unknown drags and targets do nothing", () => {
-  const cb = setup();
-  const none = { kind: "none" };
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g3", tag: "Temperature" }, { zone: "super" })), none, "tag not in that block");
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g9", tag: "x" }, { zone: "super" })), none);
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "body", groupId: "g3", tag: "age" })), none, "B not in that block");
-  assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "title" })), none);
-  assert.deepEqual(plain(R.plan(null, EMPTY, { groupId: "g2", tag: "Temperature" }, { zone: "super" })), none);
-});
-
-test("AC13 (amended): name collision reuses the existing group; the tag B is removed and A goes to its end (Q2, AC7)", () => {
-  const cb = book([{ id: "g2", name: "Country" }], [["country", null], ["region", null]], 3);
-  const { p, shown, data } = drop(cb, EMPTY, { groupId: U, tag: "region" }, { zone: "body", groupId: U, tag: "country" });
-  assert.equal(p.kind, "regroup");
-  assert.equal(p.effect, "joined", "no group created");
-  assert.equal(p.nest, true);
-  assert.equal(p.groupId, "g2");
-  assert.equal(data.nextId, 3, "no new id");
-  assert.deepEqual(plain(C.groups(data)), [{ id: "g2", name: "Country" }]);
-  assert.equal(C.findTag(data, "country"), undefined);
-  assert.deepEqual(shown, [["g2", ["region"]]]);
-  // The reused group already has a column: A is appended after it; B is pruned everywhere.
-  const cb2 = book([{ id: "g2", name: "Country" }], [["z", "g2"], ["country", null], ["region", null]], 3);
-  const stale = frozen({ groupOrder: [], tagOrder: { [U]: ["country", "region"], g2: ["country", "z"] } });
-  const r2 = drop(cb2, stale, { groupId: U, tag: "region" }, { zone: "body", groupId: U, tag: "country" });
-  assert.deepEqual(r2.shown, [["g2", ["z", "region"]]]);
-  assert.deepEqual(plain(r2.p.layout.tagOrder), { g2: ["z", "region"] }, "B and A pruned from saved orders");
-});
-
-test("AC13: a stale saved tagOrder entry for A does not win; A is pruned from other blocks", () => {
-  const cb = setup();
-  const layout = frozen({
-    groupOrder: [],
-    tagOrder: { g2: ["Temperature", "Heat index"], g3: ["Temperature", "Mortality", "Hospitalization"] },
-  });
-  const { p, shown } = drop(cb, layout, { groupId: "g2", tag: "Temperature" }, { zone: "header", groupId: "g3", tag: "Hospitalization", side: "after" });
-  assert.deepEqual(shown[2], ["g3", ["Mortality", "Hospitalization", "Temperature"]]);
-  assert.deepEqual(plain(p.layout.tagOrder.g2), ["Heat index"], "A pruned from its old block");
-  assert.deepEqual(plain(p.layout.tagOrder.g3), ["Mortality", "Hospitalization", "Temperature"]);
-});
-
-test("AC13: the ungrouped block that appears is inserted first unless the saved order has it", () => {
-  const cb = book([{ id: "g2", name: "E" }, { id: "g3", name: "O" }], [["a", "g2"], ["b", "g2"], ["c", "g3"]]);
-  const { p, shown } = drop(cb, frozen({ groupOrder: ["g3", "g2"], tagOrder: {} }), { groupId: "g2", tag: "a" }, { zone: "super" });
-  assert.deepEqual(plain(p.layout.groupOrder), [U, "g3", "g2"]);
-  assert.deepEqual(shown, [[U, ["a"]], ["g3", ["c"]], ["g2", ["b"]]]);
-  const kept = drop(cb, frozen({ groupOrder: ["g3", "g2", U], tagOrder: {} }), { groupId: "g2", tag: "a" }, { zone: "super" });
-  assert.deepEqual(kept.shown.map(([id]) => id), ["g3", "g2", U], "saved place kept");
-});
-
-test("AC13: an emptied group stays in the codebook with 0 tags and no column (Q3)", () => {
+test("AC30: the last tag leaving a group: it stays in the codebook with 0 tags (Q3), its entry pruned", () => {
   const cb = book([{ id: "g2", name: "Solo" }], [["only", "g2"], ["age", null]]);
-  const { p, shown, data } = drop(cb, EMPTY, { groupId: "g2", tag: "only" }, { zone: "super" });
+  const { p, shown, data } = drop(cb, EMPTY, { groupId: "g2", tag: "only" }, groupCell("g2", "left"));
   assert.equal(p.kind, "regroup");
   assert.deepEqual(plain(C.groups(data)), [{ id: "g2", name: "Solo" }]);
-  assert.deepEqual(plain(C.tagsIn(data, "g2")), []);
   assert.deepEqual(shown, [[U, ["age", "only"]]]);
+  assert.equal(plain(p.layout.topOrder).some((e) => e.group === "g2"), false);
 });
 
-test("AC13: \"__proto__\" as a tag or group name stays an ordinary key", () => {
-  const cb = book([], [["__proto__", null], ["x", null], ["y", null]], 2);
-  const { p, shown } = drop(cb, EMPTY, { groupId: U, tag: "x" }, { zone: "body", groupId: U, tag: "__proto__" });
-  assert.equal(p.effect, "created");
-  assert.deepEqual(shown, [[U, ["y"]], ["g2", ["x"]]]);
-  // A hand-edited layout with an own "__proto__" key keeps it as data, not as a prototype.
-  const layout = frozen(JSON.parse('{"groupOrder":[],"tagOrder":{"__proto__":["q"],"ungrouped":["y","x"]}}'));
-  const r = R.plan(cb, layout, { groupId: U, tag: "x" }, { zone: "body", groupId: U, tag: "__proto__" });
-  assert.equal(Object.hasOwn(r.layout.tagOrder, "__proto__"), true);
-  assert.deepEqual(plain(r.layout.tagOrder.ungrouped), ["y"], "moved tags pruned from the old block");
-  assert.equal(Object.getPrototypeOf(r.layout.tagOrder), vm.runInContext("Object.prototype", sandbox));
+// ---------------------------------------------------------------------------------------
+// Table 3: a tag inside a group
+// ---------------------------------------------------------------------------------------
+
+test("AC30 Table 3 left / right: A joins G beside B; already in G = reorder (AC21)", () => {
+  const cb = setup();
+  const a = drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, tagCell("g3", "Hospitalization", "right"));
+  assert.equal(a.p.kind, "regroup");
+  assert.equal(a.p.effect, "joined");
+  assert.deepEqual(a.shown.at(-1), ["g3", ["Hospitalization", "Temperature", "Mortality"]]);
+  assert.deepEqual(plain(a.p.layout.tagOrder), { g3: ["Hospitalization", "Temperature", "Mortality"] });
+  const b = drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, tagCell("g2", "Heat index", "left"));
+  assert.equal(b.p.kind, "reorder");
+  assert.deepEqual(b.shown[1], ["g2", ["Temperature", "Heat index"]]);
+  // An ungrouped A joins before B.
+  const c = drop(cb, EMPTY, { groupId: U, tag: "sex" }, tagCell("g3", "Mortality", "left"));
+  assert.deepEqual(c.shown.at(-1), ["g3", ["Hospitalization", "sex", "Mortality"]]);
+  assert.deepEqual(c.shown[0], [U, ["age", "smoker", "bmi", "diet"]]);
 });
 
-test("AC13: inputs are never mutated (frozen inputs would throw)", () => {
-  const cb = setup(["region"]);
-  const layout = frozen({ groupOrder: ["g2", U, "g3"], tagOrder: { g2: ["Temperature", "Heat index"] } });
-  const copy = plain(cb);
-  for (const target of [
-    { zone: "super" },
-    { zone: "body", groupId: U, tag: "age" },
-    { zone: "header", groupId: "g3", tag: "Mortality", side: "after" },
+test("AC30 Table 3 top / bottom fall back to left / right (no third level); body alias (AC21, AC23)", () => {
+  const cb = setup();
+  for (const [edge, side, expected] of [
+    ["top", "left", ["Temperature", "Hospitalization", "Mortality"]],
+    ["top", "right", ["Hospitalization", "Temperature", "Mortality"]],
+    ["bottom", "left", ["Temperature", "Hospitalization", "Mortality"]],
+    ["bottom", "right", ["Hospitalization", "Temperature", "Mortality"]],
   ]) {
-    R.plan(cb, layout, { groupId: "g2", tag: "Temperature" }, target);
-    R.describe(cb, { groupId: "g2", tag: "Temperature" }, target);
+    const target = tagCell("g3", "Hospitalization", edge, side);
+    const info = R.describe(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, target);
+    assert.equal(info.edge, side, `${edge}/${side}`);
+    assert.equal(info.hint, "join");
+    assert.equal(info.name, "Outcome");
+    assert.deepEqual(drop(cb, EMPTY, { groupId: "g2", tag: "Temperature" }, target).shown.at(-1), ["g3", expected]);
   }
-  assert.deepEqual(plain(cb), copy);
+  // Q7 kept: below a tag of A's own group = move beside it (layout only).
+  const same = drop(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, tagCell("g3", "Hospitalization", "bottom", "left"));
+  assert.equal(same.p.kind, "reorder");
+  assert.deepEqual(same.shown.at(-1), ["g3", ["Mortality", "Hospitalization"]]);
 });
 
-test("AC13: describe returns the hint kind and the plain name", () => {
-  const cb = book(
-    [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Outcome" }, { id: "g4", name: "Country" }],
-    [["Heat index", "g2"], ["Temperature", "g2"], ["Hospitalization", "g3"], ["age", null], ["sex", null], ["country", null]],
+test("AC30: a stale target (tag not in that block, unknown tag, unknown cell kind) does nothing", () => {
+  const cb = setup();
+  assert.equal(R.plan(cb, EMPTY, { groupId: U, tag: "age" }, tagCell("g2", "sex", "left")).kind, "none");
+  assert.equal(R.plan(cb, EMPTY, { groupId: U, tag: "age" }, tagCell(U, "nope", "left")).kind, "none");
+  assert.equal(R.plan(cb, EMPTY, { groupId: "g2", tag: "age" }, tagCell(U, "sex", "left")).kind, "none");
+  assert.equal(R.plan(cb, EMPTY, { groupId: U, tag: "age" }, { cell: "title", edge: "left", side: "left" }).kind, "none");
+  assert.equal(R.plan(null, EMPTY, { groupId: U, tag: "age" }, tagCell(U, "sex", "left")).kind, "none");
+});
+
+// ---------------------------------------------------------------------------------------
+// Table 4: an "Ungrouped" run super-header
+// ---------------------------------------------------------------------------------------
+
+const TWO_RUNS = frozen({ topOrder: [{ tag: "age" }, { tag: "sex" }, { group: "g2" }, { tag: "smoker" }, { tag: "bmi" }, { tag: "diet" }, { group: "ungrouped" }, { group: "g3" }], tagOrder: {} });
+
+test("AC30 Table 4: left = before the run's first tag; right / bottom = after its last; top falls back", () => {
+  const cb = setup();
+  const a = drop(cb, TWO_RUNS, { groupId: "g3", tag: "Mortality" }, runCell(1, "left"));
+  assert.equal(a.p.kind, "regroup");
+  assert.equal(a.p.effect, "ungrouped");
+  assert.deepEqual(a.shown, [[U, ["age", "sex"]], ["g2", ["Heat index", "Temperature"]], [U, ["Mortality", "smoker", "bmi", "diet"]], ["g3", ["Hospitalization"]]]);
+  for (const edge of ["right", "bottom"]) {
+    const b = drop(cb, TWO_RUNS, { groupId: U, tag: "age" }, runCell(1, edge));
+    assert.equal(b.p.kind, "reorder", edge);
+    assert.deepEqual(b.shown, [[U, ["sex"]], ["g2", ["Heat index", "Temperature"]], [U, ["smoker", "bmi", "diet", "age"]], ["g3", ["Hospitalization", "Mortality"]]], edge);
+    assert.equal(b.p.edge, edge);
+  }
+  const top = R.describe(cb, TWO_RUNS, { groupId: U, tag: "age" }, runCell(1, "top", "left"));
+  assert.equal(top.edge, "left");
+  assert.equal(top.hint, "reorder");
+  // A run that holds only A: nothing. An unknown run: nothing.
+  const solo = frozen({ topOrder: [{ tag: "age" }, { group: "g2" }, { group: "ungrouped" }], tagOrder: {} });
+  assert.equal(R.describe(cb, solo, { groupId: U, tag: "age" }, runCell(0, "right")), null);
+  assert.equal(R.plan(cb, solo, { groupId: U, tag: "age" }, runCell(0, "bottom")).kind, "none");
+  assert.equal(R.plan(cb, TWO_RUNS, { groupId: U, tag: "age" }, runCell(7, "left")).kind, "none");
+});
+
+test("AC30 runs: an ungrouped tag dropped beside a tag of another run merges the runs (AC22)", () => {
+  const layout = frozen({ topOrder: [{ tag: "diet" }, { group: "g2" }, { group: "g3" }, { tag: "Mortality" }], tagOrder: {} });
+  const cb2 = book(
+    [{ id: "g2", name: "Exposure" }, { id: "g3", name: "Outcome" }],
+    [["Heat index", "g2"], ["Hospitalization", "g3"], ["diet", null], ["Mortality", null]],
   );
-  const d = (drag, target) => plain(R.describe(cb, drag, target));
-  const temp = { groupId: "g2", tag: "Temperature" };
-  assert.deepEqual(d(temp, { zone: "header", groupId: "g2", tag: "Heat index", side: "before" }), { kind: "reorder", hint: "reorder", effect: null, name: "" });
-  assert.deepEqual(d(temp, { zone: "header", groupId: "g3", tag: "Hospitalization", side: "after" }), { kind: "regroup", hint: "join", effect: "joined", name: "Outcome" });
-  assert.deepEqual(d(temp, { zone: "header", groupId: U, tag: "age", side: "after" }), { kind: "regroup", hint: "to-ungrouped", effect: "ungrouped", name: "" });
-  assert.deepEqual(d(temp, { zone: "body", groupId: U, tag: "age" }), { kind: "regroup", hint: "new-group", effect: "created", name: "age" });
-  assert.deepEqual(d(temp, { zone: "body", groupId: U, tag: "country" }), { kind: "regroup", hint: "new-group", effect: "joined", name: "Country" });
-  assert.deepEqual(d(temp, { zone: "body", groupId: "g2", tag: "Heat index" }), { kind: "reorder", hint: "reorder", effect: null, name: "" });
-  assert.deepEqual(d(temp, { zone: "super" }), { kind: "regroup", hint: "ungroup", effect: "ungrouped", name: "" });
-  assert.equal(R.describe(cb, { groupId: U, tag: "age" }, { zone: "super" }), null);
-  assert.equal(R.describe(cb, temp, { zone: "body", groupId: "g2", tag: "Temperature" }), null);
-  // Names are returned as given (markup stays literal text; the workspace sets textContent).
-  const html = book([], [["<b>x</b>", null], ["y", null]], 2);
-  assert.equal(R.describe(html, { groupId: U, tag: "y" }, { zone: "body", groupId: U, tag: "<b>x</b>" }).name, "<b>x</b>");
+  const { p, shown } = drop(cb2, layout, { groupId: U, tag: "Mortality" }, tagCell(U, "diet", "right"));
+  assert.equal(p.kind, "reorder");
+  assert.deepEqual(shown, [[U, ["diet", "Mortality"]], ["g2", ["Heat index"]], ["g3", ["Hospitalization"]]]);
+});
+
+// ---------------------------------------------------------------------------------------
+// layout.json results (A2.5), pruning, collisions, safety
+// ---------------------------------------------------------------------------------------
+
+test("AC30 A2.5: the home marker is copied through; stale saved entries never win; moved tags pruned", () => {
+  const cb = setup();
+  const layout = frozen({
+    topOrder: [{ group: "g3" }, { tag: "gone" }, { group: "ungrouped" }, { group: "g2" }],
+    tagOrder: { g2: ["Temperature", "sex"], g3: ["Temperature", "Mortality"], ungrouped: ["age"] },
+  });
+  // Temperature joins g3 before Hospitalization; the stale "Temperature" first in g3's
+  // saved order does not win; it is pruned from g2's list.
+  const { p, shown } = drop(cb, layout, { groupId: "g2", tag: "Temperature" }, tagCell("g3", "Hospitalization", "right"));
+  assert.deepEqual(shown[0], ["g3", ["Mortality", "Hospitalization", "Temperature"]]);
+  assert.deepEqual(plain(p.layout.tagOrder), { g2: ["sex"], g3: ["Mortality", "Hospitalization", "Temperature"] });
+  assert.deepEqual(plain(p.layout.topOrder), [
+    { group: "g3" }, { tag: "age" }, { tag: "sex" }, { tag: "smoker" }, { tag: "bmi" }, { tag: "diet" }, { group: "ungrouped" }, { group: "g2" },
+  ]);
+});
+
+test("AC30 A2.5: nest prunes A and B from every group's tagOrder", () => {
+  const cb = book(
+    [{ id: "g2", name: "Exposure" }],
+    [["Heat index", "g2"], ["age", null], ["sex", "g2"]],
+  );
+  const layout = frozen({ topOrder: [], tagOrder: { g2: ["sex", "age", "Heat index"] } });
+  const { p, shown } = drop(cb, layout, { groupId: "g2", tag: "sex" }, tagCell(U, "age", "bottom"));
+  assert.equal(p.effect, "created");
+  // "age" (now the group name) and "sex" (moved) are gone from g2's saved order.
+  assert.deepEqual(plain(p.layout.tagOrder), { g2: ["Heat index"], g5: ["sex"] });
+  assert.deepEqual(shown, [["g5", ["sex"]], ["g2", ["Heat index"]]]);
+});
+
+test("AC30: a refused codebook edit is reported, not applied", () => {
+  // A tag missing from the codebook only happens with stale data; simulate with a target
+  // whose edit the codebook model refuses (tagToGroupName with an unknown child).
+  const cb = setup();
+  const orig = C.tagToGroupName;
+  try {
+    C.tagToGroupName = () => ({ ok: false, error: C.ERR_TAG_MISSING });
+    assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top"))), { kind: "refused", error: C.ERR_TAG_MISSING });
+    assert.equal(R.describe(cb, EMPTY, { groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top")), null);
+  } finally {
+    C.tagToGroupName = orig;
+  }
+});
+
+test("AC30: \"__proto__\" as a tag or group name stays an ordinary key", () => {
+  const cb = book([{ id: "g2", name: "__proto__" }], [["x", "g2"], ["__proto__", null], ["y", null]]);
+  const { p, shown } = drop(cb, EMPTY, { groupId: U, tag: "y" }, tagCell("g2", "x", "left"));
+  assert.equal(p.kind, "regroup");
+  assert.deepEqual(shown, [[U, ["__proto__"]], ["g2", ["y", "x"]]]);
+  const nest = drop(cb, EMPTY, { groupId: U, tag: "y" }, tagCell(U, "__proto__", "bottom"));
+  assert.equal(nest.p.effect, "joined", "reuses the group named __proto__");
+  assert.deepEqual(nest.shown, [["g2", ["x", "y"]]]);
+  assert.equal(Object.getPrototypeOf(nest.p.layout.tagOrder), Object.getPrototypeOf(L.emptyColumnLayout()));
+});
+
+test("AC30: inputs are never mutated (frozen inputs would throw)", () => {
+  const cb = setup();
+  const layout = TWO_RUNS;
+  const targets = [
+    [{ groupId: U, tag: "sex" }, tagCell(U, "age", "bottom")],
+    [{ groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top")],
+    [{ groupId: "g2", tag: "Temperature" }, tagCell(U, "diet", "left")],
+    [{ groupId: "g2", tag: "Heat index" }, groupCell("g3", "bottom")],
+    [{ groupId: "g3", tag: "Mortality" }, groupCell("g3", "right")],
+    [{ groupId: "g2", tag: "Temperature" }, tagCell("g3", "Hospitalization", "top", "right")],
+    [{ groupId: "g3", tag: "Mortality" }, runCell(1, "left")],
+  ];
+  for (const [drag, target] of targets) {
+    R.plan(cb, layout, frozen(drag), frozen(target));
+    R.describe(cb, layout, frozen(drag), frozen(target));
+  }
+  assert.deepEqual(plain(cb), plain(setup()));
+});
+
+// ---------------------------------------------------------------------------------------
+// Keyboard (A2.9): each key is one drop through the same plan
+// ---------------------------------------------------------------------------------------
+
+test("AC30 keyboard: a grouped tag: Up leaves the group beside it, Down does nothing", () => {
+  const cb = setup();
+  assert.deepEqual(plain(R.keyboardTarget(cb, EMPTY, { groupId: "g3", tag: "Hospitalization" }, "up")),
+    { cell: "group", groupId: "g3", edge: "left", side: "left" }, "first tag: before the group");
+  assert.deepEqual(plain(R.keyboardTarget(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, "up")),
+    { cell: "group", groupId: "g3", edge: "right", side: "right" }, "other tags: after the group");
+  assert.equal(R.keyboardTarget(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, "down"), null);
+  const { shown } = drop(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, R.keyboardTarget(cb, EMPTY, { groupId: "g3", tag: "Mortality" }, "up"));
+  assert.deepEqual(shown.at(-1), [U, ["Mortality"]]);
+});
+
+test("AC30 keyboard: an ungrouped tag flips / nests with its left neighbour, or joins a group on its left", () => {
+  const cb = setup();
+  assert.deepEqual(plain(R.keyboardTarget(cb, EMPTY, { groupId: U, tag: "sex" }, "up")),
+    { cell: "tag", groupId: U, tag: "age", edge: "top", side: "right" });
+  assert.deepEqual(plain(R.keyboardTarget(cb, EMPTY, { groupId: U, tag: "sex" }, "down")),
+    { cell: "tag", groupId: U, tag: "age", edge: "bottom", side: "right" });
+  // First item: nothing.
+  assert.equal(R.keyboardTarget(cb, EMPTY, { groupId: U, tag: "age" }, "up"), null);
+  assert.equal(R.keyboardTarget(cb, EMPTY, { groupId: U, tag: "age" }, "down"), null);
+  // Left neighbour is a group: Down joins it at its end, Up does nothing.
+  assert.deepEqual(plain(R.keyboardTarget(cb, TWO_RUNS, { groupId: U, tag: "smoker" }, "down")),
+    { cell: "group", groupId: "g2", edge: "bottom", side: "right" });
+  assert.equal(R.keyboardTarget(cb, TWO_RUNS, { groupId: U, tag: "smoker" }, "up"), null);
+  const flip = drop(cb, EMPTY, { groupId: U, tag: "sex" }, R.keyboardTarget(cb, EMPTY, { groupId: U, tag: "sex" }, "up"));
+  assert.equal(flip.p.named, "above");
+  assert.deepEqual(flip.shown[0], ["g5", ["age"]]);
+  assert.equal(R.keyboardTarget(cb, EMPTY, { groupId: "g2", tag: "nope" }, "up"), null);
 });
