@@ -20,6 +20,10 @@
 // Feature 005c (docs/features/005c-table-layout.md, task T6; ADR-0014 §6, accepted with
 // Q1 = C) authorizes exactly one more: IOUtils writes in src/content/layout-store.js, which
 // saves Tabellify's own layout.json in the same folder (never the Zotero library).
+// Feature 008 (docs/features/008-export-csv.md, AC17; ADR-0017 §3) authorizes a third: the
+// one IOUtils.writeUTF8 call in src/content/csv-export.js, which writes the CSV file to the
+// path the user chose in the save dialog (outside Tabellify's folder, never the library).
+// That file has extra rules (the "F008 AC17" test below) that keep the write narrow.
 //
 // Pattern sources: Zotero's data-object API names (Zotero.DataObject save/erase family,
 // Zotero.Item tag/field/collection/relation setters, Zotero.Collection item membership,
@@ -95,6 +99,8 @@ const ALLOWLIST = [
   { file: "content/codebook-store.js", pattern: "IOUtils write", spec: "docs/features/004-codebook.md" },
   // F005c T6 / ADR-0014: the layout store writes layout.json (+ .tmp/.bak) in the same folder.
   { file: "content/layout-store.js", pattern: "IOUtils write", spec: "docs/decisions/0014-table-layout-storage.md" },
+  // F008 / ADR-0017: the CSV writer writes the user-chosen export file (+ its .tabellify-tmp).
+  { file: "content/csv-export.js", pattern: "IOUtils write", spec: "docs/features/008-export-csv.md" },
 ];
 
 /**
@@ -134,10 +140,11 @@ test("AC6: src/ contains no Zotero library-write calls (heuristic denylist)", ()
   assert.deepEqual(violations, [], `library-write calls found:\n${violations.join("\n")}`);
 });
 
-test("F004 AC11 / F005c T6: the allow-list has exactly the F004 and ADR-0014 entries, both really needed", () => {
+test("F004 AC11 / F005c T6 / F008 AC17: the allow-list has exactly the three entries, each really needed", () => {
   assert.deepEqual(ALLOWLIST, [
     { file: "content/codebook-store.js", pattern: "IOUtils write", spec: "docs/features/004-codebook.md" },
     { file: "content/layout-store.js", pattern: "IOUtils write", spec: "docs/decisions/0014-table-layout-storage.md" },
+    { file: "content/csv-export.js", pattern: "IOUtils write", spec: "docs/features/008-export-csv.md" },
   ]);
   // A stale entry (file no longer writes) would silently allow a future write: fail instead.
   for (const a of ALLOWLIST) {
@@ -145,7 +152,7 @@ test("F004 AC11 / F005c T6: the allow-list has exactly the F004 and ADR-0014 ent
     assert.ok(hits.length > 0, `allow-list entry ${a.file} [${a.pattern}] matches nothing`);
   }
   // Only the authorized pattern is allowed there: no other write kind in the store.
-  for (const file of ["content/codebook-store.js", "content/layout-store.js"]) {
+  for (const file of ["content/codebook-store.js", "content/layout-store.js", "content/csv-export.js"]) {
     const store = findWrites(readFileSync(join(srcDir, file), "utf8"));
     assert.deepEqual(store.filter((h) => h.pattern !== "IOUtils write"), [], file);
   }
@@ -154,6 +161,59 @@ test("F004 AC11 / F005c T6: the allow-list has exactly the F004 and ADR-0014 ent
   const layoutStore = readFileSync(join(srcDir, "content/layout-store.js"), "utf8");
   assert.match(layoutStore, /FILE_NAME:\s*"layout\.json"/);
   assert.match(layoutStore, /writeJSON\(path, clean, \{ tmpPath: path \+ "\.tmp", backupFile: path \+ "\.bak" \}\)/);
+});
+
+/**
+ * Source text without comments (JS block comments and `//` comments that follow a space or
+ * start a line), so teaching comments can name APIs. `chrome://…` inside a string is kept:
+ * its `//` follows a colon, not a space.
+ * @param {string} text
+ */
+function codeOnly(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+}
+
+/** Every .js / .mjs / .xhtml file under src/ except `skip`, as [relative path, text]. */
+function sourceFiles(skip) {
+  return listFiles(srcDir)
+    .map((f) => [relative(srcDir, f).split(sep).join("/"), f])
+    .filter(([rel]) => /\.(?:m?js|xhtml)$/.test(rel) && rel !== skip)
+    .map(([rel, f]) => [rel, readFileSync(f, "utf8")]);
+}
+
+test("F008 AC17 / ADR-0017 §3: csv-export.js writes only the user-chosen path, in one narrow call", () => {
+  const raw = readFileSync(join(srcDir, "content/csv-export.js"), "utf8");
+  const code = codeOnly(raw);
+  const count = (re) => (code.match(re) ?? []).length;
+  // Exactly one write call, and it is IOUtils.writeUTF8 (no other IOUtils / PathUtils member).
+  assert.equal(count(/\bIOUtils\.writeUTF8\(/g), 1, "exactly one IOUtils.writeUTF8( call");
+  assert.deepEqual([...code.matchAll(/\bIOUtils\s*\.\s*(\w+)/g)].map((m) => m[1]), ["writeUTF8"]);
+  assert.equal(count(/\bPathUtils\b/g), 0, "no PathUtils");
+  // The write options are built in exactly one place, from the picked path only, and the
+  // platform write passes exportText's arguments straight through.
+  assert.equal(count(/\btmpPath\s*:/g), 1, "one place builds the write options");
+  assert.match(code, /return \{ tmpPath: path \+ this\.TMP_SUFFIX \};/);
+  assert.match(code, /TMP_SUFFIX: "\.tabellify-tmp",/);
+  assert.match(code, /writeUTF8: \(path, text, options\) => IOUtils\.writeUTF8\(path, text, options\),/);
+  assert.match(code, /await io\.writeUTF8\(path, text, this\.writeOptions\(path\)\)/);
+  assert.equal(count(/\bio\.writeUTF8\(/g), 1, "exportText calls io.writeUTF8 once");
+  // No mode option (the default "overwrite" is wanted; "append" is never allowed), no backup.
+  assert.doesNotMatch(raw, /\bmode\s*:/);
+  assert.doesNotMatch(raw, /backupFile|flush\s*:/);
+  // No Zotero, Services or Zotero.File; the only ChromeUtils use is the filePicker.mjs import.
+  assert.doesNotMatch(code, /\bZotero\b/);
+  assert.doesNotMatch(code, /\bServices\b/);
+  assert.deepEqual(
+    [...code.matchAll(/\bChromeUtils\b.*$/gm)].map((m) => m[0]),
+    ['ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs");'],
+  );
+});
+
+test("F008 AC17: no other file in src/ mentions filePicker.mjs, FilePicker or writeUTF8", () => {
+  const offenders = sourceFiles("content/csv-export.js")
+    .filter(([, text]) => /filePicker\.mjs|FilePicker|writeUTF8/.test(text))
+    .map(([rel]) => rel);
+  assert.deepEqual(offenders, []);
 });
 
 test("AC6: guard self-test — every denylist pattern catches a known write call", () => {
