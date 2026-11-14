@@ -258,13 +258,16 @@ test("AC30 Table 2 top falls back to the pointer's side (never 'above a group')"
   assert.equal(R.describe(cb, EMPTY, { groupId: U, tag: "age" }, groupCell("g9", "bottom")), null);
 });
 
-test("AC30: the last tag leaving a group: it stays in the codebook with 0 tags (Q3), its entry pruned", () => {
+test("never disappears: the last tag of a group can't leave it (the group would vanish), refused", () => {
+  // Was Q3 ("an emptied group stays as 'G · 0'"): the group then vanished from the table.
+  // Owner, 2026-11-13: nothing may just disappear, so the drop is refused instead.
   const cb = book([{ id: "g2", name: "Solo" }], [["only", "g2"], ["age", null]]);
-  const { p, shown, data } = drop(cb, EMPTY, { groupId: "g2", tag: "only" }, groupCell("g2", "left"));
-  assert.equal(p.kind, "regroup");
-  assert.deepEqual(plain(C.groups(data)), [{ id: "g2", name: "Solo" }]);
-  assert.deepEqual(shown, [[U, ["age", "only"]]]);
-  assert.equal(plain(p.layout.topOrder).some((e) => e.group === "g2"), false);
+  for (const target of [groupCell("g2", "left"), groupCell("g2", "right"), tagCell(U, "age", "left"), tagCell(U, "age", "bottom"), tagCell(U, "age", "top")]) {
+    assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g2", tag: "only" }, target)), { kind: "refused", error: R.ERR_WOULD_HIDE }, JSON.stringify(target));
+    assert.equal(R.describe(cb, EMPTY, { groupId: "g2", tag: "only" }, target), null, "no indicator, no hint");
+  }
+  // Inside its own group it is a no-op reorder (nothing changes, nothing hidden).
+  assert.equal(R.plan(cb, EMPTY, { groupId: "g2", tag: "only" }, groupCell("g2", "bottom")).kind, "reorder");
 });
 
 // ---------------------------------------------------------------------------------------
@@ -465,4 +468,212 @@ test("AC30 keyboard: an ungrouped tag flips / nests with its left neighbour, or 
   assert.equal(flip.p.named, "above");
   assert.deepEqual(flip.shown[0], ["g5", ["age"]]);
   assert.equal(R.keyboardTarget(cb, EMPTY, { groupId: "g2", tag: "nope" }, "up"), null);
+});
+
+// ---------------------------------------------------------------------------------------
+// NOTHING DISAPPEARS (owner smoke test after the 006c merge, 2026-11-13: "the tags
+// disappear when dragged to the western boundary. ... they should never disappear").
+// Root cause: a nest or flip turns a tag into a group NAME; when that group's last (only)
+// tag was then dragged out (e.g. to the left edge of the group's header), the group had
+// 0 columns, so the table no longer showed it, and the tag that had become its name
+// vanished from the table.
+// ---------------------------------------------------------------------------------------
+
+test("never disappears (repro): after a flip, dragging the group's only tag out is refused", () => {
+  // Flip: bmi becomes a group name over smoker (AC18).
+  const flip = drop(setup(), EMPTY, { groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top"));
+  assert.equal(flip.p.named, "above");
+  const cb = frozen(flip.data);
+  const layout = frozen(flip.p.layout);
+  const drag = { groupId: "g5", tag: "smoker" };
+  // Every place to the west (left edge) and the other ways out of the group.
+  const targets = [
+    groupCell("g5", "left"), groupCell("g5", "top", "left"), groupCell("g5", "right"),
+    tagCell(U, "age", "left"), tagCell(U, "diet", "left"), tagCell(U, "age", "bottom"), tagCell(U, "age", "top"),
+    tagCell("g2", "Heat index", "left"), groupCell("g2", "left"), groupCell("g2", "bottom"),
+    runCell(0, "left"), runCell(1, "left"),
+    R.keyboardTarget(cb, layout, drag, "up"),
+  ];
+  for (const target of targets) {
+    const p = R.plan(cb, layout, frozen(drag), frozen(target));
+    assert.deepEqual(plain(p), { kind: "refused", error: R.ERR_WOULD_HIDE }, JSON.stringify(target));
+    assert.equal(R.describe(cb, layout, frozen(drag), frozen(target)), null);
+  }
+  // The "bmi" super-header stays shown over smoker.
+  assert.deepEqual(shownAfter(cb, layout)[1], ["g5", ["smoker"]]);
+  // Once the group has a second tag, smoker may leave: "bmi" stays shown over the other one.
+  const join = drop(cb, layout, { groupId: U, tag: "diet" }, groupCell("g5", "bottom"));
+  const out = drop(join.data, join.p.layout, drag, groupCell("g5", "left"));
+  assert.equal(out.p.kind, "regroup");
+  assert.deepEqual(out.shown.slice(0, 2), [[U, ["age", "sex", "smoker"]], ["g5", ["diet"]]]);
+});
+
+test("never disappears: hiddenBy names lost tags and groups; the nest / flip name tag is allowed", () => {
+  const cb = setup();
+  assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, cb, EMPTY)), []);
+  const gone = C.removeTagFromCodebook(cb, "age").data;
+  assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, gone, EMPTY)), [{ tag: "age" }]);
+  // A name tag is allowed only when a group with that name (ignoring case) is shown.
+  assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, gone, EMPTY, "age")), [{ tag: "age" }]);
+  const named = C.tagToGroupName(cb, "age", "sex").data;
+  assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, named, EMPTY, "age")), []);
+  assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, named, EMPTY)), [{ tag: "age" }]);
+  // A group that loses its last column is reported.
+  const emptied = C.setTagGroup(C.setTagGroup(cb, "Heat index", null).data, "Temperature", null).data;
+  assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, emptied, EMPTY)), [{ group: "g2" }]);
+});
+
+/**
+ * Independent check (not R.hiddenBy): what disappeared between two table states. Every tag
+ * of `tagsToKeep` must be a column after, or (only for `nameTag`, a nest / flip) have left
+ * the codebook and be the name of a group shown after; every group shown before must still
+ * be shown after.
+ */
+function disappeared(cbBefore, layoutBefore, cbAfter, layoutAfter, nameTag, tagsToKeep) {
+  const shownBefore = L.orderedGroups(TM.codebookGroups(cbBefore), layoutBefore);
+  const shown = L.orderedGroups(TM.codebookGroups(cbAfter), layoutAfter);
+  const columns = shown.flatMap((g) => g.tags);
+  const names = shown.filter((g) => !g.ungrouped).map((g) => g.name.toLowerCase());
+  const inCodebook = new Set(cbAfter.codebooks[0].tags.map((t) => t.name));
+  const out = [];
+  for (const tag of tagsToKeep) {
+    if (columns.includes(tag)) continue;
+    if (!inCodebook.has(tag) && names.includes(tag.toLowerCase()) && (nameTag === undefined || tag === nameTag)) continue;
+    out.push(`tag ${tag}`);
+  }
+  for (const g of shownBefore) {
+    if (!g.ungrouped && !shown.some((h) => !h.ungrouped && h.id === g.id)) out.push(`group ${g.id}`);
+  }
+  if (new Set(columns).size !== columns.length) out.push("a column shown twice");
+  return out;
+}
+
+/** Codebooks with every kind of dragged tag and every kind of target. */
+const NEVER_BOOKS = {
+  setup: () => setup(),
+  // A group with a single tag ("Solo"), a pair, ungrouped tags.
+  solo: () => book([{ id: "g2", name: "Solo" }, { id: "g3", name: "Pair" }], [["x", "g2"], ["p1", "g3"], ["p2", "g3"], ["a", null], ["b", null]]),
+  // The repro state: "bmi" became the group name over smoker (a flip).
+  afterFlip: () => drop(setup(), EMPTY, { groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top")).data,
+  // Only ungrouped tags (one-row header), and only two of them.
+  onlyUngrouped: () => book([], [["a", null], ["b", null], ["c", null]]),
+  two: () => book([], [["a", null], ["b", null]]),
+  // Group names like tags (reuse, Q2), an empty group ("Empty · 0") that has no column.
+  sameName: () => book([{ id: "g2", name: "A" }, { id: "g3", name: "Empty" }, { id: "g4", name: "Country" }], [["x", "g2"], ["a", null], ["b", null], ["country", null]]),
+  // Groups only (no ungrouped tags, so no run headers).
+  groupsOnly: () => book([{ id: "g2", name: "G" }, { id: "g3", name: "H" }], [["x", "g2"], ["y", "g3"], ["z", "g3"]]),
+};
+
+/** Layouts: codebook order, reversed top level, groups first, the home marker last. */
+function neverLayouts(cb) {
+  const top = L.topItems(TM.codebookGroups(cb), null);
+  const groupsFirst = [...top.filter((e) => Object.hasOwn(e, "group") && !L.isMarker(e)), ...top.filter((e) => Object.hasOwn(e, "tag")), { group: U }];
+  return [EMPTY, { topOrder: [...top].reverse(), tagOrder: {} }, { topOrder: groupsFirst, tagOrder: {} }];
+}
+
+/** Every target cell shown in a state, with all four edges and both pointer halves. */
+function allTargets(cb, layout) {
+  const out = [];
+  for (const g of L.orderedGroups(TM.codebookGroups(cb), layout)) {
+    const cells = [g.ungrouped ? { cell: "run", groupId: U, run: g.run } : { cell: "group", groupId: g.id }];
+    for (const tag of g.tags) cells.push({ cell: "tag", groupId: g.id, tag });
+    for (const c of cells) for (const edge of ["left", "right", "top", "bottom"]) for (const side of ["left", "right"]) out.push({ ...c, edge, side });
+  }
+  return out;
+}
+
+/**
+ * Every change a user can make from a state, as { label, codebook, layout, nameTag }:
+ * mouse drops of every tag on every target (all edges), Alt+Up / Alt+Down (through
+ * keyboardTarget and plan), Alt+Left / Alt+Right on tag and group grips, and whole-group
+ * drops beside every top-level item. Refused or empty plans change nothing.
+ */
+function allMoves(cb, layout) {
+  const out = [];
+  const groups = TM.codebookGroups(cb);
+  const fromPlan = (label, drag, target) => {
+    const p = R.plan(cb, layout, drag, target);
+    if (p.kind === "regroup") out.push({ label, codebook: p.edit.data, layout: p.layout, nameTag: p.named === "below" ? target.tag : p.named === "above" ? drag.tag : null, p });
+    else if (p.kind === "reorder") out.push({ label, codebook: cb, layout: p.layout, nameTag: null, p });
+    else out.push({ label, codebook: cb, layout, nameTag: null, p });
+  };
+  const targets = allTargets(cb, layout);
+  for (const g of groups) {
+    for (const tag of g.tags) {
+      const drag = { groupId: g.id, tag };
+      for (const target of targets) fromPlan(`drop ${JSON.stringify(drag)} on ${JSON.stringify(target)}`, drag, target);
+      for (const dir of ["up", "down"]) {
+        const target = R.keyboardTarget(cb, layout, drag, dir);
+        if (target) fromPlan(`Alt+${dir} on ${JSON.stringify(drag)}`, drag, target);
+      }
+      for (const delta of [-1, 1]) {
+        const next = g.ungrouped ? L.moveTopItemBy(layout, groups, { tag }, delta) : L.moveTagBy(layout, groups, g.id, tag, delta);
+        out.push({ label: `Alt+${delta} on ${JSON.stringify(drag)}`, codebook: cb, layout: next, nameTag: null });
+      }
+    }
+  }
+  for (const g of groups.filter((x) => !x.ungrouped)) {
+    for (const delta of [-1, 1]) out.push({ label: `Alt+${delta} on group ${g.id}`, codebook: cb, layout: L.moveTopItemBy(layout, groups, { group: g.id }, delta), nameTag: null });
+    for (const ref of L.visibleTopItems(groups, layout)) {
+      for (const side of ["before", "after"]) out.push({ label: `group ${g.id} ${side} ${JSON.stringify(ref)}`, codebook: cb, layout: L.placeTopItem(layout, groups, { group: g.id }, ref, side), nameTag: null });
+    }
+  }
+  return out;
+}
+
+test("never disappears (exhaustive): every source × target × edge × side, and every key", () => {
+  const seen = { sources: new Set(), targets: new Set(), refused: 0, named: 0 };
+  for (const [name, make] of Object.entries(NEVER_BOOKS)) {
+    const cb = frozen(make());
+    for (const layout of neverLayouts(cb).map(frozen)) {
+      const tags = TM.codebookGroups(cb).flatMap((g) => g.tags);
+      for (const m of allMoves(cb, layout)) {
+        const lost = disappeared(cb, layout, m.codebook, m.layout, m.nameTag ?? null, tags);
+        assert.deepEqual(lost, [], `${name}: ${m.label} made something disappear`);
+        if (m.p?.kind === "refused") {
+          seen.refused++;
+          assert.equal(m.p.error, R.ERR_WOULD_HIDE);
+        }
+        if (m.p?.named) seen.named++;
+      }
+      // Kinds covered (so the loop is not vacuous).
+      for (const g of TM.codebookGroups(cb)) {
+        for (const t of g.tags) seen.sources.add(g.ungrouped ? "ungrouped" : g.tags.length === 1 ? "sole tag of a group" : "grouped");
+      }
+      const shown = L.orderedGroups(TM.codebookGroups(cb), layout);
+      shown.forEach((g, i) => {
+        seen.targets.add(g.ungrouped ? "run header" : "group header");
+        if (i === 0) seen.targets.add("first tag column (next to Title)");
+        if (!g.ungrouped) seen.targets.add("leftmost column of a group");
+        for (const t of g.tags) seen.targets.add(g.ungrouped ? "ungrouped tag" : "tag inside a group");
+      });
+    }
+  }
+  assert.deepEqual([...seen.sources].sort(), ["grouped", "sole tag of a group", "ungrouped"]);
+  assert.deepEqual([...seen.targets].sort(), [
+    "first tag column (next to Title)", "group header", "leftmost column of a group", "run header", "tag inside a group", "ungrouped tag",
+  ]);
+  assert.ok(seen.refused > 0, "some drops were refused");
+  assert.ok(seen.named > 0, "some nests / flips happened");
+});
+
+test("never disappears (two steps): every tag of the start is still a column or a shown group name", () => {
+  // Two changes in a row (e.g. a flip, then a drop of the new group's only tag to the
+  // west): the original tags must all still be on screen.
+  const start = frozen(book([{ id: "g2", name: "Exposure" }, { id: "g3", name: "Solo" }], [["Heat", "g2"], ["Temp", "g2"], ["x", "g3"], ["a", null], ["b", null]]));
+  const original = TM.codebookGroups(start).flatMap((g) => g.tags);
+  const states = new Map();
+  for (const m of allMoves(start, EMPTY)) {
+    states.set(JSON.stringify([m.codebook, L.orderedGroups(TM.codebookGroups(m.codebook), m.layout)]), m);
+  }
+  assert.ok(states.size > 20, `enough distinct first steps (${states.size})`);
+  let checked = 0;
+  for (const first of states.values()) {
+    for (const m of allMoves(frozen(first.codebook), frozen(first.layout))) {
+      const lost = disappeared(start, EMPTY, m.codebook, m.layout, undefined, original);
+      assert.deepEqual(lost, [], `${first.label}, then ${m.label}`);
+      checked++;
+    }
+  }
+  assert.ok(checked > 1000, `checked ${checked}`);
 });

@@ -184,6 +184,9 @@ tabellify-regroup-ungrouped = Tag removed from its group.
 tabellify-regroup-announce-moved = moved to group
 tabellify-regroup-announce-ungrouped = is now ungrouped
 tabellify-regroup-announce-group-name = is now a group name
+# Shown when a drop or Alt+arrow key would leave a group without any tag column (the group
+# would vanish from the table), so nothing was changed.
+tabellify-regroup-error-would-hide = Not moved: this is the last tag of its group, and a group must keep at least one column.
 # Drop hint in the table toolbar while a tag column is dragged.
 tabellify-drop-hint-reorder = Move column here
 tabellify-drop-hint-join = Move into group:
