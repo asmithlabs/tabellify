@@ -1554,3 +1554,52 @@ test("006c AC31: names with markup reach the hint and announcements only as text
   assert.equal(announce.children.length, 0);
   // (The fake DOM throws on innerHTML, so reaching this line also proves none was used.)
 });
+
+// Owner smoke test after the 006c merge (2026-11-13): "the tags disappear when dragged to
+// the western boundary ... they should never disappear". After a flip made "bmi" the name of
+// a group whose only column is smoker, dragging smoker out (e.g. to the left edge of the
+// "bmi" header) emptied the group, so the "bmi" header vanished from the table.
+// Spec Amendment 3 (owner, option B): the emptied group turns back into the tag "bmi".
+test("Amendment 3: dragging a flipped group's only tag west turns the group back into a tag", async () => {
+  const s = regroupSetup({ ungrouped: A2_UNGROUPED });
+  Object.assign(s.W.strings, {
+    "tabellify-drop-hint-group-to-tag": "· Group becomes a tag:",
+    "tabellify-regroup-group-to-tag": "The group became a tag again.",
+  });
+  startTagDrag(s.W, s.document, "bmi");
+  s.W.onTableDrop(dragEvent(tagTh(s.document, "smoker"), ZONE.top));
+  await tick();
+  assert.equal(superTh(s.document, "g9").textContent, "bmi");
+  startTagDrag(s.W, s.document, "smoker");
+  // The hint says what will happen, including the group turning back into a tag.
+  const ev = over(s.W, superTh(s.document, "g9"), "left");
+  assert.equal(ev.prevented, true);
+  assert.equal(s.hint.textContent, "Move to Ungrouped · Group becomes a tag: bmi");
+  s.W.onTableDrop(dragEvent(superTh(s.document, "g9"), ZONE.left));
+  await tick();
+  // "bmi" is a column again, where the group was; smoker right before it; no "bmi" group.
+  assert.deepEqual(tagHeaders(s.document).slice(0, 5), ["age", "sex", "smoker", "bmi", "diet"]);
+  assert.equal(tagTh(s.document, "bmi").dataset.groupId, "ungrouped");
+  assert.equal(superTh(s.document, "g9"), undefined);
+  const saved = JSON.parse(s.files.get("/d/codebooks.json")).codebooks[0];
+  assert.equal(saved.groups.some((g) => g.id === "g9"), false, "the group left the codebook");
+  assert.deepEqual(saved.tags.find((t) => t.name === "bmi"), { name: "bmi", group: null });
+  assert.equal(s.document.getElementById("tabellify-codebook-status-text").textContent,
+    "tabellify-codebook-saved tabellify-regroup-ungrouped The group became a tag again.");
+  assert.ok(s.debug.includes("Tabellify: workspace: regroup: emptied group g9 turned back into a tag (drag)"), s.debug.join("\n"));
+  assert.ok(!s.debug.some((m) => /regroup:/.test(m) && /bmi|smoker/.test(m)), "no names in Debug Output");
+  assert.ok(s.W.LAYOUT_STRINGS.includes("tabellify-regroup-group-to-tag"));
+  assert.ok(s.W.LAYOUT_STRINGS.includes("tabellify-drop-hint-group-to-tag"));
+});
+
+test("Amendment 3: Alt+Up on a group's only tag turns the group back into a tag (announced)", async () => {
+  const s = regroupSetup({ ungrouped: ["age"], groups: [{ id: "g7", name: "Solo", tags: ["only"] }, ...REGROUP_GROUPS()] });
+  s.W.strings["tabellify-regroup-group-to-tag"] = "The group became a tag again.";
+  altKey(s.W, regroupTagGrip(s.document, "only"), "ArrowUp");
+  await tick();
+  assert.deepEqual(tagHeaders(s.document).slice(0, 3), ["age", "only", "Solo"]);
+  assert.equal(tagTh(s.document, "Solo").dataset.groupId, "ungrouped");
+  assert.equal(regroupTagGrip(s.document, "only").focused, true);
+  assert.equal(s.document.byId.get("tabellify-table-announce").textContent, "only is now ungrouped. The group became a tag again.");
+  assert.deepEqual(pills(s.document).slice(0, 1), ["Ungrouped · 3 (u)"]);
+});

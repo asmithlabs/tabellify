@@ -184,11 +184,17 @@ tabellify-regroup-ungrouped = Tag removed from its group.
 tabellify-regroup-announce-moved = moved to group
 tabellify-regroup-announce-ungrouped = is now ungrouped
 tabellify-regroup-announce-group-name = is now a group name
+# When a drop or Alt+arrow key takes the last tag out of a group, the group turns back into
+# a tag with its name (the table never shows a group without columns). Status line, after
+# "Codebook saved." and the other regroup text:
+tabellify-regroup-group-to-tag = The group became a tag again.
 # Drop hint in the table toolbar while a tag column is dragged.
 tabellify-drop-hint-reorder = Move column here
 tabellify-drop-hint-join = Move into group:
 tabellify-drop-hint-to-ungrouped = Move to Ungrouped
 tabellify-drop-hint-new-group = Turn into a group name:
+# Added after the hint above when the drop empties a group; the group's name follows.
+tabellify-drop-hint-group-to-tag = · Group becomes a tag:
 
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
