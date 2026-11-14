@@ -1,0 +1,7 @@
+# Issue template chooser settings (shown when someone clicks "New issue").
+# contact_links adds extra choices that open a URL instead of a public issue.
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/asmithlabs/tabellify/security/advisories/new
+    about: Please report security problems privately here, not as a public issue (see SECURITY.md).
