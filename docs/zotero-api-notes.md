@@ -114,6 +114,13 @@ They add detail to the 006a–008 `FilePicker` and `IOUtils.writeUTF8` rows (whi
 search for the quoted identifier. Runtime check: **RT-S2** (spec F008 AC1, the owner's first
 check, before development).
 
+The Feature 007a rows ("View table" modal, spec `docs/features/007a-view-table.md`, Draft; no
+ADR) were checked on 2026-11-14 against MDN, the WHATWG HTML standard and Firefox **ESR 140**
+source (`dom/html/HTMLDialogElement.cpp`, `layout/style/res/html.css`, `layout/style/res/ua.css`),
+the platform of Zotero 10.0.9. 007a adds **no** `Zotero.*` call and no file write; it reuses
+the F008 export path unchanged. Runtime checks: **RT-S3** and **RT-S3b** (spec F007a AC1, the
+owner's first check, before development).
+
 Abbreviations used in the Source column:
 `Z7`/`Z8`/`Z10` = the dev guides above; `src:` = `https://github.com/zotero/zotero/blob/10.0.8/`;
 `src10:` = `https://github.com/zotero/zotero/blob/10.0.9/`;
@@ -239,6 +246,11 @@ Abbreviations used in the Source column:
 | `Zotero.File.getValidFileName(fileName, skipXML)` | F008: **not used** (alternative). Its rules are mirrored in pure `TabellifyCsv.safeFileBase`, which must not use Zotero globals | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/file.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/file.js) (~L960–1000: removes `/[\/\\\?\*:\|"<>]/g`; replaces `[\r\n\t]+` with a space; thin spaces U+2000–U+200A → space; removes U+200B–U+200E; U+2028/U+2029 → space; unless `skipXML`, removes XML-invalid characters, then `normalize()`; removes U+2068/U+2069; removes one leading `.`; empty, `.` or `..` → `_`) | Pure string work, no file access, **no length limit** and no trailing-dot rule (Windows). Tabellify's version adds: all bidi controls, collapse spaces, trailing dots/spaces, 80-character cut, Fluent fallback name |
 | `nsIFile.reveal()` ("Show in Finder") | F008 Q11: **not used** | **UNVERIFIED** | — | To verify: moz:`xpcom/io/nsIFile.idl`, search `reveal` | Not proposed |
 | `Zotero.Utilities.Internal.copyTextToClipboard(text)` | ADR-0017 option C (copy CSV to clipboard): **not used** | **UNVERIFIED** (Internal) | — | To verify: src10:`chrome/content/zotero/xpcom/utilities_internal.js`, search `copyTextToClipboard` | Not proposed in 008 |
+| `HTMLDialogElement.showModal()` / `.close()` / `.open`; `close` event; Esc closes a modal dialog (a `cancel` event first); everything else in the **same document** becomes inert, the parent of an iframe does **not** | F007a: the "View table" modal (`html:dialog` in `workspace.xhtml`; refines the 006a–008 `<dialog>` row above) | Verified (docs + source); **in our chrome XUL document inside the tab iframe UNVERIFIED (runtime): RT-S3, RT-S3b** | Firefox ESR 140 (Zotero 10.0.9) | MDN [`showModal()`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLDialogElement/showModal) ("A modal dialog displays in the top layer, along with a `::backdrop` pseudo-element. Elements inside the same document as the dialog, except the dialog and its descendants, become _inert_"; "Only the containing document becomes blocked; if the dialog is rendered inside an iframe, the rest of the page remains interactive."; throws `InvalidStateError` if already open non-modal), [`<dialog>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/dialog) ("Modal dialogs can also be closed by pressing the Esc key."; "If the dialog is closed by pressing the Esc key … a `cancel` event gets triggered first"; "`<dialog>` elements invoked by the `showModal()` method implicitly have `aria-modal="true"`"; recommends an explicit close button), [`close` event](https://developer.mozilla.org/en-US/docs/Web/API/HTMLDialogElement/close_event) ("fired … when the `<dialog>` it represents has been closed. This event is not cancelable and does not bubble."); [WHATWG HTML, the dialog element](https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element) (showModal: "Set subject's previously focused element to the focused element."; close steps: "If subject's previously focused element is not null: … run the focusing steps for element"); moz:[`dom/html/HTMLDialogElement.cpp`](https://searchfox.org/mozilla-esr140/source/dom/html/HTMLDialogElement.cpp) (`ShowModal()` errors "Dialog element is not connected", "Cannot call showModal() on an open non-modal dialog."; `Close()`: `previouslyFocusedElement->Focus(options, …)` with `mPreventScroll = true`) | Standard DOM, no Zotero API. Not checked in a chrome XUL document; RT-S3 (opens) and RT-S3b (focus moves in, Esc closes, focus comes back) do that. **Because the iframe's parent stays interactive**, Tab can leave the modal into Zotero's window: 007a adds its own Tab wrap. `close()` on a closed dialog does nothing (spec close steps: "If subject does not have an open attribute, then return"). Fallback if RT-S3 fails: in-page overlay with `role="dialog"` + `aria-modal="true"` (no new API) |
+| Browser default styles for `<dialog>`: `dialog { … padding: 1em; background-color: Canvas; color: CanvasText; … }`, `dialog:not([open]) { display: none; }`, `dialog:modal { position: fixed; overflow: auto; max-width: calc(100% - 6px - 2em); max-height: calc(100% - 6px - 2em); }`, `dialog::backdrop { background: rgba(0, 0, 0, 0.1); }` | F007a: which defaults Tabellify overrides (surface/text tokens, size) and why it adds **no** `::backdrop` rule | Verified (source) | ESR 140 | moz:[`layout/style/res/html.css`](https://searchfox.org/mozilla-esr140/source/layout/style/res/html.css) (search `dialog`); moz:[`layout/style/res/ua.css`](https://searchfox.org/mozilla-esr140/source/layout/style/res/ua.css) (`::backdrop { … position: fixed; inset: 0; … }`); MDN [`::backdrop`](https://developer.mozilla.org/en-US/docs/Web/CSS/::backdrop) ("`::backdrop` neither inherits from nor is inherited by any other elements.") | `Canvas`/`CanvasText` are system colours, forbidden by ADR-0015 in our CSS, so the modal sets `var(--tabellify-color-surface)` / `-text`. Our rule must be `#tabellify-view-dialog[open] { display: flex }` (an ID selector without `[open]` would override `dialog:not([open]) { display: none }`). Whether `html.css` applies to `html:dialog` inside our XUL document is part of RT-S3 (the box must look like a box) |
+| `closedby` attribute, `HTMLDialogElement.requestClose()` | F007a: **not used** | Verified (source): `closedby` is behind the pref `dom_dialog_light_dismiss_enabled`; `requestClose()` has a TODO for the CloseWatcher path | ESR 140 | moz:[`dom/html/HTMLDialogElement.cpp`](https://searchfox.org/mozilla-esr140/source/dom/html/HTMLDialogElement.cpp) (`GetClosedBy`, `ParseAttribute`, `RequestClose`) | Not relied on: Esc and the Close button cover closing |
+| `HTMLInputElement.select()`; `HTMLElement.focus()`; `<textarea>` with `maxlength`; `tabindex="0"` with `role="region"` and an `aria-label` on a scrolling `div`; `aria-labelledby`; `aria-haspopup="dialog"`; `KeyboardEvent.key` (`"Escape"`, `"Tab"`), `.shiftKey`; `document.activeElement` | F007a: select the Name on open; Tab wrap and Esc in the modal; keyboard-scrollable table area; return focus | Verified (docs) | Firefox ESR 140 | MDN: [`HTMLInputElement.select()`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/select) ("selects all the text in an `<input>` element that includes a text field"; returns `undefined`), [`HTMLElement.focus()`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/focus), [`<textarea>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/textarea), [`tabindex`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/tabindex), [ARIA `region` role](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/region_role), [`aria-haspopup`](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-haspopup), [`KeyboardEvent.key`](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key), [`Document.activeElement`](https://developer.mozilla.org/en-US/docs/Web/API/Document/activeElement); `isComposing`: 006b row above | Standard DOM; no Zotero API. Screen-reader behaviour in our chrome document **UNVERIFIED (runtime)** (optional VoiceOver check) |
+| CSS `:modal` pseudo-class | RT-S3b only (checks the dialog really is modal); not used in `src/` | Verified (docs) | Firefox ESR 140 | MDN [`:modal`](https://developer.mozilla.org/en-US/docs/Web/CSS/:modal) | Read-only check in a snippet |
 
 ## Runtime checks for owner
 
@@ -666,3 +678,45 @@ dlg.remove();
 return { open, closed: !dlg.open };
 ```
 Pass = the box is visible and `open: true`. Otherwise 007a uses an in-page overlay panel.
+RT-S3 is spec F007a **AC1** (with RT-S3b), the owner's first check, run **before** F007a
+development starts.
+
+**RT-S3b: Focus, Esc and focus return for `<dialog>` in the Tabellify tab (007a; run after
+RT-S3 passes).** Creates a temporary dialog with a text box in the Tabellify tab only (nothing
+saved) and waits up to 15 seconds. After pressing Run: **click once on the small "RT-S3b" box
+in the Zotero window, then press Esc.** Expect `{ modal: true, focusedInside: true, escClosed:
+true, focusRestored: true }`.
+```js
+const frame = Zotero.getMainWindow().document.querySelector('iframe[src="chrome://tabellify/content/workspace.xhtml"]');
+if (!frame) return "Tabellify tab not open";
+const win = frame.contentWindow;
+const doc = frame.contentDocument;
+const NS = "http://www.w3.org/1999/xhtml";
+const before = doc.getElementById("tabellify-collection-select");
+before.focus();
+const dlg = doc.createElementNS(NS, "dialog");
+const p = doc.createElementNS(NS, "p");
+p.textContent = "RT-S3b: click here, then press Esc";
+const input = doc.createElementNS(NS, "input");
+dlg.append(p, input);
+doc.getElementById("tabellify-workspace-main").append(dlg);
+let cancelEvents = 0;
+dlg.addEventListener("cancel", () => cancelEvents++);
+const closed = new Promise((r) => dlg.addEventListener("close", () => r("closed"), { once: true }));
+dlg.showModal();
+const modal = dlg.matches(":modal");
+const focusedInside = doc.activeElement === input;
+const how = await Promise.race([closed, new Promise((r) => win.setTimeout(() => r("timeout"), 15000))]);
+if (dlg.open) dlg.close();
+const focusRestored = doc.activeElement === before;
+dlg.remove();
+return { modal, focusedInside, escClosed: how === "closed" && cancelEvents > 0, focusRestored };
+```
+Pass = all four `true`. `escClosed: false` (with `how` timing out) means Esc did not reach the
+dialog: 007a then relies on its own Escape key handler (already in the spec) and the owner
+re-checks Esc in the smoke test (F007a AC6). `focusRestored: false` is covered by 007a's
+explicit focus return. `modal: false` or an error = RT-S3 failed: 007a uses the overlay.
+
+**RT-S3b result (owner, Zotero 10.0.9, 2026-11-14): PASS.** `{ modal: true, focusedInside: true,
+escClosed: true, focusRestored: true }`: `<dialog>.showModal()` works in the Tabellify tab
+(this also covers RT-S3: the dialog opened as modal).

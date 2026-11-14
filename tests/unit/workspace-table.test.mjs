@@ -139,7 +139,24 @@ class FakeElement {
     for (let node = this; node; node = node.parentNode) if (matches(node, selector)) return node;
     return null;
   }
-  focus() { this.focused = true; activeElement = this; }
+  focus() { this.focused = true; this.focusCalls = (this.focusCalls ?? 0) + 1; activeElement = this; }
+  // F007a: text fields (select all) and the <dialog> (showModal / close / open, and the
+  // "close" event, which the fake fires at once; a real browser fires it a moment later).
+  select() { this.selectCalls = (this.selectCalls ?? 0) + 1; }
+  get open() { return this.attrs.has("open"); }
+  showModal() { this.showModalCalls = (this.showModalCalls ?? 0) + 1; this.attrs.set("open", ""); }
+  close() {
+    this.closeCalls = (this.closeCalls ?? 0) + 1;
+    if (!this.attrs.has("open")) return;
+    this.attrs.delete("open");
+    for (const fn of this.listeners?.get("close") ?? []) fn({ type: "close", target: this });
+  }
+  addEventListener(type, fn) {
+    this.listeners ??= new Map();
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(fn);
+  }
+  removeEventListener(type, fn) { this.listeners?.get(type)?.delete(fn); }
   // F006c: table cells and rows. cellIndex = position in the row; cells = the row's cells.
   get cellIndex() { return this.parentNode ? this.parentNode.children.indexOf(this) : -1; }
   get cells() { return this.children.filter((c) => c.localName === "td" || c.localName === "th"); }
@@ -1841,6 +1858,30 @@ test("008 AC16: the suggested name is the chosen collection's name and today's l
   assert.match(io.picks[2].defaultName, /^My table \d{4}-\d{2}-\d{2}\.csv$/);
 });
 
+// ---------------------------------------------------------------------------------------
+// Feature 007a AC15: the page's export status line goes when another collection is chosen
+// ---------------------------------------------------------------------------------------
+
+test("007a AC15: choosing a collection or the placeholder hides the export line; refresh and live updates keep it", async () => {
+  for (const [value, reason, hidden] of [
+    ["1", "collection chosen", true],
+    ["", "collection chosen", true],
+    ["1", "refresh", false],
+    ["1", "library change", false],
+  ]) {
+    const io = fakeExportIo();
+    const { W, document } = setupExport(io);
+    // The library read is replaced by the test data (no Zotero.Collections in Node).
+    W.gatherMonitorData = async () => monitorData();
+    await W.onExportClick();
+    assert.equal(status(document).hidden, false, "CSV saved: shown first");
+    await W.showCollection(value, reason);
+    assert.equal(status(document).hidden, hidden, `${reason} (${value || "placeholder"})`);
+    if (hidden) assert.equal(status(document).text, "");
+    else assert.equal(status(document).path, EXPORT_PATH);
+  }
+});
+
 test("008 AC16: Debug Output during an export holds no title, tag, group, collection name or path", async () => {
   const secrets = ["Paper 1", "Paper 2", "Paper 3", "Heat index", "Temperature", "Mortality", "Exposure", "Outcome",
     "F005 test", EXPORT_PATH, "secret-folder", "tester"];
@@ -1864,4 +1905,379 @@ test("008 AC16: Debug Output during an export holds no title, tag, group, collec
   await env.W.onExportClick();
   assert.ok(env.debug.some((m) => /export: CSV built: 3 paper\(s\), 3 tag column\(s\), 2 group\(s\), 2 header row\(s\)$/.test(m)));
   assert.ok(env.debug.some((m) => /export: CSV written: \d+ bytes \(replaced an existing file: yes\)$/.test(m)));
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 007a AC12: the read-only copy for the "View table" modal (viewTableRows)
+// ---------------------------------------------------------------------------------------
+
+const VIEW_TEXTS = { count: "k/M", countLabel: "Codebook tags used on the paper (k of M)" };
+
+/** The copy's rows as arrays of this realm (the sandbox's arrays fail deepEqual). */
+function viewRows(W) {
+  const { head, body } = W.viewTableRows(VIEW_TEXTS);
+  return { head: [...head], body: [...body] };
+}
+
+/** setup() plus the strings the copy uses; returns the env and the copy's rows. */
+function viewSetup(options) {
+  const env = setup(options);
+  Object.assign(env.W.strings, { "tabellify-column-title": "Title" });
+  env.W.untitledText = "(untitled)";
+  env.W.renderMonitor();
+  return { ...env, view: viewRows(env.W) };
+}
+
+/** Every element of the copy, rows included. */
+const viewElements = (view) => [...view.head, ...view.body].flatMap((tr) => [tr, ...tr.descendants()]);
+
+/** The page's group-row headers without the fixed cells: text, colSpan, ungrouped look. */
+const pageSuperHeaders = (doc) => headerRow(doc, "tabellify-items-group-row")
+  .filter((th) => !th.classList.contains("tabellify-fixed-header") && !th.hasAttribute("data-tag"))
+  .map((th) => [th.textContent, th.colSpan, th.classList.contains("tabellify-col-group-ungrouped")]);
+
+test("007a AC12: two header rows when a real group has columns: Title, groups over their tags, k/M", () => {
+  const { W, document, view } = viewSetup();
+  assert.equal(view.head.length, 2);
+  const [top, second] = view.head;
+  const title = top.children[0];
+  const count = top.children.at(-1);
+  assert.equal(title.textContent, "Title");
+  assert.equal(title.rowSpan, 2);
+  assert.equal(count.textContent, "k/M");
+  assert.equal(count.rowSpan, 2);
+  assert.equal(count.title, VIEW_TEXTS.countLabel);
+  assert.equal(count.getAttribute("aria-label"), VIEW_TEXTS.countLabel);
+  const supers = top.children.slice(1, -1);
+  assert.deepEqual(supers.map((th) => [th.textContent, th.colSpan, th.getAttribute("scope")]),
+    [["Exposure", 2, "colgroup"], ["Outcome", 1, "colgroup"]]);
+  // Same as the page header (built through the same headerShape rule).
+  assert.deepEqual(supers.map((th) => [th.textContent, th.colSpan, false]), pageSuperHeaders(document));
+  assert.deepEqual(second.children.map((th) => th.textContent), tagHeaders(document));
+  assert.deepEqual(second.children.map((th) => th.classList.contains("tabellify-group-start")), [true, false, true]);
+  assert.deepEqual(plainJson(W.headerShape(W.tableGroups)), { oneRow: false, twoRows: true, tagCount: 3 });
+});
+
+test("007a AC12: rows follow tableRows: titles, ✓ cells, aria-labels and k/M as on the page", () => {
+  const { W, T, document } = setup();
+  Object.assign(W.strings, { "tabellify-column-title": "Title" });
+  W.sortKey = T.tagSortKey("Heat index");
+  W.sortDirection = "desc";
+  W.renderMonitor();
+  const view = viewRows(W);
+  assert.deepEqual(view.body.map((tr) => tr.children[0].textContent), rowTitles(document));
+  // Page rows minus the grip cell: the same ✓ pattern and k/M text.
+  assert.deepEqual(view.body.map((tr) => [tr.children[0].textContent, ...tr.children.slice(1).map((td) =>
+    td.classList.contains("tabellify-col-tag") ? (td.classList.contains("tabellify-tag-used") ? "✓" : "·") : td.textContent)].join(" | ")),
+  bodyRows(document).map(rowText));
+  const page = bodyRows(document).map((tr) => tr.children.slice(2, -1).map((td) => td.getAttribute("aria-label")));
+  assert.deepEqual(view.body.map((tr) => tr.children.slice(1, -1).map((td) => td.getAttribute("aria-label"))), page);
+  assert.ok(page.flat().includes("Heat index: Used") && page.flat().includes("Mortality: Not used"));
+  // Stripes on every other row.
+  assert.deepEqual(view.body.map((tr) => tr.classList.contains("tabellify-row-alt")), [false, true, false]);
+});
+
+test("007a AC12: only ungrouped tags → one header row; Title and k/M span one row", () => {
+  const { W, document, view } = viewSetup({ groups: [], ungrouped: ["age", "sex"] });
+  assert.equal(view.head.length, 1);
+  assert.deepEqual(view.head[0].children.map((th) => th.textContent), ["Title", "age", "sex", "k/M"]);
+  assert.deepEqual(view.head[0].children.map((th) => th.rowSpan), [1, 1, 1, 1]);
+  assert.equal(document.byId.get("tabellify-items-tag-row").hidden, true, "page also has one row");
+  assert.deepEqual(plainJson(W.headerShape(W.tableGroups)), { oneRow: true, twoRows: false, tagCount: 2 });
+});
+
+test("007a AC12: each ungrouped run gets the muted \"Ungrouped\" label with its colSpan, as on the page", () => {
+  const env = setup({ ungrouped: ["age", "sex"] });
+  const { W, L, document } = env;
+  Object.assign(W.strings, { "tabellify-column-title": "Title" });
+  // Put the Outcome group between the two ungrouped tags: runs [age], Outcome, [sex], Exposure.
+  W.columnLayout = L.moveTopItem(W.columnLayout, W.codebookGroups(), { group: "g3" }, 1);
+  W.renderMonitor();
+  const view = viewRows(W);
+  const supers = view.head[0].children.slice(1, -1)
+    .map((th) => [th.textContent, th.colSpan, th.classList.contains("tabellify-col-group-ungrouped")]);
+  assert.deepEqual(supers, pageSuperHeaders(document));
+  assert.deepEqual(supers.filter((s) => s[2]).map((s) => [s[0], s[1]]), [["Ungrouped", 1], ["Ungrouped", 1]]);
+  assert.deepEqual(view.head[1].children.map((th) => th.textContent), tagHeaders(document));
+});
+
+test("007a AC12: without counting k/M shows \"–\"; a complete paper gets tabellify-count-complete", () => {
+  const none = viewSetup({ groups: [] });
+  assert.equal(none.view.head.length, 1);
+  assert.deepEqual(none.view.head[0].children.map((th) => th.textContent), ["Title", "k/M"]);
+  assert.deepEqual(none.view.body.map((tr) => tr.children.at(-1).textContent), ["–", "–", "–"]);
+  assert.ok(none.view.body.every((tr) => !tr.children.at(-1).classList.contains("tabellify-count-complete")));
+
+  const one = viewSetup({ groups: [{ id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] }] });
+  const counts = Object.fromEntries(one.view.body.map((tr) => [tr.children[0].textContent, tr.children.at(-1)]));
+  assert.equal(counts["Paper 2"].textContent, "2/2");
+  assert.equal(counts["Paper 2"].classList.contains("tabellify-count-complete"), true);
+  assert.equal(counts["Paper 3"].classList.contains("tabellify-count-complete"), false);
+});
+
+test("007a AC12: no id, draggable, tabindex, role, data-* or <button> anywhere in the copy", () => {
+  const { view } = viewSetup({ ungrouped: ["age"] });
+  const all = viewElements(view);
+  assert.ok(all.length > 20, "copy is not empty");
+  for (const el of all) {
+    assert.notEqual(el.localName, "button");
+    for (const attr of el.attrs.keys()) {
+      assert.ok(!["id", "draggable", "tabindex", "role"].includes(attr) && !attr.startsWith("data-"), `${el.localName}[${attr}]`);
+    }
+  }
+});
+
+test("007a AC12: markup in titles, tags and group names stays text; never \"null\" or \"undefined\"", () => {
+  const env = load();
+  const { W, L } = env;
+  Object.assign(W.strings, { "tabellify-column-title": "Title" });
+  W.untitledText = "(untitled)";
+  W.codebook = codebookData([{ id: "g2", name: "<i>G</i>", tags: ["<b>t</b>"] }], ["<b>u</b>"]);
+  const data = monitorData();
+  data.papers = [
+    { id: 101, title: "<b>x</b>", collectionId: 1, itemTags: [], annotationTags: [{ tag: "<b>t</b>" }] },
+    { id: 102, title: "", collectionId: 1, itemTags: [], annotationTags: [] },
+  ];
+  W.monitorData = data;
+  W.collectionKeys = data.collectionKeys;
+  W.currentCollection = "1";
+  W.columnLayout = L.emptyColumnLayout();
+  W.renderMonitor();
+  const view = viewRows(W);
+  const all = viewElements(view);
+  const texts = all.map((el) => el.text);
+  for (const s of ["<b>x</b>", "<i>G</i>", "<b>t</b>", "<b>u</b>", "(untitled)"]) assert.ok(texts.includes(s), s);
+  const untitled = view.body.map((tr) => tr.children[0]).find((td) => td.textContent === "(untitled)");
+  assert.equal(untitled.classList.contains("tabellify-untitled"), true);
+  for (const el of all) {
+    for (const value of [el.text, ...el.attrs.values()]) {
+      assert.ok(!/\bnull\b|\bundefined\b/.test(value), `"${value}" on ${el.localName}`);
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 007a AC13 / AC14: the "View table" modal with a fake <dialog>
+// ---------------------------------------------------------------------------------------
+
+const VIEW_STRINGS_TEXTS = {
+  "tabellify-column-title": "Title",
+  "tabellify-column-count": "k/M",
+  "tabellify-view-count-label": "Codebook tags used on the paper (k of M)",
+};
+
+/** setupExport() plus the view's strings; the dialog's "close" event wired as init() does. */
+function modalSetup(io = fakeExportIo(), options) {
+  const env = setupExport(io, options);
+  Object.assign(env.W.strings, VIEW_STRINGS_TEXTS);
+  const d = (id) => env.document.getElementById(id);
+  d("tabellify-view-dialog").addEventListener("close", env.W.onViewClose);
+  // Real buttons start enabled.
+  for (const id of ["tabellify-view-export", "tabellify-view-close", "tabellify-view-table", "tabellify-export-csv"]) {
+    d(id).localName = "button"; // the fake makes unknown IDs <div>s; the click handler looks for a button
+    d(id).id = id;
+    d(id).disabled = false;
+  }
+  return { ...env, d, io };
+}
+
+const key = (k, extra = {}) => ({ key: k, shiftKey: false, isComposing: false, prevented: false, preventDefault() { this.prevented = true; }, ...extra });
+const click = (target) => ({ target });
+
+test("007a AC13: a click opens the modal once; Name = collection name (focused, selected), Description empty", () => {
+  const { W, d, debug } = modalSetup();
+  W.onViewTableClick();
+  const dialog = d("tabellify-view-dialog");
+  assert.equal(dialog.open, true);
+  assert.equal(dialog.showModalCalls, 1);
+  W.onViewTableClick(); // already open: nothing
+  assert.equal(dialog.showModalCalls, 1);
+  assert.equal(d("tabellify-view-name").value, "F005 test");
+  assert.equal(d("tabellify-view-description").value, "");
+  assert.equal(d("tabellify-view-name").focused, true);
+  assert.equal(d("tabellify-view-name").selectCalls, 1);
+  // The copy is in the modal's table; the modal's status line is hidden.
+  assert.equal(d("tabellify-view-body").children.length, 3);
+  assert.equal(d("tabellify-view-head").children.length, 2);
+  assert.equal(d("tabellify-view-export-status").hidden, true);
+  assert.ok(debug.some((m) => /view: opened: 3 paper\(s\), 3 tag column\(s\), 2 header row\(s\)$/.test(m)), debug.join("\n"));
+});
+
+test("007a AC13: no table → the click does nothing", () => {
+  const { W, d } = modalSetup();
+  W.setTableHidden(true);
+  W.onViewTableClick();
+  assert.equal(d("tabellify-view-dialog").showModalCalls, undefined);
+});
+
+test("007a AC13: values are remembered per collection key; unchanged values are not; another key gets defaults", () => {
+  const { W, d } = modalSetup();
+  // Unchanged: nothing remembered.
+  W.onViewTableClick();
+  W.closeView();
+  assert.equal(W.viewDrafts.size, 0);
+  // Typed values come back after closing and reopening.
+  W.onViewTableClick();
+  d("tabellify-view-name").value = "Heat and hospitalization";
+  d("tabellify-view-description").value = "Short note";
+  W.onViewClick(click(d("tabellify-view-close")));
+  assert.equal(d("tabellify-view-dialog").open, false);
+  d("tabellify-view-name").value = "";
+  d("tabellify-view-description").value = "";
+  W.onViewTableClick();
+  assert.equal(d("tabellify-view-name").value, "Heat and hospitalization");
+  assert.equal(d("tabellify-view-description").value, "Short note");
+  W.closeView();
+  // Another collection (other key, other name): defaults.
+  W.monitorData.collections = [{ id: 2, parentID: false, name: "Other" }];
+  W.monitorData.rootId = 2;
+  W.collectionKeys = new Map([[1, "1/COLL0001"], [2, "1/COLL0002"]]);
+  W.currentCollection = "2";
+  W.onViewTableClick();
+  assert.equal(d("tabellify-view-name").value, "Other");
+  assert.equal(d("tabellify-view-description").value, "");
+  W.closeView();
+  assert.deepEqual([...W.viewDrafts.keys()], ["1/COLL0001"]);
+});
+
+test("007a AC13: Close and Escape close the modal; Escape while composing does not; focus returns to View table", () => {
+  const { W, d, debug } = modalSetup();
+  const dialog = d("tabellify-view-dialog");
+  W.onViewTableClick();
+  const composing = key("Escape", { isComposing: true });
+  W.onViewKeydown(composing);
+  assert.equal(dialog.open, true);
+  assert.equal(composing.prevented, false);
+  const esc = key("Escape");
+  W.onViewKeydown(esc);
+  assert.equal(dialog.open, false);
+  assert.equal(esc.prevented, true);
+  assert.equal(d("tabellify-view-table").focused, true);
+  assert.ok(debug.includes("Tabellify: workspace: view: closed"));
+  d("tabellify-view-table").focused = false;
+  W.onViewTableClick();
+  W.onViewClick(click(d("tabellify-view-close")));
+  assert.equal(dialog.open, false);
+  assert.equal(d("tabellify-view-table").focused, true);
+});
+
+test("007a AC13: Tab wraps from the last enabled control to Name, Shift+Tab from Name to the last", () => {
+  const { W, d } = modalSetup();
+  W.onViewTableClick();
+  // Tab on Close → Name.
+  d("tabellify-view-close").focus();
+  const tab = key("Tab");
+  W.onViewKeydown(tab);
+  assert.equal(tab.prevented, true);
+  assert.equal(d("tabellify-view-name").focusCalls, 2); // once on open, once now
+  // Shift+Tab on Name → Close.
+  const back = key("Tab", { shiftKey: true });
+  W.onViewKeydown(back);
+  assert.equal(back.prevented, true);
+  assert.equal(d("tabellify-view-close").focusCalls, 2);
+  // Tab in the middle is left to the browser.
+  d("tabellify-view-description").focus();
+  const middle = key("Tab");
+  W.onViewKeydown(middle);
+  assert.equal(middle.prevented, false);
+  // A disabled Close (hypothetical) makes Export the last control; a disabled Export is skipped.
+  d("tabellify-view-close").disabled = true;
+  d("tabellify-view-export").focus();
+  const tab2 = key("Tab");
+  W.onViewKeydown(tab2);
+  assert.equal(tab2.prevented, true);
+  d("tabellify-view-close").disabled = false;
+  d("tabellify-view-export").disabled = true;
+  d("tabellify-view-name").focus();
+  const back2 = key("Tab", { shiftKey: true });
+  W.onViewKeydown(back2);
+  assert.equal(back2.prevented, true);
+  assert.equal(activeElementOf(d), d("tabellify-view-close"));
+});
+const activeElementOf = () => activeElement;
+
+test("007a AC13: setTableHidden(true) while open closes the modal; renderPaperTable while open re-renders the copy", () => {
+  const { W, T, d } = modalSetup();
+  W.onViewTableClick();
+  const titles = () => d("tabellify-view-body").children.map((tr) => tr.children[0].textContent);
+  const pageTitles = () => d("tabellify-items-body").children.map((tr) => tr.children[1].textContent);
+  const before = titles();
+  assert.deepEqual(before, pageTitles());
+  // A sort on the page while the modal is open: the copy follows the new order.
+  W.sortKey = T.tagSortKey("Temperature");
+  W.sortDirection = "desc";
+  W.renderMonitor();
+  assert.deepEqual(titles(), pageTitles());
+  assert.notDeepEqual(titles(), before, "the sort changed the order");
+  // A live update that finds no papers hides the table and closes the modal.
+  W.monitorData = { ...monitorData(), papers: [] };
+  W.renderMonitor();
+  assert.equal(d("tabellify-view-dialog").open, false);
+  // Focus goes to the dropdown, because "View table" is gone.
+  assert.equal(d("tabellify-collection-select").focused, true);
+});
+
+test("007a AC14: the modal's Export uses the trimmed Name; blank Name uses the collection name", async () => {
+  const io = fakeExportIo({ picked: null });
+  const { W, d } = modalSetup(io);
+  W.onViewTableClick();
+  d("tabellify-view-name").value = "  Heat study: draft/1  ";
+  await W.onViewClick(click(d("tabellify-view-export")));
+  assert.match(io.picks[0].defaultName, /^Heat study draft1 \d{4}-\d{2}-\d{2}\.csv$/);
+  d("tabellify-view-name").value = "   ";
+  await W.onViewClick(click(d("tabellify-view-export")));
+  assert.match(io.picks[1].defaultName, /^F005 test \d{4}-\d{2}-\d{2}\.csv$/);
+  // The typed Name was remembered before the export.
+  assert.equal(W.viewDrafts.get("1/COLL0001").name, "   ");
+});
+
+test("007a AC14: both export buttons are disabled during the export; the result shows in the modal only", async () => {
+  let during = null;
+  let d = null;
+  const io = fakeExportIo({ onPick: () => { during = [d("tabellify-export-csv").disabled, d("tabellify-view-export").disabled]; } });
+  const env = modalSetup(io);
+  d = env.d;
+  const { W, document } = env;
+  W.showExportStatus("tabellify-export-saved", "/old/page.csv"); // the page's line must stay
+  W.onViewTableClick();
+  const result = await W.onViewClick(click(d("tabellify-view-export")));
+  assert.equal(result.status, "saved");
+  assert.deepEqual(during, [true, true]);
+  assert.equal(d("tabellify-export-csv").disabled, false);
+  assert.equal(d("tabellify-view-export").disabled, false);
+  assert.equal(d("tabellify-view-export-status").hidden, false);
+  assert.equal(d("tabellify-view-export-status-text").textContent, "CSV saved:");
+  assert.equal(d("tabellify-view-export-status-path").textContent, EXPORT_PATH);
+  assert.equal(status(document).path, "/old/page.csv", "page line untouched");
+  // The same file content as a page export.
+  await W.onExportClick();
+  assert.equal(io.writes[0].text, io.writes[1].text);
+});
+
+test("007a AC14: the modal closed while the save dialog is open → the result shows on the page", async () => {
+  let env = null;
+  const io = fakeExportIo({ onPick: () => env.W.closeView() });
+  env = modalSetup(io);
+  const { W, d, document } = env;
+  W.onViewTableClick();
+  await W.onViewClick(click(d("tabellify-view-export")));
+  assert.equal(d("tabellify-view-export-status").hidden, true);
+  assert.equal(status(document).hidden, false);
+  assert.equal(status(document).text, "CSV saved:");
+});
+
+test("007a AC14: no Debug Output line holds the Name, Description, a title, tag, group, collection name or path", async () => {
+  const secrets = ["Paper 1", "Paper 2", "Paper 3", "Heat index", "Temperature", "Mortality", "Exposure", "Outcome",
+    "F005 test", EXPORT_PATH, "secret-folder", "tester", "Private name", "Private description"];
+  for (const io of [fakeExportIo(), fakeExportIo({ picked: null }),
+    fakeExportIo({ writeError: Object.assign(new Error(`failed at ${EXPORT_PATH}`), { name: "NotAllowedError" }) })]) {
+    const { W, d, debug } = modalSetup(io);
+    W.onViewTableClick();
+    d("tabellify-view-name").value = "Private name";
+    d("tabellify-view-description").value = "Private description";
+    await W.onViewClick(click(d("tabellify-view-export")));
+    W.closeView();
+    assert.ok(debug.includes("Tabellify: workspace: export: started from View table"));
+    for (const line of debug) for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
+  }
 });

@@ -1,5 +1,6 @@
 /* Tabellify — workspace.js (F003 collection browser, F004 codebook, F005 tag monitor,
- * F006a workspace restructure, F006b script box suggestions)
+ * F006a workspace restructure, F006b script box suggestions, F008 CSV export, F007a View
+ * table)
  *
  * Runs inside chrome://tabellify/content/workspace.xhtml, both when that document is shown
  * in the main-window tab (inside an <iframe>) and in the F001 fallback window.
@@ -52,6 +53,11 @@
  *   csv-model.js (TabellifyCsv, pure); the save dialog and the one file write are in
  *   csv-export.js (TabellifyCsvExport, ADR-0017). This file never touches the file system
  *   for an export, and nothing in the library changes.
+ * - F007a: "View table" opens a modal <dialog> with a Name and a Description field and a
+ *   clean read-only copy of the table (built from the same snapshot as the CSV). Its
+ *   "Export CSV" suggests the Name as the file name. Name and Description live only in
+ *   memory (`viewDrafts`) while the tab is open: nothing is saved, no file is written
+ *   except the CSV the user exports.
  *
  * THE LIBRARY IS READ-ONLY. Every Zotero call here only reads (see the "Read-only
  * guarantee" row in docs/zotero-api-notes.md). Nothing is saved, changed or deleted in the
@@ -77,6 +83,8 @@
  * mousedown), removed in onUnload; no observer, timer or pref.
  * F008 adds one click listener on "Export CSV", removed in onUnload, which also sets
  * `unloaded` so an export whose save dialog is still open writes nothing.
+ * F007a adds one click listener on "View table" and three on the modal <dialog> (click,
+ * keydown, close), all removed in onUnload; no observer, timer or pref.
  * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
  * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
@@ -229,6 +237,13 @@ var TabellifyWorkspace = {
     this.el("tabellify-table-toolbar").addEventListener("click", this.onToolbarClick);
     // F008: "Export CSV" under the table (removed in onUnload).
     this.el("tabellify-export-csv").addEventListener("click", this.onExportClick);
+    // F007a: "View table" and its modal: clicks (Export CSV, Close), keys (Esc, Tab wrap)
+    // and the dialog's "close" event, which fires however it was closed. Removed in onUnload.
+    this.el("tabellify-view-table").addEventListener("click", this.onViewTableClick);
+    const viewDialog = this.el("tabellify-view-dialog");
+    viewDialog.addEventListener("click", this.onViewClick);
+    viewDialog.addEventListener("keydown", this.onViewKeydown);
+    viewDialog.addEventListener("close", this.onViewClose);
     this.columnLayout = TabellifyTableLayout.emptyColumnLayout();
     // Owner decision 2026-11-13: the "count item tags" checkbox (removed in onUnload).
     const countBox = this.el("tabellify-monitor-count-item-tags");
@@ -246,6 +261,8 @@ var TabellifyWorkspace = {
       await this.formatStrings(this.MONITOR_STRINGS);
       // F008: the export's texts (dialog, status line, CSV headers), formatted once.
       await this.formatStrings(this.EXPORT_STRINGS);
+      // F007a: the modal table's k/M header texts, formatted once.
+      await this.formatStrings(this.VIEW_STRINGS);
       // F005c: the saved layout (and its strings) must be ready before the first table is
       // shown. initLayout never throws (it has its own try/catch).
       await this.layoutLoading;
@@ -317,6 +334,10 @@ var TabellifyWorkspace = {
       this.setTableHidden(true);
       this.el("tabellify-items-body").replaceChildren(); // remove old rows (no markup involved)
       this.renderMonitor();
+      // F007a (spec Q13): "CSV saved: …" belonged to the previous collection's table, so it
+      // goes when another collection (or the placeholder) is chosen. A recompute of the
+      // same collection (Refresh, live update) does not reach this line and keeps it.
+      this.showExportStatus(null);
     }
     if (value === "") {
       this.showStatus(null);
@@ -629,43 +650,24 @@ var TabellifyWorkspace = {
     this.tableCounting = counting;
     // F005c: shade every other paper row (pure rule in TabellifyTableLayout.stripeFlags).
     const stripes = TabellifyTableLayout.stripeFlags(shown.map(() => "paper"));
-    const usedText = this.text("tabellify-table-tag-used");
-    const notUsedText = this.text("tabellify-table-tag-not-used");
+    // F006c: each tag cell names its column, so a tag column dropped on it can nest under
+    // that tag. dataset values are attributes: plain strings, never used in a selector.
+    const nameColumn = (cell, group, tag) => {
+      cell.dataset.groupId = group.id;
+      cell.dataset.tag = tag;
+    };
     shown.forEach((paper, index) => {
       const tr = this.html("tr");
       tr.dataset.paperId = String(paper.id);
       tr.classList.toggle("tabellify-row-alt", stripes[index]);
-      // F005c: each cell carries its column class (tabellify-col-<kind>), which sets its
-      // wrapping and alignment in workspace.css.
-      const title = this.html("td", "tabellify-col-title");
-      // `textContent` puts the string in as text, never as markup (see SECURITY above).
-      title.textContent = paper.untitled ? this.untitledText : paper.title;
-      if (paper.untitled) title.classList.add("tabellify-untitled");
-      const present = new Set(paper.groups.flatMap((g) => g.present));
-      const tagCells = groups.flatMap((group) => group.tags.map((tag, i) => {
-        const has = present.has(tag);
-        const cell = this.html("td", "tabellify-col-tag");
-        if (i === 0) cell.classList.add("tabellify-group-start");
-        if (has) cell.classList.add("tabellify-tag-used"); // CSS draws the ✓
-        // Tooltip and screen-reader text, e.g. "Heat index: Used". Attribute values are
-        // plain text, never parsed as markup.
-        const label = `${tag}: ${has ? usedText : notUsedText}`;
-        cell.title = label;
-        cell.setAttribute("aria-label", label);
-        // F006c: the cell names its column, so a tag column dropped on it can nest under
-        // that tag. dataset values are attributes: plain strings, never used in a selector.
-        cell.dataset.groupId = group.id;
-        cell.dataset.tag = tag;
-        return cell;
-      }));
-      const count = this.html("td", "tabellify-col-count tabellify-monitor-count");
-      count.textContent = counting ? `${paper.count}/${paper.total}` : "–";
-      // F005d (spec Q6): a paper with every codebook tag gets the "complete" look (green
-      // plus a CSS ✓ in workspace.css). Only a class: no text or data changes.
-      count.classList.toggle("tabellify-count-complete", counting && paper.total > 0 && paper.count === paper.total);
+      // Title, tag cells and k/M come from paperCells (shared with the F007a copy).
+      const { title, tagCells, count } = this.paperCells(paper, groups, counting, nameColumn);
       tr.append(this.rowGripCell(paper), title, ...tagCells, count);
       body.append(tr);
     });
+    // F007a (spec Q7): the library can change while the modal is open (other Zotero tabs
+    // stay usable), so its copy follows the new snapshot; its "Export CSV" then matches.
+    if (this.el("tabellify-view-dialog").open) this.renderViewTable();
   },
 
   // ---------------------------------------------------------------------------------------
@@ -837,6 +839,8 @@ var TabellifyWorkspace = {
     this.el("tabellify-items-table").hidden = hidden;
     this.el("tabellify-table-toolbar").hidden = hidden;
     this.el("tabellify-table-actions").hidden = hidden;
+    // F007a: no table, no "View table" modal (a live update found no papers, or an error).
+    if (hidden) this.closeView();
   },
 
   /** The codebook's groups (`{ id, name, tags }`, codebook order), or [] without a codebook. */
@@ -847,6 +851,128 @@ var TabellifyWorkspace = {
   /** True for a run of tags without a group (ADR-0016 §5, ADR-0019 §2). */
   isUngrouped(group) {
     return group.id === TabellifyTagMonitor.UNGROUPED_ID;
+  },
+
+  /**
+   * F007a: the shape of the table header for `groups`, shared by the page table
+   * (renderTableHeader) and the read-only "View table" copy (viewTableRows), so the two
+   * can never disagree.
+   * - `oneRow`: no real group has columns (only ungrouped tags, one run): the tag headers
+   *   sit in the first row and there are no group headers.
+   * - `twoRows`: a group header row above a tag header row.
+   * Neither (no tag columns at all): one row with only the fixed cells.
+   * @param {Array<{ id: string, tags: string[] }>} groups
+   * @returns {{ oneRow: boolean, twoRows: boolean, tagCount: number }}
+   */
+  headerShape(groups) {
+    const oneRow = groups.length > 0 && groups.every((g) => this.isUngrouped(g));
+    const tagCount = groups.reduce((n, g) => n + g.tags.length, 0);
+    return { oneRow, twoRows: tagCount > 0 && !oneRow, tagCount };
+  },
+
+  /**
+   * The cells of one paper row after the grip: Title, one cell per tag column (in `groups`
+   * order) and k/M. Shared by the page table and the "View table" copy (F007a), so both
+   * show the same ✓, labels and numbers. Text goes in with `textContent` or attributes only.
+   * @param {{ title: string, untitled: boolean, groups: Array<{ present: string[] }>, count: number, total: number }} paper
+   * @param {Array<{ id: string, tags: string[] }>} groups
+   * @param {boolean} counting
+   * @param {(cell: Element, group: object, tag: string) => void} [decorate]  Extra
+   *   attributes for a tag cell (the page table adds data-group-id and data-tag)
+   * @returns {{ title: Element, tagCells: Element[], count: Element }}
+   */
+  paperCells(paper, groups, counting, decorate = null) {
+    const usedText = this.text("tabellify-table-tag-used");
+    const notUsedText = this.text("tabellify-table-tag-not-used");
+    // F005c: each cell carries its column class (tabellify-col-<kind>), which sets its
+    // wrapping and alignment in workspace.css.
+    const title = this.html("td", "tabellify-col-title");
+    // `textContent` puts the string in as text, never as markup (see SECURITY above).
+    title.textContent = paper.untitled ? this.untitledText : paper.title;
+    if (paper.untitled) title.classList.add("tabellify-untitled");
+    const present = new Set(paper.groups.flatMap((g) => g.present));
+    const tagCells = groups.flatMap((group) => group.tags.map((tag, i) => {
+      const has = present.has(tag);
+      const cell = this.html("td", "tabellify-col-tag");
+      if (i === 0) cell.classList.add("tabellify-group-start");
+      if (has) cell.classList.add("tabellify-tag-used"); // CSS draws the ✓
+      // Tooltip and screen-reader text, e.g. "Heat index: Used". Attribute values are
+      // plain text, never parsed as markup.
+      const label = `${tag}: ${has ? usedText : notUsedText}`;
+      cell.title = label;
+      cell.setAttribute("aria-label", label);
+      if (decorate) decorate(cell, group, tag);
+      return cell;
+    }));
+    const count = this.html("td", "tabellify-col-count tabellify-monitor-count");
+    count.textContent = counting ? `${paper.count}/${paper.total}` : "–";
+    // F005d (spec Q6): a paper with every codebook tag gets the "complete" look (green
+    // plus a CSS ✓ in workspace.css). Only a class: no text or data changes.
+    count.classList.toggle("tabellify-count-complete", counting && paper.total > 0 && paper.count === paper.total);
+    return { title, tagCells, count };
+  },
+
+  /**
+   * F007a: the rows of the read-only "View table" copy, built from the same in-memory
+   * snapshot the CSV export uses (tableGroups, tableRows, tableCounting), so the copy, the
+   * page and the CSV always show the same table. A CLEAN copy, not a clone of the page
+   * table: plain-text header cells (no sort buttons, no grips), no grip column, and no
+   * id, draggable, tabindex, role or data-* attributes anywhere.
+   * @param {{ count: string, countLabel: string }} texts  The k/M header text ("k/M") and
+   *   its longer tooltip / screen-reader name
+   * @returns {{ head: Element[], body: Element[] }}  <tr> elements for <thead> and <tbody>
+   */
+  viewTableRows(texts) {
+    const groups = this.tableGroups;
+    const { oneRow, twoRows } = this.headerShape(groups);
+    const top = this.html("tr");
+    const second = this.html("tr");
+    const fixed = (className, text) => {
+      const th = this.html("th", className);
+      th.setAttribute("scope", "col");
+      th.rowSpan = twoRows ? 2 : 1;
+      th.textContent = text;
+      return th;
+    };
+    top.append(fixed("tabellify-col-title", this.text("tabellify-column-title")));
+    for (const group of groups) {
+      if (!oneRow) {
+        // Group header over its tags; a run of ungrouped tags shows the muted "Ungrouped"
+        // label exactly as on the page (spec Q6).
+        const th = this.html("th", "tabellify-col-group tabellify-group-start");
+        th.setAttribute("scope", "colgroup");
+        th.colSpan = group.tags.length;
+        if (this.isUngrouped(group)) {
+          th.classList.add("tabellify-col-group-ungrouped");
+          th.textContent = this.text("tabellify-table-ungrouped-label");
+        } else {
+          th.title = group.name;
+          th.textContent = group.name; // codebook text: plain text only (see SECURITY)
+        }
+        top.append(th);
+      }
+      group.tags.forEach((tag, i) => {
+        const th = this.html("th", "tabellify-col-tag");
+        if (i === 0) th.classList.add("tabellify-group-start");
+        th.setAttribute("scope", "col");
+        th.textContent = tag;
+        (oneRow ? top : second).append(th);
+      });
+    }
+    const count = fixed("tabellify-col-count", texts.count);
+    count.title = texts.countLabel;
+    count.setAttribute("aria-label", texts.countLabel);
+    top.append(count);
+
+    const stripes = TabellifyTableLayout.stripeFlags(this.tableRows.map(() => "paper"));
+    const body = this.tableRows.map((paper, index) => {
+      const tr = this.html("tr");
+      tr.classList.toggle("tabellify-row-alt", stripes[index]);
+      const { title, tagCells, count: countCell } = this.paperCells(paper, groups, this.tableCounting);
+      tr.append(title, ...tagCells, countCell);
+      return tr;
+    });
+    return { head: twoRows ? [top, second] : [top], body };
   },
 
   /**
@@ -873,12 +999,11 @@ var TabellifyWorkspace = {
     const countHeader = this.el("tabellify-items-count-header");
     for (const th of groupRow.querySelectorAll("th[data-group-id]")) th.remove();
     tagRow.replaceChildren();
-    // One header row when no real group has columns (only ungrouped tags, one run).
-    const oneRow = groups.length > 0 && groups.every((g) => this.isUngrouped(g));
+    // One or two header rows: the rule is shared with the "View table" copy (F007a).
+    const { oneRow, twoRows, tagCount } = this.headerShape(groups);
     // <col> elements: with `table-layout: fixed` the column widths come from them
     // (workspace.css), because the first header row has cells that span several columns.
     const cols = [this.html("col", "tabellify-col-grip"), this.html("col", "tabellify-col-title")];
-    let tagCount = 0;
     for (const group of groups) {
       const ungrouped = this.isUngrouped(group);
       if (!oneRow) {
@@ -916,13 +1041,11 @@ var TabellifyWorkspace = {
         if (oneRow) groupRow.insertBefore(tagTh, countHeader);
         else tagRow.append(tagTh);
         cols.push(this.html("col", "tabellify-col-tag"));
-        tagCount++;
       });
     }
     cols.push(this.html("col", "tabellify-col-count"));
     this.el("tabellify-items-cols").replaceChildren(...cols);
     // Without a second header row the fixed cells span one row.
-    const twoRows = tagCount > 0 && !oneRow;
     tagRow.hidden = !twoRows;
     for (const th of groupRow.querySelectorAll("th.tabellify-fixed-header")) th.rowSpan = twoRows ? 2 : 1;
     // A CSS custom property (variable): workspace.css makes the table at least wide enough
@@ -2852,21 +2975,25 @@ var TabellifyWorkspace = {
    * "click" handler of "Export CSV". Returns the export's Promise (the tests wait for it).
    * An arrow function property, so onUnload can remove exactly this listener.
    */
-  onExportClick: () => TabellifyWorkspace.exportCsv(),
+  onExportClick: () => TabellifyWorkspace.exportCsv(null, "page"),
 
   /**
    * Export the table as shown now. Spec F008 "Save flow".
    * @param {string | null} [baseName]  Suggested file name without date and ".csv";
-   *   null = the chosen collection's name. (Hook for 007a, whose "View table" modal passes
-   *   its Name field.)
+   *   null = the chosen collection's name. (F007a: the "View table" modal passes its Name
+   *   field.)
+   * @param {"page" | "view"} [source]  Which "Export CSV" was clicked: the page's button
+   *   or the modal's (F007a). Decides which status line shows the result.
    * @returns {Promise<object | null>}  TabellifyCsvExport's result, or null
    */
-  async exportCsv(baseName = null) {
+  async exportCsv(baseName = null, source = "page") {
     if (this.exportBusy) return null;
-    const button = this.el("tabellify-export-csv");
+    // Both "Export CSV" buttons (page and modal) are off while one export runs.
+    const buttons = [this.el("tabellify-export-csv"), this.el("tabellify-view-export")];
     this.exportBusy = true;
-    button.disabled = true;
-    this.showExportStatus(null);
+    for (const button of buttons) button.disabled = true;
+    this.showExportStatus(null, null, false, source);
+    if (source === "view") this.log("export: started from View table");
     let result = null;
     try {
       // Snapshot: the rows and columns the table shows at the moment of the click. If the
@@ -2900,15 +3027,15 @@ var TabellifyWorkspace = {
         // Checked after the dialog closes: if the tab was closed meanwhile, write nothing.
         shouldWrite: () => !this.unloaded,
       }, io);
-      this.reportExport(result);
+      this.reportExport(result, source);
     } catch (e) {
       // Not expected (exportText never throws); e.g. building the text failed.
       this.log("export: failed unexpectedly; nothing written");
       Zotero.logError(e);
-      if (!this.unloaded) this.showExportStatus("tabellify-export-picker-error", null, true);
+      if (!this.unloaded) this.showExportStatus("tabellify-export-picker-error", null, true, this.exportTarget(source));
     } finally {
       this.exportBusy = false;
-      if (!this.unloaded) button.disabled = false;
+      if (!this.unloaded) for (const button of buttons) button.disabled = false;
     }
     return result;
   },
@@ -2922,8 +3049,9 @@ var TabellifyWorkspace = {
   /**
    * Log the outcome (numbers and error names only) and, unless the page is gone, show it.
    * @param {object} result  From TabellifyCsvExport.exportText
+   * @param {"page" | "view"} [source]  Which button started the export (see exportCsv)
    */
-  reportExport(result) {
+  reportExport(result, source = "page") {
     switch (result.status) {
       case "saved": {
         const bytes = Number.isFinite(result.bytes) ? result.bytes : "?";
@@ -2943,10 +3071,21 @@ var TabellifyWorkspace = {
         Zotero.logError(result.error ?? new Error(`Tabellify export failed: ${result.errorName}`));
     }
     if (this.unloaded) return;
-    if (result.status === "saved") this.showExportStatus("tabellify-export-saved", result.path);
-    else if (result.status === "error" && result.stage === "write") this.showExportStatus("tabellify-export-write-error", result.path, true);
-    else if (result.status === "error") this.showExportStatus("tabellify-export-picker-error", null, true);
+    const target = this.exportTarget(source);
+    if (result.status === "saved") this.showExportStatus("tabellify-export-saved", result.path, false, target);
+    else if (result.status === "error" && result.stage === "write") this.showExportStatus("tabellify-export-write-error", result.path, true, target);
+    else if (result.status === "error") this.showExportStatus("tabellify-export-picker-error", null, true, target);
     // Cancelled: no message (the status stays hidden).
+  },
+
+  /**
+   * F007a (spec Q12): where an export's result is shown. An export from the modal shows
+   * it in the modal's line, unless the modal was closed meanwhile: then on the page.
+   * @param {"page" | "view"} source
+   * @returns {"page" | "view"}
+   */
+  exportTarget(source) {
+    return source === "view" && this.el("tabellify-view-dialog").open ? "view" : "page";
   },
 
   /**
@@ -2955,15 +3094,179 @@ var TabellifyWorkspace = {
    * @param {string | null} id  Fluent ID (one of EXPORT_STRINGS)
    * @param {string | null} [path]
    * @param {boolean} [isError]
+   * @param {"page" | "view"} [target]  The page's line under the table, or (F007a) the
+   *   line in the "View table" modal
    */
-  showExportStatus(id, path = null, isError = false) {
-    const status = this.el("tabellify-export-status");
-    const pathEl = this.el("tabellify-export-status-path");
+  showExportStatus(id, path = null, isError = false, target = "page") {
+    const prefix = target === "view" ? "tabellify-view-export-status" : "tabellify-export-status";
+    const status = this.el(prefix);
+    const pathEl = this.el(`${prefix}-path`);
     status.hidden = id === null;
     status.classList.toggle("tabellify-export-error", isError);
-    this.el("tabellify-export-status-text").textContent = id === null ? "" : this.text(id);
+    this.el(`${prefix}-text`).textContent = id === null ? "" : this.text(id);
     pathEl.textContent = path ?? "";
     pathEl.hidden = !path;
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // Feature 007a: "View table" modal (spec docs/features/007a-view-table.md). An HTML
+  // <dialog> opened with showModal(): the browser shows it in front of the page, dims the
+  // page and makes the rest of THIS document inert. Only this document: Zotero's window
+  // around the tab stays usable, so Tab is kept inside the dialog here (onViewKeydown).
+  // Nothing is saved: Name and Description stay in `viewDrafts` (memory) while the tab is
+  // open. Debug Output gets numbers only, never the Name, Description or any title.
+  // ---------------------------------------------------------------------------------------
+
+  /** Fluent IDs the modal's table shows from JS (k/M header text and its label). */
+  VIEW_STRINGS: [
+    "tabellify-column-count",
+    "tabellify-view-count-label",
+  ],
+
+  /**
+   * Name and Description typed in the modal, per collection key ("<libraryID>/<key>"),
+   * only while this tab is open (spec Q2). An ordinary property: it disappears with the
+   * page, so there is nothing to clean up or save.
+   * @type {Map<string, { name: string, description: string }>}
+   */
+  viewDrafts: new Map(),
+
+  /** The collection key and default Name the open modal was filled for. */
+  viewKey: null,
+  viewDefaultName: "",
+
+  /** "click" handler of "View table" (an arrow function, so onUnload can remove it). */
+  onViewTableClick: () => TabellifyWorkspace.openView(),
+
+  /**
+   * Fill the modal's table from the current snapshot (viewTableRows), as plain text.
+   * @returns {{ papers: number, tagColumns: number, headerRows: number }}
+   */
+  renderViewTable() {
+    const { head, body } = this.viewTableRows({
+      count: this.text("tabellify-column-count"),
+      countLabel: this.text("tabellify-view-count-label"),
+    });
+    this.el("tabellify-view-head").replaceChildren(...head);
+    this.el("tabellify-view-body").replaceChildren(...body);
+    return { papers: body.length, tagColumns: this.headerShape(this.tableGroups).tagCount, headerRows: head.length };
+  },
+
+  /** Open the modal (does nothing when it is already open or there is no table). */
+  openView() {
+    const dialog = this.el("tabellify-view-dialog");
+    if (dialog.open) return;
+    if (this.tableRows.length === 0 || this.el("tabellify-table-actions").hidden) return;
+    const name = this.el("tabellify-view-name");
+    const description = this.el("tabellify-view-description");
+    // The remembered values for this collection, else the collection's name (spec Q3).
+    this.viewKey = this.currentCollectionKey();
+    this.viewDefaultName = this.exportBaseName();
+    const draft = this.viewKey ? this.viewDrafts.get(this.viewKey) : undefined;
+    name.value = draft?.name ?? this.viewDefaultName;
+    description.value = draft?.description ?? "";
+    const shown = this.renderViewTable();
+    this.showExportStatus(null, null, false, "view");
+    try {
+      // showModal() throws if the dialog is not in the document or already open
+      // non-modally; neither should happen, but a failure must not break the page.
+      dialog.showModal();
+    } catch (e) {
+      this.log("view: could not open the dialog");
+      Zotero.logError(e);
+      return;
+    }
+    // Cursor in Name with the whole name selected, so typing replaces it.
+    name.focus();
+    name.select();
+    this.log(`view: opened: ${shown.papers} paper(s), ${shown.tagColumns} tag column(s), ${shown.headerRows} header row(s)`);
+  },
+
+  /** Close the modal. close() on a closed dialog does nothing; onViewClose runs after. */
+  closeView() {
+    const dialog = this.el("tabellify-view-dialog");
+    if (dialog.open) dialog.close();
+  },
+
+  /** Remember Name and Description for the collection, only when the user changed them. */
+  rememberViewDraft() {
+    if (!this.viewKey) return;
+    const name = this.el("tabellify-view-name").value ?? "";
+    const description = this.el("tabellify-view-description").value ?? "";
+    if (name !== this.viewDefaultName || description !== "") this.viewDrafts.set(this.viewKey, { name, description });
+    else this.viewDrafts.delete(this.viewKey);
+  },
+
+  /** "Export CSV" in the modal: the trimmed Name is the file name (blank = collection name). */
+  exportFromView() {
+    this.rememberViewDraft();
+    const name = String(this.el("tabellify-view-name").value ?? "").trim();
+    return this.exportCsv(name === "" ? null : name, "view");
+  },
+
+  /** The modal's controls in Tab order; a disabled "Export CSV" (export running) is skipped. */
+  viewFocusOrder() {
+    return ["tabellify-view-name", "tabellify-view-description", "tabellify-view-scroll",
+      "tabellify-view-export", "tabellify-view-close"]
+      .map((id) => this.el(id))
+      .filter((el) => !el.disabled);
+  },
+
+  /**
+   * Delegated "click" on the dialog: its "Export CSV" and "Close" buttons. Returns the
+   * export's Promise (the tests wait for it), else null.
+   */
+  onViewClick: (event) => {
+    const W = TabellifyWorkspace;
+    const button = event.target?.closest?.("button");
+    if (!button) return null;
+    if (button.id === "tabellify-view-close") {
+      W.closeView();
+      return null;
+    }
+    if (button.id === "tabellify-view-export") return W.exportFromView();
+    return null;
+  },
+
+  /**
+   * "keydown" on the dialog. Esc closes it (the browser does too; doing it here gives the
+   * same result and skips Esc while an input method is composing). Tab on the last control
+   * goes to Name, Shift+Tab on Name to the last control, so focus never leaves the dialog
+   * for Zotero's window.
+   */
+  onViewKeydown: (event) => {
+    const W = TabellifyWorkspace;
+    if (event.isComposing) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      W.closeView();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const order = W.viewFocusOrder();
+    const first = order[0];
+    const last = order[order.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  },
+
+  /**
+   * The dialog's "close" event (fires for Close, Esc and closeView alike): remember what
+   * was typed, and put the focus back on "View table" (or the dropdown if it is gone).
+   */
+  onViewClose: () => {
+    const W = TabellifyWorkspace;
+    W.rememberViewDraft();
+    const viewButton = W.el("tabellify-view-table");
+    if (!W.el("tabellify-table-actions").hidden) viewButton.focus();
+    else W.el("tabellify-collection-select").focus();
+    W.log("view: closed");
   },
 
   /**
@@ -2991,6 +3294,12 @@ var TabellifyWorkspace = {
       ?.removeEventListener("click", TabellifyWorkspace.onToolbarClick);
     TabellifyWorkspace.el("tabellify-export-csv")
       ?.removeEventListener("click", TabellifyWorkspace.onExportClick);
+    TabellifyWorkspace.el("tabellify-view-table")
+      ?.removeEventListener("click", TabellifyWorkspace.onViewTableClick);
+    const viewDialog = TabellifyWorkspace.el("tabellify-view-dialog");
+    viewDialog?.removeEventListener("click", TabellifyWorkspace.onViewClick);
+    viewDialog?.removeEventListener("keydown", TabellifyWorkspace.onViewKeydown);
+    viewDialog?.removeEventListener("close", TabellifyWorkspace.onViewClose);
     TabellifyWorkspace.el("tabellify-monitor-count-item-tags")
       ?.removeEventListener("change", TabellifyWorkspace.onCountItemTagsChange);
     const section = TabellifyWorkspace.el("tabellify-codebook");

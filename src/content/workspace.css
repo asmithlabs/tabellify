@@ -94,6 +94,7 @@
 #tabellify-codebook-status,
 #tabellify-layout-status,
 #tabellify-export-status,
+#tabellify-view-export-status,
 #tabellify-monitor-message {
   margin-block: var(--tabellify-space-3);
   padding: var(--tabellify-space-4);
@@ -106,6 +107,7 @@
 .tabellify-status::before,
 #tabellify-codebook-status.tabellify-codebook-error::before,
 #tabellify-export-status.tabellify-export-error::before,
+#tabellify-view-export-status.tabellify-export-error::before,
 #tabellify-layout-status::before,
 #tabellify-monitor-message::before {
   display: inline-block;
@@ -138,6 +140,7 @@
 #tabellify-load-error,
 #tabellify-codebook-status.tabellify-codebook-error,
 #tabellify-export-status.tabellify-export-error,
+#tabellify-view-export-status.tabellify-export-error,
 #tabellify-layout-status {
   color: var(--tabellify-color-status-error);
   font-weight: bold;
@@ -146,6 +149,7 @@
 #tabellify-load-error::before,
 #tabellify-codebook-status.tabellify-codebook-error::before,
 #tabellify-export-status.tabellify-export-error::before,
+#tabellify-view-export-status.tabellify-export-error::before,
 #tabellify-layout-status::before {
   content: "!";
 }
@@ -153,7 +157,8 @@
 /* The file path after a codebook, layout or export message. */
 #tabellify-codebook-status code,
 #tabellify-layout-status code,
-#tabellify-export-status code {
+#tabellify-export-status code,
+#tabellify-view-export-status code {
   margin-inline-start: var(--tabellify-space-2);
   font-weight: normal;
   color: var(--tabellify-color-text);
@@ -751,6 +756,106 @@
 #tabellify-items-table col.tabellify-col-title { width: auto; }
 #tabellify-items-table col.tabellify-col-tag { width: 5.5em; }
 #tabellify-items-table col.tabellify-col-count { width: 5.5em; }
+
+/* ---------------------------------------------------------------------------------------
+   "View table" modal (Feature 007a): an HTML <dialog> opened with showModal().
+   - Colours: the browser's default dialog uses the system colours Canvas / CanvasText,
+     which ADR-0015 forbids, so surface and text tokens replace them. Flat: no shadow.
+   - The layout rule needs [open]: a plain `#tabellify-view-dialog { display: flex }`
+     would beat the browser's `dialog:not([open]) { display: none }` (an ID selector is
+     more specific) and the CLOSED dialog would show on the page.
+   - No ::backdrop rule: the browser's own faint layer is used. ::backdrop inherits
+     nothing, so our colour tokens might not resolve there.
+   - Only the table area scrolls (both directions); heading, fields and buttons stay.
+   --------------------------------------------------------------------------------------- */
+
+#tabellify-view-dialog {
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--tabellify-space-6));
+  max-width: none;
+  max-height: calc(100% - 2 * var(--tabellify-space-6));
+  padding: var(--tabellify-space-5);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border-strong);
+  border-radius: var(--tabellify-radius-md);
+  background-color: var(--tabellify-color-surface);
+  color: var(--tabellify-color-text);
+}
+
+#tabellify-view-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tabellify-space-3);
+}
+
+#tabellify-view-dialog h2,
+#tabellify-view-dialog p {
+  margin: 0;
+}
+
+#tabellify-view-note,
+#tabellify-view-name-help {
+  font-size: var(--tabellify-font-size-sm);
+  color: var(--tabellify-color-text-muted);
+}
+
+#tabellify-view-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tabellify-space-2);
+}
+
+#tabellify-view-fields label {
+  font-weight: bold;
+}
+
+#tabellify-view-name,
+#tabellify-view-description {
+  width: 100%;
+  max-width: 60em;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+#tabellify-view-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+#tabellify-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tabellify-space-3);
+}
+
+#tabellify-view-actions #tabellify-view-export-status {
+  flex-basis: 100%;
+}
+
+/* ---------------------------------------------------------------------------------------
+   Read-only copy in the "View table" modal (#tabellify-view-grid, Feature 007a)
+   Same .tabellify-grid look as the page table, but it has no <col> elements, so the
+   browser sizes the columns from their content (`table-layout: auto`). At least as wide as
+   its scroll area; tag columns, k/M and the header names stay on one line, and the Title
+   column keeps a minimum width so long titles wrap instead of squeezing the tag columns.
+   A very wide table scrolls sideways inside the modal. No sticky header rows (spec Q8).
+   --------------------------------------------------------------------------------------- */
+
+#tabellify-view-grid {
+  table-layout: auto;
+  min-width: 100%;
+}
+
+#tabellify-view-grid th,
+#tabellify-view-grid td.tabellify-col-tag,
+#tabellify-view-grid td.tabellify-col-count {
+  white-space: nowrap;
+}
+
+#tabellify-view-grid .tabellify-col-title {
+  min-width: 16em;
+}
 
 /* ---------------------------------------------------------------------------------------
    Misc

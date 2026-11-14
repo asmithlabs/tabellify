@@ -76,7 +76,7 @@ per-paper table (column widths per `<col>`, the two sticky header rows) stay on
   (`th.tabellify-col-group-ungrouped`, `data-run`, Feature 006c Amendment 2): the text
   "Ungrouped" in `text-muted`, no grip
 
-## 5a. Workspace page components (Features 006a, 006b)
+## 5a. Workspace page components (Features 006a, 006b, 007a)
 The per-group summary cards and the Remaining/Used chip lists of Feature 005/005d were
 removed in Feature 006a. The page now uses:
 - the **summary line** in the collection row ("Tags used 4/6 · Papers 12"; the "·" is CSS)
@@ -93,6 +93,17 @@ removed in Feature 006a. The page now uses:
   (`aria-selected="true"`) uses `selected-bg` / `selected-text` with the `selected-bar` inset
   line, like the focused table row; "group" and "codebook only" are muted notes
   (`.tabellify-suggest-hint`, `text-muted`); "Create tag" is set apart by a `border` line
+- (Feature 007a) the **"View table" modal** (`#tabellify-view-dialog`, an HTML `<dialog>`
+  opened with `showModal()`): `surface` background and `text` colour (replacing the
+  browser's system colours), `border-strong` 1px border, `radius-md`, `space-5` padding, no
+  shadow; as wide and tall as the tab minus `space-6` on each side. The layout rule is
+  `#tabellify-view-dialog[open]` (flex column), never the plain ID, or the closed dialog
+  would show. The page behind is dimmed by the browser's own backdrop: there is **no**
+  `::backdrop` rule (it inherits nothing, so tokens may not resolve there). Inside: a muted
+  "not saved" note, Name and Description fields, the table area `#tabellify-view-scroll`
+  (the only part that scrolls, both ways; focus ring from the shared rule), the read-only
+  copy `#tabellify-view-grid` (`.tabellify-grid` look, content-sized columns, no grips or
+  sort buttons, no sticky header), and "Export CSV" / "Close" with the export status card
 All of them are in the states gallery.
 
 ## 6. Light and dark
