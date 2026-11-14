@@ -39,6 +39,14 @@ var TabellifyTableLayout = {
    */
   SCHEMA_VERSION: 3,
 
+  /**
+   * SEC-014: the most entries a valid layout.json may hold. Far above real use (the codebook
+   * allows at most 1,000 groups and 10,000 tags; a manual order lists one collection's
+   * papers). A file over a limit is "invalid": the default layout is used and the file is
+   * never overwritten. Checked in validateLayout, before any cleaning work.
+   */
+  LAYOUT_LIMITS: { order: 20000, tagOrderGroups: 2000, tagOrderTags: 20000, manualOrders: 10000, manualOrderKeys: 200000 },
+
   // ---------------------------------------------------------------------------------------
   // Generic list moves (used for tag columns inside a group and the tests' own lists)
   // ---------------------------------------------------------------------------------------
@@ -652,6 +660,20 @@ var TabellifyTableLayout = {
       if (!isObject(table.tagOrder)) return fail("perPaperTable.tagOrder is not an object");
     }
     if (!isObject(table.manualOrders)) return fail("perPaperTable.manualOrders is not an object");
+    // SEC-014: size limits (LAYOUT_LIMITS).
+    const limits = this.LAYOUT_LIMITS;
+    const order = table.columnOrder ?? table.groupOrder ?? table.topOrder;
+    if (order.length > limits.order) return fail(`top-level order has more than ${limits.order} entries`);
+    const tagOrderLists = isObject(table.tagOrder) ? Object.values(table.tagOrder) : [];
+    if (tagOrderLists.length > limits.tagOrderGroups) return fail(`tagOrder has more than ${limits.tagOrderGroups} groups`);
+    if (tagOrderLists.some((l) => Array.isArray(l) && l.length > limits.tagOrderTags)) {
+      return fail(`a tag order has more than ${limits.tagOrderTags} tags`);
+    }
+    const manualLists = Object.values(table.manualOrders);
+    if (manualLists.length > limits.manualOrders) return fail(`more than ${limits.manualOrders} manual orders`);
+    if (manualLists.some((l) => Array.isArray(l) && l.length > limits.manualOrderKeys)) {
+      return fail(`a manual order has more than ${limits.manualOrderKeys} papers`);
+    }
     return { ok: true };
   },
 

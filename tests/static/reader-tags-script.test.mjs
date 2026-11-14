@@ -79,9 +79,9 @@ test("F005b AC12 / data safety: the section never saves the codebook or writes f
   const storeCalls = [...reader.matchAll(/\bTabellifyCodebookStore\.([\w$]+)/g)].map((m) => m[1]);
   assert.ok(storeCalls.includes("load"), "store call not found (check is vacuous)");
   for (const name of storeCalls) assert.ok(["load", "platformFs", "dataDir"].includes(name), name);
-  // Only readJSON and join from platformFs are passed on to load().
-  assert.match(reader, /const \{ readJSON, join \} = TabellifyCodebookStore\.platformFs\(\);/);
-  assert.match(reader, /TabellifyCodebookStore\.load\(\{ readJSON, join \},/);
+  // Only readJSON, stat (SEC-014 size check) and join from platformFs are passed on to load().
+  assert.match(reader, /const \{ readJSON, stat, join \} = TabellifyCodebookStore\.platformFs\(\);/);
+  assert.match(reader, /TabellifyCodebookStore\.load\(\{ readJSON, stat, join \},/);
   // saveData is referenced only by the workspace (and defined by the store).
   assert.doesNotMatch(tabellify, /\bsaveData\b/);
 });

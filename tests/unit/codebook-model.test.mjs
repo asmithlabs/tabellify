@@ -710,3 +710,31 @@ test("SEC-015: revision and nextId at or above MAX_SAFE_INTEGER are rejected", (
   }
   assert.equal(M.validate(v2([], [], MAX)).ok, false, "v2 nextId MAX rejected");
 });
+
+// SEC-014: limits on codebooks, groups and tags (a file over a limit is invalid, never used).
+test("SEC-014: codebook limits (codebooks, groups, tags) in v1 and v2 files", () => {
+  assert.deepEqual(plain(M.LIMITS), { codebooks: 100, groups: 1000, tags: 10000 });
+  const groups = (n) => Array.from({ length: n }, (_, i) => ({ id: `g${i + 2}`, name: `G${i}` }));
+  const tags = (n) => Array.from({ length: n }, (_, i) => ({ name: `t${i}`, group: null }));
+  // At the limits: valid.
+  assert.equal(M.validate(v2(groups(1000), tags(10000), 2000)).ok, true);
+  // Over the limits: invalid, with a reason.
+  let r = M.validate(v2(groups(1001), [], 2000));
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /more than 1000 groups/);
+  r = M.validate(v2([], tags(10001)));
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /more than 10000 tags/);
+  // Version 1: tags are counted across groups.
+  const v1 = sampleV1();
+  v1.codebooks[0].groups[0].tags = Array.from({ length: 6000 }, (_, i) => `a${i}`);
+  v1.codebooks[0].groups[1].tags = Array.from({ length: 4001 }, (_, i) => `b${i}`);
+  r = M.validate(v1);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /more than 10000 tags/);
+  // More than 100 codebooks.
+  const many = { ...sampleV1(), nextId: 500, codebooks: Array.from({ length: 101 }, (_, i) => ({ id: `c${i + 1}`, name: "C", groups: [] })) };
+  r = M.validate(many);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /more than 100 codebooks/);
+});

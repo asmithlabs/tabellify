@@ -43,6 +43,13 @@ function fakeFs(initial = {}, opts = {}) {
     files,
     calls,
     writes: () => calls.filter((c) => c[0] === "writeJSON" || c[0] === "makeDirectory"),
+    async stat(path) {
+      calls.push(["stat", path]);
+      // A read error (no permission…) shows up on the size check first, as with IOUtils.
+      if (opts.failRead) throw Object.assign(new Error(`permission denied: ${path}`), { name: "NotAllowedError" });
+      if (!files.has(path)) throw Object.assign(new Error(`Could not stat ${path}`), { name: "NotFoundError" });
+      return { size: opts.size ?? Buffer.byteLength(String(files.get(path))) };
+    },
     async readJSON(path) {
       calls.push(["readJSON", path]);
       if (opts.failRead) throw Object.assign(new Error(`permission denied: ${path}`), { name: "NotAllowedError" });
@@ -300,4 +307,19 @@ test("T6: the store writes only layout.json (+ .tmp/.bak) in its folder, never c
     }
   }
   assert.equal(fs.files.get(CODEBOOK), '{"x":1}');
+});
+
+// SEC-014: an oversized layout.json is refused before it is parsed, and never overwritten.
+test("SEC-014: a file larger than MAX_FILE_BYTES is not parsed → invalid; a save is a conflict", async () => {
+  assert.equal(Store.MAX_FILE_BYTES, 20 * 1024 * 1024);
+  const text = JSON.stringify(sample());
+  let fs = fakeFs({ [FILE]: text }, { size: Store.MAX_FILE_BYTES + 1 });
+  const r = await Store.load(fs, DIR);
+  assert.equal(r.status, "invalid");
+  assert.match(r.reason, /FileTooLargeError/);
+  assert.deepEqual(fs.calls.map((c) => c[0]), ["stat"], "readJSON is never called");
+  fs = fakeFs({ [FILE]: text }, { size: Store.MAX_FILE_BYTES + 1 });
+  assert.equal((await Store.saveData(fs, DIR, table(), 3)).status, "conflict");
+  assert.deepEqual(fs.writes(), []);
+  assert.equal(fs.files.get(FILE), text);
 });

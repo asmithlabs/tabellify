@@ -23,7 +23,7 @@
  * still read in exactly one place in src/.
  *
  * TESTABLE WITHOUT ZOTERO: load() and saveData() take the file functions as a parameter
- * `fs` = { readJSON, writeJSON, makeDirectory, join } (same idea as layout-store.js).
+ * `fs` = { readJSON, stat, writeJSON, makeDirectory, join } (same idea as layout-store.js).
  * In Zotero, platformFs() supplies Firefox's IOUtils / PathUtils;
  * tests/unit/tables-store.test.mjs passes a fake that keeps "files" in a Map.
  *
@@ -38,6 +38,15 @@ var TabellifyTablesStore = {
   FILE_NAME: "tables.json",
 
   /**
+   * SEC-014: the largest tables.json Tabellify reads, in bytes. A save is refused above
+   * TabellifySavedTables.LIMITS.fileChars (20,000,000 UTF-16 units of JSON); one unit is at
+   * most 3 bytes in UTF-8, so every file Tabellify can write is at most 60,000,000 bytes.
+   * (A literal, not computed, so this file does not depend on load order; a unit test checks
+   * it equals 3 × fileChars.)
+   */
+  MAX_FILE_BYTES: 60000000,
+
+  /**
    * The real file functions. IOUtils and PathUtils are Firefox globals available to
    * privileged (chrome) documents such as the workspace (docs/zotero-api-notes.md, F004 rows).
    * @returns {TablesFs}
@@ -45,12 +54,31 @@ var TabellifyTablesStore = {
   platformFs() {
     return {
       readJSON: (path) => IOUtils.readJSON(path),
+      // SEC-014: the file size, checked before readJSON parses the file. Read-only.
+      stat: (path) => IOUtils.stat(path),
       // tmpPath + backupFile: an atomic write that keeps the previous version (ADR-0012 §2).
       writeJSON: (path, value, options) => IOUtils.writeJSON(path, value, options),
       // Creates the folder (and missing parents); succeeds if it already exists.
       makeDirectory: (path) => IOUtils.makeDirectory(path),
       join: (...parts) => PathUtils.join(...parts),
     };
+  },
+
+  /**
+   * SEC-014: read and parse `path`, but refuse a file larger than MAX_FILE_BYTES BEFORE
+   * parsing it. Parsing a huge (damaged or planted) file would freeze Zotero and use a lot of
+   * memory; Tabellify never writes a file that big. `fs.stat` rejects with "NotFoundError"
+   * when there is no file, exactly like `readJSON`, so callers handle both the same way.
+   * Too large → throws an error named "FileTooLargeError" (only the name is ever logged).
+   * @param {{ stat: (path: string) => Promise<{ size: number }>, readJSON: (path: string) => Promise<any> }} fs
+   * @param {string} path
+   */
+  async readJSONCapped(fs, path) {
+    const info = await fs.stat(path);
+    if (!(typeof info?.size === "number" && info.size <= this.MAX_FILE_BYTES)) {
+      throw Object.assign(new Error("file too large"), { name: "FileTooLargeError" });
+    }
+    return fs.readJSON(path);
   },
 
   /**
@@ -69,7 +97,7 @@ var TabellifyTablesStore = {
     const path = fs.join(dir, this.FILE_NAME);
     let raw;
     try {
-      raw = await fs.readJSON(path);
+      raw = await this.readJSONCapped(fs, path);
     } catch (e) {
       // IOUtils reports a missing file with an error named "NotFoundError".
       if (e?.name === "NotFoundError") {
@@ -108,7 +136,7 @@ var TabellifyTablesStore = {
     // 1. Has someone else saved since we loaded? A missing file counts as revision 0.
     let diskRevision;
     try {
-      const onDisk = await fs.readJSON(path);
+      const onDisk = await this.readJSONCapped(fs, path);
       const check = TabellifySavedTables.validate(onDisk);
       if (!check.ok) return { status: "conflict", path, reason: `file on disk is not valid: ${check.reason}` };
       diskRevision = onDisk.revision;
@@ -150,6 +178,7 @@ var TabellifyTablesStore = {
 /**
  * @typedef {{
  *   readJSON: (path: string) => Promise<any>,
+ *   stat: (path: string) => Promise<{ size: number }>,
  *   writeJSON: (path: string, value: any, options: { tmpPath: string, backupFile: string }) => Promise<any>,
  *   makeDirectory: (path: string) => Promise<any>,
  *   join: (...parts: string[]) => string,

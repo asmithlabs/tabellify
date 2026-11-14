@@ -506,8 +506,17 @@ export function createHarness({
     },
   }, "Zotero.Notifier");
 
+  // The plugin scope's own setTimeout/clearTimeout (Zotero's plugins.js `_loadScope` puts
+  // them there; docs/zotero-api-notes.md). Nothing runs until the test calls
+  // runScopeTimers(); `pendingScopeTimers` shows whether shutdown left one behind.
+  /** @type {Map<number, () => void>} */
+  const scopeTimers = new Map();
+  let scopeTimerSeq = 0;
+
   /** @type {Record<string, any>} */
   const sandbox = {
+    setTimeout(fn) { scopeTimers.set(++scopeTimerSeq, fn); return scopeTimerSeq; },
+    clearTimeout(id) { scopeTimers.delete(id); },
     Zotero: {
       debug(message) { debug.push(String(message)); },
       logError(err) { errors.push(err); log.push(`Zotero.logError(${err})`); },
@@ -702,6 +711,14 @@ export function createHarness({
     },
     /** Run pending timer callbacks (Zotero_Tabs.close removes containers in a setTimeout). */
     runTimers() { for (const fn of timers.splice(0)) fn(); },
+    /** Run the plugin scope's pending setTimeout callbacks (SEC-014 reader debounce). */
+    runScopeTimers() {
+      const due = [...scopeTimers.values()];
+      scopeTimers.clear();
+      for (const fn of due) fn();
+    },
+    /** How many plugin-scope timers are still pending. */
+    get pendingScopeTimers() { return scopeTimers.size; },
     /** Return and clear the call log (handy for asserting one phase at a time). */
     takeLog() { return log.splice(0); },
   };
