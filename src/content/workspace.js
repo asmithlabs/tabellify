@@ -266,21 +266,33 @@ var TabellifyWorkspace = {
     countBox.checked = this.countItemTags;
     countBox.addEventListener("change", this.onCountItemTagsChange);
     try {
+      // SEC-012: every `await` below is a pause during which the user can close the tab.
+      // onUnload then runs (and sets `unloaded`) while this function is still waiting. So
+      // after each `await` we check `unloaded` and stop: otherwise the code after it would
+      // register a Notifier observer for a page that is already gone, and nothing would
+      // ever unregister it (a leak, and callbacks into a dead document).
+
       // Normally already resolved (the workspace opens from a menu, after Zotero started),
       // so this returns at once. It guarantees all collections are loaded.
       await Zotero.initializationPromise;
+      if (this.unloaded) return;
 
       // "(untitled)" is needed as plain text in table cells, so ask Fluent for the string.
       this.untitledText = (await document.l10n?.formatValue("tabellify-untitled")) ?? "";
+      if (this.unloaded) return;
       // F005: the tag monitor's texts, formatted once (see MONITOR_STRINGS).
       await this.formatStrings(this.MONITOR_STRINGS);
+      if (this.unloaded) return;
       // F008: the export's texts (dialog, status line, CSV headers), formatted once.
       await this.formatStrings(this.EXPORT_STRINGS);
+      if (this.unloaded) return;
       // F007a: the modal table's k/M header texts, formatted once.
       await this.formatStrings(this.VIEW_STRINGS);
+      if (this.unloaded) return;
       // F005c: the saved layout (and its strings) must be ready before the first table is
       // shown. initLayout never throws (it has its own try/catch).
       await this.layoutLoading;
+      if (this.unloaded) return;
       this.monitorReady = true;
       this.renderMonitor();
 
@@ -307,7 +319,7 @@ var TabellifyWorkspace = {
       // F005: from now on, library changes re-count the chosen collection (live updates).
       this.registerMonitorObserver();
     } catch (e) {
-      this.showStatus("tabellify-load-error");
+      if (!this.unloaded) this.showStatus("tabellify-load-error");
       Zotero.logError(e);
     }
   },
@@ -2063,6 +2075,9 @@ var TabellifyWorkspace = {
    * Paired with unregisterMonitorObserver() in onUnload (lifecycle symmetry).
    */
   registerMonitorObserver() {
+    // SEC-012: never register for a page that is closing or closed (onUnload already ran,
+    // so no later unregister would remove this observer).
+    if (this.unloaded) return;
     if (this.notifierKey !== null) return;
     this.notifierKey = Zotero.Notifier.registerObserver(
       { notify: this.onNotify },
