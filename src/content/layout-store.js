@@ -78,7 +78,7 @@ var TabellifyLayoutStore = {
       if (e?.name === "NotFoundError") {
         return { status: "ok", data: TabellifyTableLayout.emptyLayout(), path, existed: false };
       }
-      return { status: "invalid", path, reason: `could not read: ${e?.name ?? ""} ${e?.message ?? e}` };
+      return { status: "invalid", path, reason: `could not read: ${e?.name ?? "error"}` }; // SEC-011: name only, never the message
     }
     const check = TabellifyTableLayout.validateLayout(raw);
     if (!check.ok) return { status: check.newer ? "newer" : "invalid", path, reason: check.reason };
@@ -120,7 +120,7 @@ var TabellifyLayoutStore = {
       diskRevision = onDisk.revision;
     } catch (e) {
       if (e?.name !== "NotFoundError") {
-        return { status: "conflict", path, reason: `could not re-read: ${e?.name ?? ""} ${e?.message ?? e}` };
+        return { status: "conflict", path, reason: `could not re-read: ${e?.name ?? "error"}` }; // SEC-011: name only
       }
       diskRevision = 0;
     }

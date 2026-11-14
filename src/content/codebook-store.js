@@ -88,7 +88,9 @@ var TabellifyCodebookStore = {
         return { status: "ok", data: TabellifyCodebook.emptyData(), path, existed: false, fromVersion: null };
       }
       // Bad JSON, no permission, disk error…: treat as "could not load".
-      return { status: "invalid", path, reason: `could not read: ${e?.name ?? ""} ${e?.message ?? e}` };
+      // SEC-011: only the error's name goes into `reason` (it is logged). The message can
+      // contain the full path, and with it the user's account name.
+      return { status: "invalid", path, reason: `could not read: ${e?.name ?? "error"}` };
     }
     const check = TabellifyCodebook.validate(raw);
     if (!check.ok) {
@@ -142,7 +144,7 @@ var TabellifyCodebookStore = {
       if (onDisk.schemaVersion === 1) onDiskV1 = onDisk;
     } catch (e) {
       if (e?.name !== "NotFoundError") {
-        return { status: "conflict", path, reason: `could not re-read: ${e?.name ?? ""} ${e?.message ?? e}` };
+        return { status: "conflict", path, reason: `could not re-read: ${e?.name ?? "error"}` }; // SEC-011: name only
       }
       diskRevision = 0;
     }

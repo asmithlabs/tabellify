@@ -199,7 +199,13 @@ var TabellifyWorkspace = {
   /** Localized "(untitled)", read once in init(). */
   untitledText: "",
 
-  /** @param {string} message */
+  /**
+   * One line of Debug Output. SEC-011: users paste Debug Output into public issues, so a
+   * message names files ("codebooks.json") and error names ("NotAllowedError") only: never
+   * a full path (it contains the account name) or an error's `message`.
+   * tests/static/no-private-logs.test.mjs checks this.
+   * @param {string} message
+   */
   log(message) {
     Zotero.debug(`Tabellify: workspace: ${message}`);
   },
@@ -1926,17 +1932,17 @@ var TabellifyWorkspace = {
             ? `, migrated in memory from schemaVersion ${result.fromVersion}: group order turned into the top-level order`
             : "";
         this.log(
-          `layout: loaded ${result.path} (revision ${this.layoutRevision}, ${this.manualOrders.size} manual order(s), ` +
+          `layout: loaded ${TabellifyLayoutStore.FILE_NAME} (revision ${this.layoutRevision}, ${this.manualOrders.size} manual order(s), ` +
           `column order for ${this.columnLayout.topOrder.length} top-level item(s)${migrated})`,
         );
       } else {
-        this.log(`layout: no file yet at ${result.path}; using the default layout (nothing written)`);
+        this.log(`layout: no file yet (${TabellifyLayoutStore.FILE_NAME}); using the default layout (nothing written)`);
       }
       this.showLayoutStatus(null);
     } else {
       this.applyLayout(TabellifyTableLayout.emptyLayout());
       this.layoutEditable = false;
-      this.log(`layout: could not load ${result.path} (${result.status}): ${result.reason}; using the default layout, saving disabled`);
+      this.log(`layout: could not load ${TabellifyLayoutStore.FILE_NAME} (${result.status}): ${result.reason}; using the default layout, saving disabled`);
       const id = result.status === "newer" ? "tabellify-table-layout-newer" : "tabellify-table-layout-load-error";
       this.showLayoutStatus(id, result.path);
     }
@@ -1995,7 +2001,7 @@ var TabellifyWorkspace = {
       const result = await TabellifyLayoutStore.saveData(this.layoutFs, this.layoutDir, data, this.layoutRevision);
       if (result.status === "saved") {
         this.layoutRevision = result.data.revision;
-        this.log(`layout: saved revision ${this.layoutRevision} to ${result.path}`);
+        this.log(`layout: saved revision ${this.layoutRevision} to ${TabellifyLayoutStore.FILE_NAME}`);
         this.showLayoutStatus(null);
       } else if (result.status === "conflict") {
         // Another Tabellify tab saved first (or the file changed or broke on disk): do not
@@ -2006,7 +2012,7 @@ var TabellifyWorkspace = {
       } else {
         // Write failed: the file on disk is unchanged (atomic write). The layout stays on
         // screen; the next change tries again.
-        this.log(`layout: could not save ${result.path}`);
+        this.log(`layout: could not save ${TabellifyLayoutStore.FILE_NAME} (${result.error?.name ?? "Error"})`);
         Zotero.logError(result.error);
         this.showLayoutStatus("tabellify-table-layout-save-error");
       }
@@ -2384,9 +2390,9 @@ var TabellifyWorkspace = {
         const migrated = result.fromVersion < TabellifyCodebook.SCHEMA_VERSION
           ? `, migrated in memory from schemaVersion ${result.fromVersion}; the file is rewritten only by the next edit`
           : "";
-        this.log(`codebook: loaded ${result.path} (revision ${this.codebookRevision}, ${groups} group(s), ${tags} tag(s)${migrated})`);
+        this.log(`codebook: loaded ${TabellifyCodebookStore.FILE_NAME} (revision ${this.codebookRevision}, ${groups} group(s), ${tags} tag(s)${migrated})`);
       } else {
-        this.log(`codebook: no file yet at ${result.path}; starting empty (nothing written)`);
+        this.log(`codebook: no file yet (${TabellifyCodebookStore.FILE_NAME}); starting empty (nothing written)`);
       }
       this.showCodebookStatus(null);
     } else {
@@ -2394,7 +2400,7 @@ var TabellifyWorkspace = {
       // can overwrite the file (ADR-0012 §3).
       this.codebook = null;
       this.codebookEditable = false;
-      this.log(`codebook: could not load ${result.path} (${result.status}): ${result.reason}; editing disabled`);
+      this.log(`codebook: could not load ${TabellifyCodebookStore.FILE_NAME} (${result.status}): ${result.reason}; editing disabled`);
       const id = result.status === "newer" ? "tabellify-codebook-newer" : "tabellify-codebook-load-error";
       this.showCodebookStatus(id, result.path, true);
     }
@@ -2424,16 +2430,16 @@ var TabellifyWorkspace = {
       if (result.v1Copy) {
         // ADR-0016 §3: the one-time copy of the version 1 file. A failure (e.g. the copy
         // already exists) does not stop the save; the .bak file holds the old data too.
-        if (result.v1Copy.ok) this.log(`codebook: kept the schemaVersion 1 data once in ${result.v1Copy.path}`);
+        if (result.v1Copy.ok) this.log(`codebook: kept the schemaVersion 1 data once in ${TabellifyCodebookStore.V1_COPY_NAME}`);
         else {
-          this.log(`codebook: could not write the one-time copy ${result.v1Copy.path}; continuing (codebooks.json.bak keeps the old data)`);
+          this.log(`codebook: could not write the one-time copy ${TabellifyCodebookStore.V1_COPY_NAME} (${result.v1Copy.error?.name ?? "Error"}); continuing (codebooks.json.bak keeps the old data)`);
           Zotero.logError(result.v1Copy.error);
         }
       }
       if (result.status === "saved") {
         this.codebook = result.data;
         this.codebookRevision = result.data.revision;
-        this.log(`codebook: saved revision ${this.codebookRevision} (schemaVersion ${result.data.schemaVersion}) to ${result.path}`);
+        this.log(`codebook: saved revision ${this.codebookRevision} (schemaVersion ${result.data.schemaVersion}) to ${TabellifyCodebookStore.FILE_NAME}`);
         this.showCodebookStatus("tabellify-codebook-saved", null, false, savedExtraId);
         return true;
       }
@@ -2448,7 +2454,7 @@ var TabellifyWorkspace = {
       // Write failed: the file on disk is unchanged (atomic write). Keep the edit on screen
       // with the OLD revision, so the next successful save includes it.
       this.codebook = edit.data;
-      this.log(`codebook: could not save ${result.path}`);
+      this.log(`codebook: could not save ${TabellifyCodebookStore.FILE_NAME} (${result.error?.name ?? "Error"})`);
       Zotero.logError(result.error);
       this.showCodebookStatus("tabellify-codebook-save-error", null, true);
       return true;

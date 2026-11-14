@@ -45,7 +45,7 @@ function fakeFs(initial = {}, opts = {}) {
     writes: () => calls.filter((c) => c[0] === "writeJSON" || c[0] === "makeDirectory"),
     async readJSON(path) {
       calls.push(["readJSON", path]);
-      if (opts.failRead) throw Object.assign(new Error("permission denied"), { name: "NotAllowedError" });
+      if (opts.failRead) throw Object.assign(new Error(`permission denied: ${path}`), { name: "NotAllowedError" });
       if (!files.has(path)) throw Object.assign(new Error(`Could not open ${path}`), { name: "NotFoundError" });
       return JSON.parse(files.get(path));
     },
@@ -216,6 +216,8 @@ test("T6: JSON that fails the frame check → invalid; newer schema → newer; r
   const r = await Store.load(fs, DIR);
   assert.equal(r.status, "invalid");
   assert.match(r.reason, /NotAllowedError/);
+  // SEC-011: the reason is logged, so it names the error but never its message (with the path).
+  assert.doesNotMatch(r.reason, /permission denied|\//);
   assert.deepEqual(fs.writes(), []);
 });
 
