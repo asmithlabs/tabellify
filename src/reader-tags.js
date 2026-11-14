@@ -338,7 +338,7 @@ var TabellifyReaderTags = {
    */
   async formatSummary(doc, used, total) {
     try {
-      const text = await doc.l10n.formatValue("tabellify-reader-summary", { used, total });
+      const text = await doc.l10n.formatValue("tabellify-reader-summary", this.numericArgs({ used, total }));
       if (text) return text;
     }
     catch (err) {
@@ -409,8 +409,26 @@ var TabellifyReaderTags = {
   l10nEl(doc, tag, l10nID, args) {
     const el = this.el(doc, tag);
     el.setAttribute("data-l10n-id", l10nID);
-    if (args) el.setAttribute("data-l10n-args", JSON.stringify(args));
+    if (args) el.setAttribute("data-l10n-args", JSON.stringify(this.numericArgs(args)));
     return el;
+  },
+
+  /**
+   * SEC-013: Fluent arguments are NUMBERS ONLY. A Fluent argument is inserted into the
+   * translated text; library text (a tag or title) passed this way would reach the page
+   * outside our textContent-only rule. This keeps only finite numbers and drops anything
+   * else, so even a later mistake cannot pass text. tests/static/no-html-sinks.test.mjs
+   * requires every Fluent argument object in src/ to go through this function.
+   * @param {Record<string, unknown>} args
+   * @returns {Record<string, number>}
+   */
+  numericArgs(args) {
+    /** @type {Record<string, number>} */
+    const out = {};
+    for (const [key, value] of Object.entries(args ?? {})) {
+      if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
+    }
+    return out;
   },
 
   /** An HTML element in `doc` (the main window is a XUL document, so the namespace matters). */

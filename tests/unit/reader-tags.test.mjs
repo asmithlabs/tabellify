@@ -686,3 +686,18 @@ test("F006a AC15: ungrouped tags are listed first without a heading, as plain te
   assert.deepEqual(s.errors, []);
   assert.ok(!s.calls.some((c) => c.startsWith("IOUtils.write")), "nothing written");
 });
+
+// SEC-013: Fluent arguments are numbers only; anything else is dropped before it can reach
+// data-l10n-args or formatValue.
+test("SEC-013: numericArgs keeps finite numbers and drops text and other values", () => {
+  const { R } = setup();
+  assert.deepEqual(plain(R.numericArgs({ used: 2, total: 3 })), { used: 2, total: 3 });
+  assert.deepEqual(
+    plain(R.numericArgs({ a: "<img src=x>", b: "5", c: NaN, d: Infinity, e: null, f: { x: 1 }, g: 0 })),
+    { g: 0 },
+  );
+  assert.deepEqual(plain(R.numericArgs(undefined)), {});
+  const doc = makeDoc();
+  const p = R.para(doc, "tabellify-reader-used", { used: 1, total: "Secret title" });
+  assert.equal(p.getAttribute("data-l10n-args"), JSON.stringify({ used: 1 }));
+});
