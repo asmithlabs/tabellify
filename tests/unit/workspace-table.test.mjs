@@ -1841,6 +1841,30 @@ test("008 AC16: the suggested name is the chosen collection's name and today's l
   assert.match(io.picks[2].defaultName, /^My table \d{4}-\d{2}-\d{2}\.csv$/);
 });
 
+// ---------------------------------------------------------------------------------------
+// Feature 007a AC15: the page's export status line goes when another collection is chosen
+// ---------------------------------------------------------------------------------------
+
+test("007a AC15: choosing a collection or the placeholder hides the export line; refresh and live updates keep it", async () => {
+  for (const [value, reason, hidden] of [
+    ["1", "collection chosen", true],
+    ["", "collection chosen", true],
+    ["1", "refresh", false],
+    ["1", "library change", false],
+  ]) {
+    const io = fakeExportIo();
+    const { W, document } = setupExport(io);
+    // The library read is replaced by the test data (no Zotero.Collections in Node).
+    W.gatherMonitorData = async () => monitorData();
+    await W.onExportClick();
+    assert.equal(status(document).hidden, false, "CSV saved: shown first");
+    await W.showCollection(value, reason);
+    assert.equal(status(document).hidden, hidden, `${reason} (${value || "placeholder"})`);
+    if (hidden) assert.equal(status(document).text, "");
+    else assert.equal(status(document).path, EXPORT_PATH);
+  }
+});
+
 test("008 AC16: Debug Output during an export holds no title, tag, group, collection name or path", async () => {
   const secrets = ["Paper 1", "Paper 2", "Paper 3", "Heat index", "Temperature", "Mortality", "Exposure", "Outcome",
     "F005 test", EXPORT_PATH, "secret-folder", "tester"];

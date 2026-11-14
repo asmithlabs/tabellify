@@ -317,6 +317,10 @@ var TabellifyWorkspace = {
       this.setTableHidden(true);
       this.el("tabellify-items-body").replaceChildren(); // remove old rows (no markup involved)
       this.renderMonitor();
+      // F007a (spec Q13): "CSV saved: …" belonged to the previous collection's table, so it
+      // goes when another collection (or the placeholder) is chosen. A recompute of the
+      // same collection (Refresh, live update) does not reach this line and keeps it.
+      this.showExportStatus(null);
     }
     if (value === "") {
       this.showStatus(null);
