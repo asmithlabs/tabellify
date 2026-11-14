@@ -702,7 +702,9 @@ var TabellifyWorkspace = {
     "tabellify-drop-hint-join",
     "tabellify-drop-hint-to-ungrouped",
     "tabellify-drop-hint-new-group",
-    "tabellify-drop-hint-ungroup",
+    // F006c Amendment 2: the "Ungrouped" run headers and the flip announcement.
+    "tabellify-table-ungrouped-label",
+    "tabellify-regroup-announce-group-name",
   ],
 
   /** F006c: TabellifyRegroup.describe() hint → Fluent ID of the drop-hint text. */
@@ -711,13 +713,12 @@ var TabellifyWorkspace = {
     join: "tabellify-drop-hint-join",
     "to-ungrouped": "tabellify-drop-hint-to-ungrouped",
     "new-group": "tabellify-drop-hint-new-group",
-    ungroup: "tabellify-drop-hint-ungroup",
   },
 
   /**
-   * F006c: regroup effect → Fluent ID shown after "Codebook saved.". A nest (the target tag
-   * became a group name, owner amendment 2026-11-13) always uses `created`'s text, also
-   * when an existing group with that name was reused.
+   * F006c: regroup effect → Fluent ID shown after "Codebook saved.". A nest or a flip (a
+   * tag became a group name, owner amendments 2026-11-13) always uses `created`'s text,
+   * also when an existing group with that name was reused.
    */
   REGROUP_STATUS_IDS: {
     joined: "tabellify-regroup-joined",
@@ -726,13 +727,18 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * The user's order of the tag columns: `{ groupOrder, tagOrder }` (TabellifyTableLayout).
-   * One order for the whole tab (not per collection). Kept apart from the codebook: moving
-   * a column never changes codebooks.json.
+   * The user's order of the tag columns: `{ topOrder, tagOrder }` (TabellifyTableLayout,
+   * layout.json schema 3, ADR-0019): `topOrder` is the left-to-right order of whole groups
+   * and single ungrouped tags; `tagOrder` the order inside each group. One order for the
+   * whole tab (not per collection). Kept apart from the codebook: moving a column never
+   * changes codebooks.json (only a regroup drop does, through the normal codebook save).
    */
-  columnLayout: { groupOrder: [], tagOrder: {} },
+  columnLayout: { topOrder: [], tagOrder: {} },
 
-  /** The groups and tag columns shown now (TabellifyTableLayout.orderedGroups). */
+  /**
+   * The blocks shown now (TabellifyTableLayout.orderedGroups): groups, and "runs" of
+   * neighbouring ungrouped tags (`ungrouped: true`, `run` = 0, 1, … from the left).
+   */
   tableGroups: [],
 
   /** What the header was last built from; the header is rebuilt only when it changes. */
@@ -814,18 +820,9 @@ var TabellifyWorkspace = {
     return TabellifyTagMonitor.codebookGroups(this.codebook);
   },
 
-  /** True for the view-only block of tags without a group (ADR-0016 §5). */
+  /** True for a run of tags without a group (ADR-0016 §5, ADR-0019 §2). */
   isUngrouped(group) {
     return group.id === TabellifyTagMonitor.UNGROUPED_ID;
-  },
-
-  /**
-   * A block's name as plain text for screen readers and announcements: the group's name,
-   * or "Ungrouped tags" for the ungrouped block (its header shows no text).
-   * @param {{ id: string, name: string }} group
-   */
-  blockName(group) {
-    return this.isUngrouped(group) ? this.text("tabellify-table-ungrouped-header") : group.name;
   },
 
   /**
@@ -834,15 +831,17 @@ var TabellifyWorkspace = {
    * and stay. Only rebuilt when the columns changed, because rebuilding drops the keyboard
    * focus (a sort click or a live update keeps the same header).
    *
-   * F006a (ADR-0016 §5): the ungrouped block's group header is BLANK (no text, never
-   * "null"), keeps its colSpan and its grip, and is named "Ungrouped tags" for screen
-   * readers. When the ungrouped block is the only block with columns, there are no group
-   * headers to show, so the header is ONE row: the tag headers go into the first row
-   * (before k/M) and the second row is hidden.
-   * @param {Array<{ id: string, name: string, tags: string[] }>} groups
+   * F006c Amendment 2 (ADR-0019): ungrouped tags may sit anywhere at the top level. Each
+   * run of neighbouring ungrouped tags gets its own super-header reading "Ungrouped"
+   * (muted text), spanning the run, with `data-group-id="ungrouped"` and `data-run="<k>"`
+   * and NO grip (runs are not things that move; their tags move one by one). When only
+   * ungrouped tags have columns (one run), there are no group headers to show, so the
+   * header is ONE row: the tag headers go into the first row (before k/M) and the second
+   * row is hidden (as in F006a).
+   * @param {Array<{ id: string, name: string, tags: string[], run?: number }>} groups
    */
   renderTableHeader(groups) {
-    const signature = JSON.stringify(groups.map((g) => [g.id, g.name, g.tags]));
+    const signature = JSON.stringify(groups.map((g) => [g.id, g.run ?? null, g.name, g.tags]));
     if (signature === this.headerSignature) return;
     this.headerSignature = signature;
     const groupRow = this.el("tabellify-items-group-row");
@@ -850,7 +849,7 @@ var TabellifyWorkspace = {
     const countHeader = this.el("tabellify-items-count-header");
     for (const th of groupRow.querySelectorAll("th[data-group-id]")) th.remove();
     tagRow.replaceChildren();
-    // One header row when no real group has columns (only the ungrouped block).
+    // One header row when no real group has columns (only ungrouped tags, one run).
     const oneRow = groups.length > 0 && groups.every((g) => this.isUngrouped(g));
     // <col> elements: with `table-layout: fixed` the column widths come from them
     // (workspace.css), because the first header row has cells that span several columns.
@@ -864,17 +863,18 @@ var TabellifyWorkspace = {
         th.setAttribute("scope", "colgroup");
         th.colSpan = group.tags.length;
         th.dataset.groupId = group.id;
-        const grip = this.columnGrip("group", `${this.text("tabellify-table-move-group")} ${this.blockName(group)}`);
+        const name = this.html("span", "tabellify-column-label");
         if (ungrouped) {
-          // Blank on screen; the name is only for screen readers. No tooltip.
+          // A run's header: the visible text "Ungrouped" names it (muted in workspace.css);
+          // `data-run` is its index, a number made here. No grip, no tooltip.
           th.classList.add("tabellify-col-group-ungrouped");
-          th.setAttribute("aria-label", this.blockName(group));
-          th.append(grip);
+          th.dataset.run = String(group.run ?? 0);
+          name.textContent = this.text("tabellify-table-ungrouped-label");
+          th.append(name);
         } else {
           th.title = group.name; // full name as a tooltip (long names are cut with "…")
-          const name = this.html("span", "tabellify-column-label");
           name.textContent = group.name; // codebook text: plain text only (see SECURITY)
-          th.append(grip, name);
+          th.append(this.columnGrip("group", `${this.text("tabellify-table-move-group")} ${group.name}`), name);
         }
         groupRow.insertBefore(th, countHeader);
       }
@@ -907,9 +907,10 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * The group pills (F006a): one per block with columns, in the table's column order (the
-   * ungrouped block as "Ungrouped · N", only when it has tags), then the groups without
-   * tags in codebook order ("Planned · 0"). Not interactive. Built with text only; the
+   * The group pills (F006a): one per block with columns, in the table's column order, then
+   * the groups without tags in codebook order ("Planned · 0"). Not interactive. The
+   * ungrouped tags get ONE pill "Ungrouped · N" (N = all ungrouped tags), at the place of
+   * the first run, however many runs the table shows (spec 006c A2-Q9). Built with text only; the
    * "·" between name and count is drawn by workspace.css. Shown whenever a codebook is
    * loaded, with or without a chosen collection.
    */
@@ -917,8 +918,12 @@ var TabellifyWorkspace = {
     const list = this.el("tabellify-group-pills");
     list.replaceChildren();
     const all = this.codebookLoadDone && this.codebook ? this.codebookGroups() : [];
+    const shown = TabellifyTableLayout.orderedGroups(all, this.columnLayout);
+    const allUngrouped = shown.filter((g) => this.isUngrouped(g)).flatMap((g) => g.tags);
     const blocks = [
-      ...TabellifyTableLayout.orderedGroups(all, this.columnLayout),
+      ...shown
+        .filter((g) => !this.isUngrouped(g) || g.run === 0)
+        .map((g) => (this.isUngrouped(g) ? { ...g, tags: allUngrouped } : g)),
       ...all.filter((g) => g.tags.length === 0),
     ];
     list.setAttribute("aria-label", this.text("tabellify-pills-label"));
@@ -952,7 +957,7 @@ var TabellifyWorkspace = {
     grip.setAttribute("draggable", "true");
     grip.setAttribute("tabindex", "0");
     grip.setAttribute("role", "button");
-    // F006c: a tag column's grip also has Alt+Up (ungroup) and Alt+Down (nest).
+    // F006c: a tag column's grip also has Alt+Up and Alt+Down (regroup, Amendment 2 A2.9).
     grip.setAttribute("aria-keyshortcuts", kind === "tag"
       ? "Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
       : "Alt+ArrowLeft Alt+ArrowRight");
@@ -963,6 +968,8 @@ var TabellifyWorkspace = {
   /**
    * The header cell of a group (`tag` null) or of one tag column. Found by comparing
    * attribute values, not by a CSS selector, because tag names can contain any character.
+   * Run headers ("Ungrouped") are never returned for `tag` null: there can be several;
+   * use runHeader(k).
    * @param {string} groupId
    * @param {string | null} [tag]
    * @returns {Element | null}
@@ -970,9 +977,36 @@ var TabellifyWorkspace = {
   columnHeader(groupId, tag = null) {
     for (const th of this.el("tabellify-items-table").querySelectorAll("thead th[data-group-id]")) {
       if (th.dataset.groupId !== groupId) continue;
-      if (tag === null ? !th.hasAttribute("data-tag") : th.dataset.tag === tag) return th;
+      if (tag === null ? !th.hasAttribute("data-tag") && !th.hasAttribute("data-run") : th.dataset.tag === tag) return th;
     }
     return null;
+  },
+
+  /**
+   * The "Ungrouped" super-header of run `run` (0 = the leftmost run), or null.
+   * @param {number} run
+   * @returns {Element | null}
+   */
+  runHeader(run) {
+    for (const th of this.el("tabellify-items-table").querySelectorAll("thead th[data-run]")) {
+      if (Number(th.dataset.run) === Number(run)) return th;
+    }
+    return null;
+  },
+
+  /**
+   * The header cells a top-level block spans: its super-header (when the header has two
+   * rows) and its first and last tag headers.
+   * @param {{ id: string, tags: string[], run?: number }} block  From tableGroups
+   * @returns {{ head: Element | null, first: Element | null, last: Element | null }}
+   */
+  blockHeaders(block) {
+    const head = this.isUngrouped(block) ? this.runHeader(block.run) : this.columnHeader(block.id);
+    return {
+      head,
+      first: this.columnHeader(block.id, block.tags[0]),
+      last: this.columnHeader(block.id, block.tags[block.tags.length - 1]),
+    };
   },
 
   /** "Manual order" / "Clear manual order" exist only when there is a manual order. */
@@ -1008,23 +1042,29 @@ var TabellifyWorkspace = {
 
   /**
    * Use a new column layout (if it changes what is shown), re-render and log the move.
-   * @param {{ groupOrder: string[], tagOrder: Record<string, string[]> }} next
-   * @param {string} groupId  The moved group, or the group of the moved tag
+   * @param {{ topOrder: Array<object>, tagOrder: Record<string, string[]> }} next
+   * @param {string} groupId  The moved group, or the block of the moved tag ("ungrouped")
    * @param {string | null} tag  The moved tag, or null when a whole group moved
    * @param {string} how  "drag" or "keyboard", for Debug Output
    * @returns {{ position: number, total: number } | null} the new place (1-based), or null
    */
   setColumnLayout(next, groupId, tag, how) {
+    const L = TabellifyTableLayout;
     const shownKey = (layout) => JSON.stringify(
-      TabellifyTableLayout.orderedGroups(this.codebookGroups(), layout).map((g) => [g.id, g.tags]),
+      L.orderedGroups(this.codebookGroups(), layout).map((g) => [g.id, g.run ?? null, g.tags]),
     );
     if (shownKey(next) === shownKey(this.columnLayout)) return null;
     this.columnLayout = next;
     this.renderMonitor();
     let moved;
-    if (tag === null) {
-      moved = { position: this.tableGroups.findIndex((g) => g.id === groupId) + 1, total: this.tableGroups.length };
-      this.log(`layout: group ${groupId} moved to position ${moved.position} of ${moved.total} (${how})`);
+    if (tag === null || this.isUngrouped({ id: groupId })) {
+      // A whole group or an ungrouped tag: its place among the top-level items (ADR-0019).
+      const item = tag === null ? { group: groupId } : { tag };
+      const top = L.visibleTopItems(this.codebookGroups(), this.columnLayout);
+      moved = { position: top.findIndex((e) => L.sameTopItem(e, item)) + 1, total: top.length };
+      // IDs only: an ungrouped tag's name is library/codebook text.
+      const what = tag === null ? `group ${groupId}` : "an ungrouped tag column";
+      this.log(`layout: ${what} moved to top-level position ${moved.position} of ${moved.total} (${how})`);
     } else {
       const tags = this.tableGroups.find((g) => g.id === groupId)?.tags ?? [];
       moved = { position: tags.indexOf(tag) + 1, total: tags.length };
@@ -1080,15 +1120,7 @@ var TabellifyWorkspace = {
     }
     if (drag.kind === "group") {
       if (!types.includes(this.COLUMN_DRAG_TYPE)) return null;
-      const th = event.target.closest?.("thead th[data-group-id]");
-      if (!th) return null;
-      // A group may be dropped on any header of another group (its group header or one of
-      // its tags); the drop line is drawn on that group's header.
-      const target = this.columnHeader(th.dataset.groupId);
-      if (!target) return null;
-      const rect = target.getBoundingClientRect();
-      const side = TabellifyTableLayout.dropSide(event.clientX, rect.left, rect.width);
-      return { kind: "group", id: target.dataset.groupId, side, first: target, last: target };
+      return this.groupDropTarget(event, drag);
     }
     if (!types.includes(this.ROW_DRAG_TYPE)) return null;
     const row = event.target.closest?.("tbody tr[data-paper-id]");
@@ -1099,11 +1131,54 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * F006c: where a dragged TAG column would land (docs/features/006c-drag-regroup.md).
-   * The zone comes from the element under the pointer (dragover fires at that element):
-   * - a tag header → "header" (before/after from the pointer's side of its middle);
-   * - a group (super-)header, including the blank ungrouped one → "super" (ungroup);
-   * - a body cell of a tag column → "body" (nest below that tag).
+   * F006c Amendment 2: where a dragged whole GROUP would land. Groups only reorder the top
+   * level (layout.json only, never the codebook; groups can't go into groups):
+   * - over any header cell of another group → before / after that group;
+   * - over an ungrouped tag's header → before / after that tag;
+   * - over a run's "Ungrouped" header → before its first / after its last tag.
+   * The pointer's half of the cell decides before / after. Over the group itself: refused.
+   * @param {DragEvent} event
+   * @param {{ kind: "group", id: string }} drag
+   */
+  groupDropTarget(event, drag) {
+    const th = event.target.closest?.("thead th[data-group-id]");
+    if (!th) return null;
+    const groupId = th.dataset.groupId;
+    const sideOf = (cell) => {
+      const rect = cell.getBoundingClientRect();
+      return TabellifyTableLayout.dropSide(event.clientX, rect.left, rect.width);
+    };
+    if (this.isUngrouped({ id: groupId }) && th.hasAttribute("data-tag")) {
+      // Beside one ungrouped tag (a group can go between ungrouped tags).
+      const ref = { tag: th.dataset.tag };
+      return { kind: "group", id: JSON.stringify(ref), ref, side: sideOf(th), first: th, last: th };
+    }
+    if (this.isUngrouped({ id: groupId })) {
+      // A run's header: before its first or after its last tag; one line through both rows.
+      const run = this.tableGroups.find((g) => this.isUngrouped(g) && g.run === Number(th.dataset.run));
+      if (!run) return null;
+      const side = sideOf(th);
+      const ref = { tag: side === "before" ? run.tags[0] : run.tags[run.tags.length - 1] };
+      const h = this.blockHeaders(run);
+      return { kind: "group", id: JSON.stringify(ref), ref, side, first: h.first, last: h.last, head: th };
+    }
+    if (groupId === drag.id) return null; // over the dragged group itself
+    // Any header of another group: the drop line is drawn on that group's header (F005c).
+    const head = this.columnHeader(groupId);
+    if (!head) return null;
+    const ref = { group: groupId };
+    return { kind: "group", id: JSON.stringify(ref), ref, side: sideOf(head), first: head, last: head };
+  },
+
+  /**
+   * F006c (Amendment 2): where a dragged TAG column would land. The cell under the pointer
+   * (dragover fires at that element) and the EDGE of that cell the pointer is in
+   * (TabellifyTableLayout.dropEdge: clientX / clientY against getBoundingClientRect())
+   * make the target; TabellifyRegroup applies the rules and the fallback:
+   * - a tag header → cell "tag" with its edge;
+   * - a group's super-header → cell "group"; a run's "Ungrouped" header → cell "run";
+   * - a body cell of a tag column → that tag's header with the bottom edge (alias, A2-Q8),
+   *   keeping the pointer's half of the cell as the fallback side.
    * Title, k/M and the grip column carry no data-group-id, so they are refused. A drop
    * that would change the codebook is refused while it cannot be saved.
    * @param {DragEvent} event
@@ -1112,25 +1187,29 @@ var TabellifyWorkspace = {
   tagDropTarget(event, drag) {
     let regroup;
     let cell;
+    let body = false;
     const th = event.target.closest?.("thead th[data-group-id]");
     if (th) {
       cell = th;
+      const { edge, side } = TabellifyTableLayout.dropEdge(event.clientX, event.clientY, th.getBoundingClientRect());
       if (th.hasAttribute("data-tag")) {
-        const rect = th.getBoundingClientRect();
-        const side = TabellifyTableLayout.dropSide(event.clientX, rect.left, rect.width);
-        regroup = { zone: "header", groupId: th.dataset.groupId, tag: th.dataset.tag, side };
+        regroup = { cell: "tag", groupId: th.dataset.groupId, tag: th.dataset.tag, edge, side };
+      } else if (th.hasAttribute("data-run")) {
+        regroup = { cell: "run", groupId: th.dataset.groupId, run: Number(th.dataset.run), edge, side };
       } else {
-        regroup = { zone: "super" };
+        regroup = { cell: "group", groupId: th.dataset.groupId, edge, side };
       }
     } else {
       cell = event.target.closest?.("tbody td.tabellify-col-tag");
       if (!cell || !cell.hasAttribute("data-tag")) return null;
-      regroup = { zone: "body", groupId: cell.dataset.groupId, tag: cell.dataset.tag };
+      const { side } = TabellifyTableLayout.dropEdge(event.clientX, event.clientY, cell.getBoundingClientRect());
+      regroup = { cell: "tag", groupId: cell.dataset.groupId, tag: cell.dataset.tag, edge: "bottom", side };
+      body = true;
     }
-    const info = TabellifyRegroup.describe(this.codebook, { groupId: drag.groupId, tag: drag.id }, regroup);
+    const info = TabellifyRegroup.describe(this.codebook, this.columnLayout, { groupId: drag.groupId, tag: drag.id }, regroup);
     if (!info) return null;
     if (info.kind === "regroup" && !this.canRegroup()) return null;
-    return { kind: "tag", id: regroup.tag ?? null, side: regroup.side ?? null, first: cell, last: cell, regroup, info };
+    return { kind: "tag", id: regroup.tag ?? null, side: info.edge, first: cell, last: cell, regroup, info, body };
   },
 
   /** F006c: true when a regroup (a codebook edit) could be saved right now. */
@@ -1139,7 +1218,10 @@ var TabellifyWorkspace = {
   },
 
   /** Every class a drop indicator can add (F005c lines, F006c regroup marks). */
-  DROP_CLASSES: ["tabellify-drop-before", "tabellify-drop-after", "tabellify-drop-into", "tabellify-drop-nest", "tabellify-drop-ungroup"],
+  DROP_CLASSES: [
+    "tabellify-drop-before", "tabellify-drop-after", "tabellify-drop-into", "tabellify-drop-nest",
+    "tabellify-drop-above", "tabellify-drop-below",
+  ],
 
   /** Remove every drop line and mark, and hide the drop hint. */
   clearDropIndicator() {
@@ -1159,32 +1241,84 @@ var TabellifyWorkspace = {
    */
   showDropIndicator(target) {
     const r = target.regroup;
-    const key = JSON.stringify([target.kind, target.id, target.side, r?.zone ?? null, r?.groupId ?? null]);
+    // The key includes the RESOLVED edge (after the fallback) and the run index, so the
+    // DOM changes only when the result changes, not on every dragover.
+    const key = JSON.stringify([target.kind, target.id, target.side, r?.cell ?? null, r?.groupId ?? null,
+      r?.run ?? null, target.info?.hint ?? null, target.body ?? false]);
     if (key === this.dropKey) return;
     this.clearDropIndicator();
     this.dropKey = key;
     if (!r) {
       if (target.side === "before") target.first.classList.add("tabellify-drop-before");
       else target.last.classList.add("tabellify-drop-after");
+      // A group dropped beside a run: one line through both header rows.
+      target.head?.classList.add(target.side === "before" ? "tabellify-drop-before" : "tabellify-drop-after");
       return;
     }
-    const table = this.el("tabellify-items-table");
-    if (r.zone === "header") {
-      target.first.classList.add(target.side === "before" ? "tabellify-drop-before" : "tabellify-drop-after");
-      // Joining another block: also underline that block's group header (two-row header).
-      if (target.info.kind === "regroup") this.columnHeader(r.groupId)?.classList.add("tabellify-drop-into");
-    } else if (r.zone === "body") {
-      // Outline B's whole column: its header and its cell in every row. cellIndex is the
-      // cell's position in its row, so row.cells[index] is the same column in each row.
-      this.columnHeader(r.groupId, r.tag)?.classList.add("tabellify-drop-nest");
-      const index = target.first.cellIndex;
-      for (const row of this.el("tabellify-items-body").children) row.cells[index]?.classList.add("tabellify-drop-nest");
-    } else {
-      for (const th of table.querySelectorAll("thead th[data-group-id]")) {
-        if (!th.hasAttribute("data-tag")) th.classList.add("tabellify-drop-ungroup");
-      }
-    }
+    this.markTagDrop(r, target.info.edge, target.info);
     this.showDropHint(target.info);
+  },
+
+  /**
+   * F006c Amendment 2 (A2.7): the marks for a tag-column drop, for the RESOLVED edge. They
+   * differ by shape (the hint names the result), so meaning never depends on colour.
+   * @param {object} r  The TabellifyRegroup target
+   * @param {string} edge  The resolved edge
+   * @param {{ kind: string }} info  From TabellifyRegroup.describe()
+   */
+  markTagDrop(r, edge, info) {
+    const add = (el, cls) => el?.classList.add(cls);
+    const sideClass = edge === "left" ? "tabellify-drop-before" : "tabellify-drop-after";
+    if (r.cell === "tag") {
+      const th = this.columnHeader(r.groupId, r.tag);
+      if (edge === "top") {
+        add(th, "tabellify-drop-above"); // flip: a line along the top of B's header
+      } else if (edge === "bottom") {
+        // Nest: a line along the bottom of B's header and lines beside B's cells.
+        // cellIndex is the cell's position in its row, so row.cells[index] is the same
+        // column in each row.
+        add(th, "tabellify-drop-below");
+        const index = this.columnIndex(r.groupId, r.tag);
+        if (index >= 0) {
+          for (const row of this.el("tabellify-items-body").children) add(row.cells[index], "tabellify-drop-nest");
+        }
+      } else {
+        add(th, sideClass);
+        // Joining a group: also a line under that group's name.
+        if (info.kind === "regroup" && !this.isUngrouped({ id: r.groupId })) add(this.columnHeader(r.groupId), "tabellify-drop-into");
+      }
+      return;
+    }
+    const block = r.cell === "run"
+      ? this.tableGroups.find((g) => this.isUngrouped(g) && g.run === r.run)
+      : this.tableGroups.find((g) => !this.isUngrouped(g) && g.id === r.groupId);
+    if (!block) return;
+    const h = this.blockHeaders(block);
+    if (r.cell === "group" && edge === "bottom") {
+      // Join at the end: a line under the group's name and at its right end.
+      add(h.head, "tabellify-drop-into");
+      add(h.last, "tabellify-drop-after");
+    } else if (edge === "left") {
+      add(h.head, "tabellify-drop-before"); // one vertical line through both header rows
+      add(h.first, "tabellify-drop-before");
+    } else {
+      add(h.head, "tabellify-drop-after");
+      add(h.last, "tabellify-drop-after");
+    }
+  },
+
+  /**
+   * The body cell index of tag column `tag` (its header's place among all columns), or -1.
+   * Counted from the shown blocks: grip and Title come first.
+   */
+  columnIndex(groupId, tag) {
+    let index = 2;
+    for (const g of this.tableGroups) {
+      const i = g.tags.indexOf(tag);
+      if (i >= 0 && g.id === groupId) return index + i;
+      index += g.tags.length;
+    }
+    return -1;
   },
 
   /**
@@ -1313,12 +1447,12 @@ var TabellifyWorkspace = {
       W.applyTagPlan(plan, drag.groupId, drag.id, "drag");
       return;
     }
-    if (drag.id === target.id) return; // dropped onto itself
     if (target.kind === "group") {
-      const rest = W.tableGroups.map((g) => g.id).filter((id) => id !== drag.id);
-      const index = rest.indexOf(target.id) + (target.side === "after" ? 1 : 0);
-      W.setColumnLayout(TabellifyTableLayout.moveGroup(W.columnLayout, W.codebookGroups(), drag.id, index), drag.id, null, "drag");
+      // A whole group moves among the top level (groups and ungrouped tags), layout only.
+      const next = TabellifyTableLayout.placeTopItem(W.columnLayout, W.codebookGroups(), { group: drag.id }, target.ref, target.side);
+      W.setColumnLayout(next, drag.id, null, "drag");
     } else {
+      if (drag.id === target.id) return; // dropped onto itself
       const keys = W.monitorData.keys;
       let beforeId = target.id;
       if (target.side === "after") {
@@ -1376,51 +1510,47 @@ var TabellifyWorkspace = {
    * @returns {Promise<boolean>}
    */
   async applyRegroup(plan, fromGroupId, tag, how) {
-    const statusId = plan.nest ? this.REGROUP_STATUS_IDS.created : this.REGROUP_STATUS_IDS[plan.effect];
+    const statusId = plan.named ? this.REGROUP_STATUS_IDS.created : this.REGROUP_STATUS_IDS[plan.effect];
     const shown = await this.applyCodebookEdit(plan.edit, statusId ?? null);
     if (!shown) return false;
     this.columnLayout = plan.layout;
     this.renderMonitor();
     this.layoutChanged();
-    // IDs only: tag and group names are library/codebook text and never go to Debug Output.
+    // IDs, edges and counts only: tag and group names are library/codebook text and never
+    // go to Debug Output.
+    this.log(`regroup: tag dropped on the ${plan.edge} edge (${how})`);
     if (plan.effect === "created") this.log(`regroup: group ${plan.groupId} created by a nest (${how})`);
-    // A nest removes the target tag from the codebook (it became the group's name).
-    if (plan.nest) this.log(`regroup: the nest target tag became the name of group ${plan.groupId} and left the codebook (${how})`);
-    this.log(`regroup: a tag moved from block ${fromGroupId} to block ${plan.groupId} (${how})`);
-    // Screen readers: "Temperature moved to group Outcome" / "Heat index is now ungrouped".
+    // A nest removes the target tag from the codebook, a flip the dragged tag: that tag
+    // became the group's name.
+    if (plan.named === "below") this.log(`regroup: the nest target tag became the name of group ${plan.groupId} and left the codebook (${how})`);
+    if (plan.named === "above") {
+      this.log(`regroup: the dragged tag from block ${fromGroupId} became the name of group ${plan.groupId} and left the codebook (${how})`);
+    } else {
+      this.log(`regroup: a tag moved from block ${fromGroupId} to block ${plan.groupId} (${how})`);
+    }
+    // Screen readers: "Temperature moved to group Outcome" / "Heat index is now ungrouped" /
+    // "smoker is now a group name" (flip).
     const group = TabellifyCodebook.findGroup(this.codebook, plan.groupId);
-    this.el("tabellify-table-announce").textContent = plan.groupId === TabellifyCodebook.UNGROUPED_ID || !group
-      ? `${tag} ${this.text("tabellify-regroup-announce-ungrouped")}`
-      : `${tag} ${this.text("tabellify-regroup-announce-moved")} ${group.name}`;
+    let text;
+    if (plan.named === "above") text = `${tag} ${this.text("tabellify-regroup-announce-group-name")}`;
+    else if (plan.groupId === TabellifyCodebook.UNGROUPED_ID || !group) text = `${tag} ${this.text("tabellify-regroup-announce-ungrouped")}`;
+    else text = `${tag} ${this.text("tabellify-regroup-announce-moved")} ${group.name}`;
+    this.el("tabellify-table-announce").textContent = text;
     return true;
   },
 
   /**
-   * F006c (spec Q1): what Alt+Up / Alt+Down on a tag column's grip means, as a drop:
-   * Alt+Up = the super-header row (ungroup); Alt+Down = the body of the column to its
-   * LEFT in the shown order (nest under that tag, or join its group). Nothing for the
-   * first column or when the left column is already in the same group.
-   * @param {string} groupId  The tag's block
-   * @param {string} tag
-   * @param {"ArrowUp" | "ArrowDown"} key
-   * @returns {object | null} a TabellifyRegroup target, or null
-   */
-  keyboardRegroupTarget(groupId, tag, key) {
-    if (key === "ArrowUp") return { zone: "super" };
-    const columns = this.tableGroups.flatMap((g) => g.tags.map((t) => ({ groupId: g.id, tag: t })));
-    const index = columns.findIndex((c) => c.groupId === groupId && c.tag === tag);
-    const left = index > 0 ? columns[index - 1] : null;
-    if (!left) return null;
-    if (left.groupId === groupId && groupId !== TabellifyTagMonitor.UNGROUPED_ID) return null;
-    return { zone: "body", groupId: left.groupId, tag: left.tag };
-  },
-
-  /**
-   * Alt+arrow on a focused grip (Option+arrow on macOS): Left/Right moves a tag column
-   * inside its group, or a group among the groups; Up/Down moves a paper. On a tag
-   * column's grip, Up/Down regroup it (F006c: Up = ungroup, Down = nest under the column
-   * to its left). The focus stays on the moved item's grip, and the move is announced.
-   * Other keys are left alone.
+   * Alt+arrow on a focused grip (Option+arrow on macOS); each key equals one drop:
+   * - tag column in a group: Left/Right move it inside the group (stops at its edges);
+   * - ungrouped tag column, or a group's grip: Left/Right move it one TOP-LEVEL place
+   *   (past one ungrouped tag or past a whole group, ADR-0019);
+   * - tag column: Up/Down regroup it (spec 006c Amendment 2, A2.9, through
+   *   TabellifyRegroup.keyboardTarget: Up leaves the group, or flips with the ungrouped
+   *   tag to its left; Down nests under the ungrouped tag to its left, or joins the group
+   *   to its left);
+   * - paper row: Up/Down move the paper.
+   * The focus stays on the moved item's grip (after a flip: the new group's grip), and the
+   * move is announced. Other keys are left alone.
    */
   onTableKeydown: (event) => {
     const W = TabellifyWorkspace;
@@ -1434,13 +1564,16 @@ var TabellifyWorkspace = {
       event.preventDefault();
       const groupId = th.dataset.groupId;
       const tag = th.dataset.tag;
-      const target = W.keyboardRegroupTarget(groupId, tag, event.key);
+      const direction = event.key === "ArrowUp" ? "up" : "down";
+      const target = TabellifyRegroup.keyboardTarget(W.codebook, W.columnLayout, { groupId, tag }, direction);
       if (!target) return;
       const plan = TabellifyRegroup.plan(W.codebook, W.columnLayout, { groupId, tag }, target);
       if (plan.kind === "regroup" && !W.canRegroup()) return;
       W.applyTagPlan(plan, groupId, tag, "keyboard").then((shown) => {
-        // The header was rebuilt: put the focus back on the moved column's grip.
-        W.focusColumnGrip(shown ? plan.groupId : groupId, tag);
+        // The header was rebuilt: put the focus back on the moved column's grip; after a
+        // flip the tag is no column any more, so on the new group's grip.
+        if (shown && plan.named === "above") W.focusColumnGrip(plan.groupId);
+        else W.focusColumnGrip(shown ? plan.groupId : groupId, tag);
       });
       return;
     }
@@ -1451,14 +1584,15 @@ var TabellifyWorkspace = {
       event.preventDefault();
       const groupId = th.dataset.groupId;
       const tag = grip.dataset.grip === "tag" ? th.dataset.tag : null;
-      const next = tag === null
-        ? TabellifyTableLayout.moveGroupBy(W.columnLayout, W.codebookGroups(), groupId, delta)
-        : TabellifyTableLayout.moveTagBy(W.columnLayout, W.codebookGroups(), groupId, tag, delta);
+      const L = TabellifyTableLayout;
+      let next;
+      if (tag === null) next = L.moveTopItemBy(W.columnLayout, W.codebookGroups(), { group: groupId }, delta);
+      else if (W.isUngrouped({ id: groupId })) next = L.moveTopItemBy(W.columnLayout, W.codebookGroups(), { tag }, delta);
+      else next = L.moveTagBy(W.columnLayout, W.codebookGroups(), groupId, tag, delta);
       const moved = W.setColumnLayout(next, groupId, tag, "keyboard");
       if (moved) {
         const group = W.tableGroups.find((g) => g.id === groupId);
-        const name = tag ?? (group ? W.blockName(group) : "");
-        W.announce(name, moved.position, moved.total);
+        W.announce(tag ?? group?.name ?? "", moved.position, moved.total);
       }
       W.focusColumnGrip(groupId, tag);
     } else if (grip.dataset.grip === "row") {
@@ -1501,9 +1635,10 @@ var TabellifyWorkspace = {
         break;
       }
       case "reset-columns": {
-        // Back to the codebook's own order. Nothing to do when nothing was moved.
-        const { groupOrder, tagOrder } = W.columnLayout;
-        if (groupOrder.length === 0 && Object.keys(tagOrder).length === 0) return;
+        // Back to the codebook's own order: all ungrouped tags in one run at the left, then
+        // the groups (A2-Q12). Grouping is never undone. Nothing to do when nothing moved.
+        const { topOrder, tagOrder } = W.columnLayout;
+        if (topOrder.length === 0 && Object.keys(tagOrder).length === 0) return;
         W.columnLayout = TabellifyTableLayout.emptyColumnLayout();
         W.renderMonitor();
         W.log("layout: columns reset to the codebook order");
@@ -1578,14 +1713,17 @@ var TabellifyWorkspace = {
       this.layoutRevision = result.data.revision;
       this.layoutEditable = true;
       if (result.existed) {
-        // A version 1 file (the old summary columns) is migrated in memory only; the next
-        // save after a user action writes version 2 and keeps the old file as .bak.
-        const migrated = result.fromVersion < TabellifyTableLayout.SCHEMA_VERSION
-          ? `, migrated in memory from schemaVersion ${result.fromVersion}: old column order dropped`
-          : "";
+        // An older file is migrated in memory only (version 1: the old summary columns are
+        // dropped; version 2: groupOrder becomes the top-level order, ADR-0019 §4). The next
+        // save after a user action writes version 3 and keeps the old file as .bak.
+        const migrated = result.fromVersion === 1
+          ? `, migrated in memory from schemaVersion 1: old column order dropped`
+          : result.fromVersion < TabellifyTableLayout.SCHEMA_VERSION
+            ? `, migrated in memory from schemaVersion ${result.fromVersion}: group order turned into the top-level order`
+            : "";
         this.log(
           `layout: loaded ${result.path} (revision ${this.layoutRevision}, ${this.manualOrders.size} manual order(s), ` +
-          `column order for ${this.columnLayout.groupOrder.length} group(s)${migrated})`,
+          `column order for ${this.columnLayout.topOrder.length} top-level item(s)${migrated})`,
         );
       } else {
         this.log(`layout: no file yet at ${result.path}; using the default layout (nothing written)`);
@@ -1605,12 +1743,12 @@ var TabellifyWorkspace = {
   /**
    * Use loaded layout data (already cleaned by migrateLayout). If the chosen collection is
    * in manual order but no longer has one, fall back to the default sort.
-   * @param {{ perPaperTable: { groupOrder: string[], tagOrder: Record<string, string[]>,
+   * @param {{ perPaperTable: { topOrder: Array<object>, tagOrder: Record<string, string[]>,
    *   manualOrders: Record<string, string[]> } }} data
    */
   applyLayout(data) {
-    const { groupOrder, tagOrder } = TabellifyTableLayout.layoutData(data.perPaperTable, []);
-    this.columnLayout = { groupOrder, tagOrder };
+    const { topOrder, tagOrder } = TabellifyTableLayout.layoutData(data.perPaperTable, []);
+    this.columnLayout = { topOrder, tagOrder };
     this.manualOrders = new Map(Object.entries(data.perPaperTable.manualOrders));
     if (this.sortKey === TabellifyTableLayout.MANUAL && !this.currentManualOrder()) {
       this.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
@@ -1876,7 +2014,6 @@ var TabellifyWorkspace = {
     "tabellify-pills-label",
     "tabellify-pill-ungrouped",
     "tabellify-pill-tags",
-    "tabellify-table-ungrouped-header",
     "tabellify-codebook-ungrouped",
     "tabellify-codebook-rename",
     "tabellify-codebook-rename-save",

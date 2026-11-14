@@ -448,7 +448,7 @@ test("F006a AC17: new Fluent IDs exist; JS-shown ones (and the parser's errors) 
     "tabellify-script-error-unbalanced", "tabellify-script-error-empty-tag", "tabellify-script-error-empty-group",
     "tabellify-script-error-nested", "tabellify-script-error-missing-comma", "tabellify-script-error-unclosed-quote",
     "tabellify-script-error-duplicate", "tabellify-script-nothing-new", "tabellify-script-moved",
-    "tabellify-pills-label", "tabellify-pill-ungrouped", "tabellify-pill-tags", "tabellify-table-ungrouped-header",
+    "tabellify-pills-label", "tabellify-pill-ungrouped", "tabellify-pill-tags",
     "tabellify-codebook-edit", "tabellify-codebook-ungrouped",
   ];
   for (const id of added) {
@@ -590,7 +590,9 @@ test("F006c AC15: the regroup and drop-hint Fluent IDs exist, start with tabelli
     "tabellify-regroup-joined", "tabellify-regroup-created", "tabellify-regroup-ungrouped",
     "tabellify-regroup-announce-moved", "tabellify-regroup-announce-ungrouped",
     "tabellify-drop-hint-reorder", "tabellify-drop-hint-join", "tabellify-drop-hint-to-ungrouped",
-    "tabellify-drop-hint-new-group", "tabellify-drop-hint-ungroup",
+    "tabellify-drop-hint-new-group",
+    // F006c Amendment 2.
+    "tabellify-table-ungrouped-label", "tabellify-regroup-announce-group-name",
   ];
   for (const id of ids) {
     assert.match(id, /^tabellify-/);
@@ -604,6 +606,24 @@ test("F006c AC15: the regroup and drop-hint Fluent IDs exist, start with tabelli
     assert.ok(used.length >= 3, `${name} not found (check is vacuous)`);
     for (const id of used) assert.ok(formatted.has(id), `${id} (${name}) is not in LAYOUT_STRINGS`);
   }
+});
+
+test("F006c Amendment 2 AC31: the retired ungroup zone and blank-header strings are gone; new marks styled", () => {
+  // No zone ungroups the whole super-header row any more (A2-Q11), and the run headers show
+  // "Ungrouped" as text, so the blank header's screen-reader name is retired too.
+  for (const id of ["tabellify-drop-hint-ungroup", "tabellify-table-ungrouped-header"]) {
+    assert.ok(!ftlIds.has(id), `${id} is still in tabellify.ftl`);
+    assert.ok(!js.includes(`"${id}"`), `${id} is still used in workspace.js`);
+  }
+  assert.ok(!js.includes("tabellify-drop-ungroup"), "tabellify-drop-ungroup is still used in workspace.js");
+  const css = readFileSync(join(srcDir, "content", "workspace.css"), "utf8");
+  assert.ok(!css.includes("tabellify-drop-ungroup"), "tabellify-drop-ungroup is still styled");
+  for (const cls of ["tabellify-drop-above", "tabellify-drop-below"]) {
+    assert.match(css, new RegExp(`th\\.${cls}\\s*\\{[^}]*var\\(--tabellify-color-action\\)`), `${cls} not styled with the action token`);
+    assert.match(js, new RegExp(`"${cls}"`), `${cls} not in DROP_CLASSES`);
+  }
+  // The drop handler still never reads the drag data back.
+  assert.doesNotMatch(js, /getData\(/);
 });
 
 test("F006c AC15: the drop hint sits in the table toolbar, hidden and aria-hidden; no new listener", () => {

@@ -501,8 +501,8 @@
   font-weight: bold;
 }
 
-/* F006a: the blank group header over the tags without a group. It shows only its grip
-   (its name "Ungrouped tags" is for screen readers), so it stays visually quiet. */
+/* F006c Amendment 2: the "Ungrouped" super-header over each run of tags without a group.
+   Muted text, so it stays visually quiet next to the real group names; it has no grip. */
 .tabellify-grid thead th.tabellify-col-group-ungrouped {
   color: var(--tabellify-color-text-muted);
 }
@@ -668,24 +668,30 @@
 
 /* Feature 006c: marks for regrouping a dragged tag column. They differ by SHAPE (and the
    toolbar hint names the action), so their meaning never depends on colour alone.
-   - Joining another block sideways: a line under that block's group header. */
+   Amendment 2: the marks follow the EDGE of the cell the pointer is in.
+   - Joining a group: a line under that group's name. */
 .tabellify-grid th.tabellify-drop-into {
   box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
 }
 
-/* - Nesting below a tag: lines on both sides of that tag's whole column (header and cells).
-     Two inset shadows, one per side. */
+/* - Nesting below an ungrouped tag (its bottom edge, or its cells): lines on both sides of
+     that tag's cells. Two inset shadows, one per side. */
 .tabellify-grid .tabellify-drop-nest {
   box-shadow:
     inset var(--tabellify-border-width-strong) 0 0 var(--tabellify-color-action),
     inset calc(-1 * var(--tabellify-border-width-strong)) 0 0 var(--tabellify-color-action);
 }
 
-/* - Ungrouping: a dashed outline inside every group header (dashed = the design system's
-     "ungrouped" look). A negative outline-offset draws it inside the cell. */
-.tabellify-grid th.tabellify-drop-ungroup {
-  outline: var(--tabellify-border-width-strong) dashed var(--tabellify-color-action);
-  outline-offset: calc(-1 * var(--tabellify-border-width-strong));
+/* - Top edge of an ungrouped tag (the dragged tag becomes a group name above it): a line
+     along the top of its header. */
+.tabellify-grid th.tabellify-drop-above {
+  box-shadow: inset 0 var(--tabellify-border-width-strong) 0 var(--tabellify-color-action);
+}
+
+/* - Bottom edge of an ungrouped tag (it becomes a group name, the dragged tag goes under
+     it): a line along the bottom of its header. */
+.tabellify-grid th.tabellify-drop-below {
+  box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
 }
 
 /* ---------------------------------------------------------------------------------------
