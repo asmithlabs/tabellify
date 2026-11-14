@@ -638,7 +638,10 @@ var TabellifyTableLayout = {
     if (data.schemaVersion > this.SCHEMA_VERSION) {
       return { ok: false, newer: true, reason: `schemaVersion ${data.schemaVersion} is newer than ${this.SCHEMA_VERSION}` };
     }
-    if (!Number.isInteger(data.revision) || data.revision < 0) return fail("revision is not a non-negative integer");
+    // SEC-015: below Number.MAX_SAFE_INTEGER so the store's `revision + 1` stays exact.
+    if (!Number.isInteger(data.revision) || data.revision < 0 || data.revision >= Number.MAX_SAFE_INTEGER) {
+      return fail("revision is not a non-negative integer below MAX_SAFE_INTEGER");
+    }
     const table = data.perPaperTable;
     if (!isObject(table)) return fail("perPaperTable is not an object");
     if (data.schemaVersion === 1) {

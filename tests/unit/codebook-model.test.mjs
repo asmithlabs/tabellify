@@ -697,3 +697,16 @@ test("migrate returns an equal copy for v2 and refuses unknown versions", () => 
   assert.notEqual(m, d);
   assert.throws(() => M.migrate({ ...d, schemaVersion: 3 }));
 });
+
+// SEC-015: revision and nextId must stay below Number.MAX_SAFE_INTEGER, so `+ 1` is exact.
+test("SEC-015: revision and nextId at or above MAX_SAFE_INTEGER are rejected", () => {
+  const MAX = Number.MAX_SAFE_INTEGER;
+  assert.equal(M.validate({ ...sampleV1(), revision: MAX - 1 }).ok, true, "MAX - 1 is still allowed");
+  for (const [field, value] of [["revision", MAX], ["revision", MAX + 1], ["revision", 2 ** 60], ["revision", Infinity],
+    ["nextId", MAX], ["nextId", 2 ** 60]]) {
+    const r = M.validate({ ...sampleV1(), [field]: value });
+    assert.equal(r.ok, false, `${field} = ${value} must be rejected`);
+    assert.match(r.reason, new RegExp(field));
+  }
+  assert.equal(M.validate(v2([], [], MAX)).ok, false, "v2 nextId MAX rejected");
+});

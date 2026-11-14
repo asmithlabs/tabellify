@@ -84,7 +84,11 @@ var TabellifyCodebook = {
   validate(data) {
     const fail = (reason) => ({ ok: false, reason });
     const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-    const isCount = (v, min) => Number.isInteger(v) && v >= min;
+    // SEC-015: counters must stay below Number.MAX_SAFE_INTEGER (2^53 - 1). Above it,
+    // JavaScript numbers can no longer represent every integer, so `revision + 1` or
+    // `nextId + 1` could give the same number again (ids would clash, the revision check
+    // would stop working). Strictly below, so the next +1 is still exact.
+    const isCount = (v, min) => Number.isInteger(v) && v >= min && v < Number.MAX_SAFE_INTEGER;
     const isTrimmedName = (v) => typeof v === "string" && v.trim() !== "" && v.trim() === v;
 
     if (!isObject(data)) return fail("top level is not an object");

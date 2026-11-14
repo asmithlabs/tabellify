@@ -69,6 +69,11 @@ var TabellifySavedTables = {
     return typeof value === "object" && value !== null && !Array.isArray(value);
   },
 
+  /** An integer counter >= min and below Number.MAX_SAFE_INTEGER (SEC-015). */
+  isCounter(value, min) {
+    return Number.isInteger(value) && value >= min && value < Number.MAX_SAFE_INTEGER;
+  },
+
   /** True when `obj` has no own keys other than `allowed` (strict shape check). */
   onlyKeys(obj, allowed) {
     return Object.keys(obj).every((k) => allowed.includes(k));
@@ -148,8 +153,10 @@ var TabellifySavedTables = {
       return { ok: false, newer: true, reason: `schemaVersion ${data.schemaVersion} is newer than ${this.SCHEMA_VERSION}` };
     }
     if (!this.onlyKeys(data, ["schemaVersion", "revision", "nextId", "tables"])) return fail("unknown top-level key");
-    if (!Number.isInteger(data.revision) || data.revision < 0) return fail("revision is not a non-negative integer");
-    if (!Number.isInteger(data.nextId) || data.nextId < 1) return fail("nextId is not a positive integer");
+    // SEC-015: both counters stay below Number.MAX_SAFE_INTEGER so `+ 1` is always exact
+    // (above 2^53 - 1, x + 1 can equal x and IDs or revisions would repeat).
+    if (!this.isCounter(data.revision, 0)) return fail("revision is not a non-negative integer below MAX_SAFE_INTEGER");
+    if (!this.isCounter(data.nextId, 1)) return fail("nextId is not a positive integer below MAX_SAFE_INTEGER");
     if (!Array.isArray(data.tables)) return fail("tables is not an array");
     if (data.tables.length > this.LIMITS.tables) return fail(`more than ${this.LIMITS.tables} tables`);
     const ids = new Set();

@@ -511,3 +511,14 @@ test("AC28: layoutData prunes unknown collections and empty orders, cleans the c
   assert.equal(orders.size, 3);
   assert.deepEqual(orders.get("1/AAAA1111"), ["K1", "K2", "K1"]);
 });
+
+// SEC-015: revision must stay below Number.MAX_SAFE_INTEGER, so the store's `+ 1` is exact.
+test("SEC-015: layout revision at or above MAX_SAFE_INTEGER is rejected", () => {
+  const MAX = Number.MAX_SAFE_INTEGER;
+  assert.deepEqual(plain(L.validateLayout(layout({ revision: MAX - 1 }))), { ok: true });
+  for (const value of [MAX, 2 ** 60]) {
+    const r = L.validateLayout(layout({ revision: value }));
+    assert.equal(r.ok, false, `revision = ${value} must be rejected`);
+    assert.match(r.reason, /revision/);
+  }
+});
