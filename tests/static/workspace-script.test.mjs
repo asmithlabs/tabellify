@@ -63,6 +63,13 @@
 //     new element IDs exist; the "Export CSV" click listener is removed in onUnload, which
 //     also sets `unloaded`; the actions block is hidden with the table; the Zotero
 //     allow-list gains no entry
+// Feature 007a (AC16) adds:
+//   - the "View table" button sits left of "Export CSV"; the modal is an html:dialog at the
+//     end of the page with no method="dialog" form
+//   - VIEW_STRINGS exist, start with tabellify-, are formatted at start-up and are part of
+//     the Fluent list check; the new markup Fluent IDs exist and have no arguments
+//   - the four new listeners are added in init and removed in onUnload; showModal appears
+//     only in workspace.js; the Zotero allow-list gains no entry
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -111,7 +118,7 @@ test("F004: codebook-model.js and codebook-store.js load after include.js, befor
 
 test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
   // 1. The lists workspace.js formats at start-up (F004 codebook, F005 tag monitor).
-  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "LAYOUT_STRINGS", "EXPORT_STRINGS"].flatMap((name) => {
+  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "LAYOUT_STRINGS", "EXPORT_STRINGS", "VIEW_STRINGS"].flatMap((name) => {
     const list = new RegExp(`${name}:\\s*\\[([\\s\\S]*?)\\]`).exec(js)?.[1] ?? "";
     return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   });
@@ -125,7 +132,7 @@ test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   }
   // Every ID shown by text()/showCodebookStatus must have been formatted at start-up.
-  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS, LAYOUT_STRINGS or EXPORT_STRINGS`);
+  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS, LAYOUT_STRINGS, EXPORT_STRINGS or VIEW_STRINGS`);
 });
 
 test("F003: Fluent IDs used in workspace.js exist in tabellify.ftl", () => {
@@ -714,4 +721,69 @@ test("F008 AC17: the Export CSV listener is added in init and removed in onUnloa
   assert.match(unload, /TabellifyWorkspace\.unloaded = true;/);
   // The write is skipped when the page is gone (spec Q13).
   assert.match(js, /shouldWrite: \(\) => !this\.unloaded/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 007a AC16
+// ---------------------------------------------------------------------------------------
+
+test("F007a AC16: View table button left of Export CSV; the modal is an html:dialog with its parts", () => {
+  assert.match(xhtml, /<html:button id="tabellify-view-table" data-l10n-id="tabellify-view-table"\s+aria-haspopup="dialog"><\/html:button>\s*<html:button id="tabellify-export-csv"/);
+  assert.match(xhtml, /<html:dialog id="tabellify-view-dialog" aria-labelledby="tabellify-view-heading">/);
+  assert.ok(xhtml.indexOf("<html:dialog") > xhtml.indexOf('id="tabellify-table-actions"'), "modal after the actions block");
+  assert.ok(xhtml.indexOf("</html:dialog>") < xhtml.indexOf("</html:main>"), "modal inside the page main");
+  assert.doesNotMatch(xhtml, /method="dialog"/);
+  for (const id of ["tabellify-view-heading", "tabellify-view-note", "tabellify-view-name", "tabellify-view-description",
+    "tabellify-view-scroll", "tabellify-view-grid", "tabellify-view-head", "tabellify-view-body", "tabellify-view-export",
+    "tabellify-view-close", "tabellify-view-export-status", "tabellify-view-export-status-text", "tabellify-view-export-status-path"]) {
+    assert.match(xhtml, new RegExp(`\\bid="${id}"`), `#${id} missing`);
+  }
+  assert.match(xhtml, /id="tabellify-view-name" type="text" maxlength="200"/);
+  assert.match(xhtml, /id="tabellify-view-description" rows="3" maxlength="2000"/);
+  assert.match(xhtml, /id="tabellify-view-scroll" role="region" tabindex="0"/);
+  // The status line's three IDs are built from one prefix in showExportStatus.
+  assert.match(js, /target === "view" \? "tabellify-view-export-status" : "tabellify-export-status"/);
+});
+
+test("F007a AC16: VIEW_STRINGS and the modal's Fluent IDs exist, start with tabellify-, have no arguments", () => {
+  const list = /VIEW_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ["tabellify-column-count", "tabellify-view-count-label"]);
+  assert.match(js, /await this\.formatStrings\(this\.VIEW_STRINGS\)/);
+  const ftl = read("locale/en-US/tabellify.ftl");
+  for (const id of [...ids, "tabellify-view-table", "tabellify-view-heading", "tabellify-view-not-saved",
+    "tabellify-view-name-label", "tabellify-view-name-help", "tabellify-view-description-label",
+    "tabellify-view-table-region", "tabellify-view-close"]) {
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+    assert.match(id, /^tabellify-/);
+    const block = new RegExp(`^${id}\\s*=([^\\n]*(?:\\n\\s+[^\\n]*)*)`, "m").exec(ftl)?.[1] ?? "";
+    assert.doesNotMatch(block, /\{/, `${id} has a Fluent argument`);
+  }
+  assert.match(ftl, /^tabellify-view-table-region =\n\s+\.aria-label = /m);
+});
+
+test("F007a AC16: the four listeners are added in init and removed in onUnload; showModal only in workspace.js", () => {
+  const init = /async init\(\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  const unload = /onUnload: \(\) => \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(init, /this\.el\("tabellify-view-table"\)\.addEventListener\("click", this\.onViewTableClick\)/);
+  assert.match(unload, /el\("tabellify-view-table"\)\s*\?\.removeEventListener\("click", TabellifyWorkspace\.onViewTableClick\)/);
+  for (const [type, handler] of [["click", "onViewClick"], ["keydown", "onViewKeydown"], ["close", "onViewClose"]]) {
+    assert.match(init, new RegExp(`viewDialog\\.addEventListener\\("${type}", this\\.${handler}\\)`));
+    assert.match(unload, new RegExp(`viewDialog\\?\\.removeEventListener\\("${type}", TabellifyWorkspace\\.${handler}\\)`));
+  }
+  assert.match(js, /\.showModal\(\)/);
+  for (const file of ["content/codebook-model.js", "content/codebook-store.js", "content/tag-monitor-model.js",
+    "content/table-layout-model.js", "content/layout-store.js", "content/csv-model.js", "content/csv-export.js",
+    "content/regroup-model.js", "content/tag-script-model.js", "content/script-suggest-model.js", "tabellify.js",
+    "bootstrap.js", "reader-tags.js"]) {
+    assert.doesNotMatch(code(file), /showModal/, `showModal in ${file}`);
+  }
+});
+
+test("F007a AC16: the modal CSS uses [open] for its layout and has no ::backdrop rule", () => {
+  const css = read("content/workspace.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(css, /#tabellify-view-dialog\[open\] \{[^}]*display: flex;/);
+  assert.doesNotMatch(css, /#tabellify-view-dialog \{[^}]*display:/, "display only under [open]");
+  assert.doesNotMatch(css, /::backdrop/);
+  assert.doesNotMatch(css, /\bCanvas(?:Text)?\b/);
 });

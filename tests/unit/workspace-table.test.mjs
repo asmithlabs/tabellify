@@ -139,7 +139,24 @@ class FakeElement {
     for (let node = this; node; node = node.parentNode) if (matches(node, selector)) return node;
     return null;
   }
-  focus() { this.focused = true; activeElement = this; }
+  focus() { this.focused = true; this.focusCalls = (this.focusCalls ?? 0) + 1; activeElement = this; }
+  // F007a: text fields (select all) and the <dialog> (showModal / close / open, and the
+  // "close" event, which the fake fires at once; a real browser fires it a moment later).
+  select() { this.selectCalls = (this.selectCalls ?? 0) + 1; }
+  get open() { return this.attrs.has("open"); }
+  showModal() { this.showModalCalls = (this.showModalCalls ?? 0) + 1; this.attrs.set("open", ""); }
+  close() {
+    this.closeCalls = (this.closeCalls ?? 0) + 1;
+    if (!this.attrs.has("open")) return;
+    this.attrs.delete("open");
+    for (const fn of this.listeners?.get("close") ?? []) fn({ type: "close", target: this });
+  }
+  addEventListener(type, fn) {
+    this.listeners ??= new Map();
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(fn);
+  }
+  removeEventListener(type, fn) { this.listeners?.get(type)?.delete(fn); }
   // F006c: table cells and rows. cellIndex = position in the row; cells = the row's cells.
   get cellIndex() { return this.parentNode ? this.parentNode.children.indexOf(this) : -1; }
   get cells() { return this.children.filter((c) => c.localName === "td" || c.localName === "th"); }
@@ -2036,5 +2053,231 @@ test("007a AC12: markup in titles, tags and group names stays text; never \"null
     for (const value of [el.text, ...el.attrs.values()]) {
       assert.ok(!/\bnull\b|\bundefined\b/.test(value), `"${value}" on ${el.localName}`);
     }
+  }
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 007a AC13 / AC14: the "View table" modal with a fake <dialog>
+// ---------------------------------------------------------------------------------------
+
+const VIEW_STRINGS_TEXTS = {
+  "tabellify-column-title": "Title",
+  "tabellify-column-count": "k/M",
+  "tabellify-view-count-label": "Codebook tags used on the paper (k of M)",
+};
+
+/** setupExport() plus the view's strings; the dialog's "close" event wired as init() does. */
+function modalSetup(io = fakeExportIo(), options) {
+  const env = setupExport(io, options);
+  Object.assign(env.W.strings, VIEW_STRINGS_TEXTS);
+  const d = (id) => env.document.getElementById(id);
+  d("tabellify-view-dialog").addEventListener("close", env.W.onViewClose);
+  // Real buttons start enabled.
+  for (const id of ["tabellify-view-export", "tabellify-view-close", "tabellify-view-table", "tabellify-export-csv"]) {
+    d(id).localName = "button"; // the fake makes unknown IDs <div>s; the click handler looks for a button
+    d(id).id = id;
+    d(id).disabled = false;
+  }
+  return { ...env, d, io };
+}
+
+const key = (k, extra = {}) => ({ key: k, shiftKey: false, isComposing: false, prevented: false, preventDefault() { this.prevented = true; }, ...extra });
+const click = (target) => ({ target });
+
+test("007a AC13: a click opens the modal once; Name = collection name (focused, selected), Description empty", () => {
+  const { W, d, debug } = modalSetup();
+  W.onViewTableClick();
+  const dialog = d("tabellify-view-dialog");
+  assert.equal(dialog.open, true);
+  assert.equal(dialog.showModalCalls, 1);
+  W.onViewTableClick(); // already open: nothing
+  assert.equal(dialog.showModalCalls, 1);
+  assert.equal(d("tabellify-view-name").value, "F005 test");
+  assert.equal(d("tabellify-view-description").value, "");
+  assert.equal(d("tabellify-view-name").focused, true);
+  assert.equal(d("tabellify-view-name").selectCalls, 1);
+  // The copy is in the modal's table; the modal's status line is hidden.
+  assert.equal(d("tabellify-view-body").children.length, 3);
+  assert.equal(d("tabellify-view-head").children.length, 2);
+  assert.equal(d("tabellify-view-export-status").hidden, true);
+  assert.ok(debug.some((m) => /view: opened: 3 paper\(s\), 3 tag column\(s\), 2 header row\(s\)$/.test(m)), debug.join("\n"));
+});
+
+test("007a AC13: no table → the click does nothing", () => {
+  const { W, d } = modalSetup();
+  W.setTableHidden(true);
+  W.onViewTableClick();
+  assert.equal(d("tabellify-view-dialog").showModalCalls, undefined);
+});
+
+test("007a AC13: values are remembered per collection key; unchanged values are not; another key gets defaults", () => {
+  const { W, d } = modalSetup();
+  // Unchanged: nothing remembered.
+  W.onViewTableClick();
+  W.closeView();
+  assert.equal(W.viewDrafts.size, 0);
+  // Typed values come back after closing and reopening.
+  W.onViewTableClick();
+  d("tabellify-view-name").value = "Heat and hospitalization";
+  d("tabellify-view-description").value = "Short note";
+  W.onViewClick(click(d("tabellify-view-close")));
+  assert.equal(d("tabellify-view-dialog").open, false);
+  d("tabellify-view-name").value = "";
+  d("tabellify-view-description").value = "";
+  W.onViewTableClick();
+  assert.equal(d("tabellify-view-name").value, "Heat and hospitalization");
+  assert.equal(d("tabellify-view-description").value, "Short note");
+  W.closeView();
+  // Another collection (other key, other name): defaults.
+  W.monitorData.collections = [{ id: 2, parentID: false, name: "Other" }];
+  W.monitorData.rootId = 2;
+  W.collectionKeys = new Map([[1, "1/COLL0001"], [2, "1/COLL0002"]]);
+  W.currentCollection = "2";
+  W.onViewTableClick();
+  assert.equal(d("tabellify-view-name").value, "Other");
+  assert.equal(d("tabellify-view-description").value, "");
+  W.closeView();
+  assert.deepEqual([...W.viewDrafts.keys()], ["1/COLL0001"]);
+});
+
+test("007a AC13: Close and Escape close the modal; Escape while composing does not; focus returns to View table", () => {
+  const { W, d, debug } = modalSetup();
+  const dialog = d("tabellify-view-dialog");
+  W.onViewTableClick();
+  const composing = key("Escape", { isComposing: true });
+  W.onViewKeydown(composing);
+  assert.equal(dialog.open, true);
+  assert.equal(composing.prevented, false);
+  const esc = key("Escape");
+  W.onViewKeydown(esc);
+  assert.equal(dialog.open, false);
+  assert.equal(esc.prevented, true);
+  assert.equal(d("tabellify-view-table").focused, true);
+  assert.ok(debug.includes("Tabellify: workspace: view: closed"));
+  d("tabellify-view-table").focused = false;
+  W.onViewTableClick();
+  W.onViewClick(click(d("tabellify-view-close")));
+  assert.equal(dialog.open, false);
+  assert.equal(d("tabellify-view-table").focused, true);
+});
+
+test("007a AC13: Tab wraps from the last enabled control to Name, Shift+Tab from Name to the last", () => {
+  const { W, d } = modalSetup();
+  W.onViewTableClick();
+  // Tab on Close → Name.
+  d("tabellify-view-close").focus();
+  const tab = key("Tab");
+  W.onViewKeydown(tab);
+  assert.equal(tab.prevented, true);
+  assert.equal(d("tabellify-view-name").focusCalls, 2); // once on open, once now
+  // Shift+Tab on Name → Close.
+  const back = key("Tab", { shiftKey: true });
+  W.onViewKeydown(back);
+  assert.equal(back.prevented, true);
+  assert.equal(d("tabellify-view-close").focusCalls, 2);
+  // Tab in the middle is left to the browser.
+  d("tabellify-view-description").focus();
+  const middle = key("Tab");
+  W.onViewKeydown(middle);
+  assert.equal(middle.prevented, false);
+  // A disabled Close (hypothetical) makes Export the last control; a disabled Export is skipped.
+  d("tabellify-view-close").disabled = true;
+  d("tabellify-view-export").focus();
+  const tab2 = key("Tab");
+  W.onViewKeydown(tab2);
+  assert.equal(tab2.prevented, true);
+  d("tabellify-view-close").disabled = false;
+  d("tabellify-view-export").disabled = true;
+  d("tabellify-view-name").focus();
+  const back2 = key("Tab", { shiftKey: true });
+  W.onViewKeydown(back2);
+  assert.equal(back2.prevented, true);
+  assert.equal(activeElementOf(d), d("tabellify-view-close"));
+});
+const activeElementOf = () => activeElement;
+
+test("007a AC13: setTableHidden(true) while open closes the modal; renderPaperTable while open re-renders the copy", () => {
+  const { W, T, d } = modalSetup();
+  W.onViewTableClick();
+  const titles = () => d("tabellify-view-body").children.map((tr) => tr.children[0].textContent);
+  const pageTitles = () => d("tabellify-items-body").children.map((tr) => tr.children[1].textContent);
+  const before = titles();
+  assert.deepEqual(before, pageTitles());
+  // A sort on the page while the modal is open: the copy follows the new order.
+  W.sortKey = T.tagSortKey("Temperature");
+  W.sortDirection = "desc";
+  W.renderMonitor();
+  assert.deepEqual(titles(), pageTitles());
+  assert.notDeepEqual(titles(), before, "the sort changed the order");
+  // A live update that finds no papers hides the table and closes the modal.
+  W.monitorData = { ...monitorData(), papers: [] };
+  W.renderMonitor();
+  assert.equal(d("tabellify-view-dialog").open, false);
+  // Focus goes to the dropdown, because "View table" is gone.
+  assert.equal(d("tabellify-collection-select").focused, true);
+});
+
+test("007a AC14: the modal's Export uses the trimmed Name; blank Name uses the collection name", async () => {
+  const io = fakeExportIo({ picked: null });
+  const { W, d } = modalSetup(io);
+  W.onViewTableClick();
+  d("tabellify-view-name").value = "  Heat study: draft/1  ";
+  await W.onViewClick(click(d("tabellify-view-export")));
+  assert.match(io.picks[0].defaultName, /^Heat study draft1 \d{4}-\d{2}-\d{2}\.csv$/);
+  d("tabellify-view-name").value = "   ";
+  await W.onViewClick(click(d("tabellify-view-export")));
+  assert.match(io.picks[1].defaultName, /^F005 test \d{4}-\d{2}-\d{2}\.csv$/);
+  // The typed Name was remembered before the export.
+  assert.equal(W.viewDrafts.get("1/COLL0001").name, "   ");
+});
+
+test("007a AC14: both export buttons are disabled during the export; the result shows in the modal only", async () => {
+  let during = null;
+  let d = null;
+  const io = fakeExportIo({ onPick: () => { during = [d("tabellify-export-csv").disabled, d("tabellify-view-export").disabled]; } });
+  const env = modalSetup(io);
+  d = env.d;
+  const { W, document } = env;
+  W.showExportStatus("tabellify-export-saved", "/old/page.csv"); // the page's line must stay
+  W.onViewTableClick();
+  const result = await W.onViewClick(click(d("tabellify-view-export")));
+  assert.equal(result.status, "saved");
+  assert.deepEqual(during, [true, true]);
+  assert.equal(d("tabellify-export-csv").disabled, false);
+  assert.equal(d("tabellify-view-export").disabled, false);
+  assert.equal(d("tabellify-view-export-status").hidden, false);
+  assert.equal(d("tabellify-view-export-status-text").textContent, "CSV saved:");
+  assert.equal(d("tabellify-view-export-status-path").textContent, EXPORT_PATH);
+  assert.equal(status(document).path, "/old/page.csv", "page line untouched");
+  // The same file content as a page export.
+  await W.onExportClick();
+  assert.equal(io.writes[0].text, io.writes[1].text);
+});
+
+test("007a AC14: the modal closed while the save dialog is open → the result shows on the page", async () => {
+  let env = null;
+  const io = fakeExportIo({ onPick: () => env.W.closeView() });
+  env = modalSetup(io);
+  const { W, d, document } = env;
+  W.onViewTableClick();
+  await W.onViewClick(click(d("tabellify-view-export")));
+  assert.equal(d("tabellify-view-export-status").hidden, true);
+  assert.equal(status(document).hidden, false);
+  assert.equal(status(document).text, "CSV saved:");
+});
+
+test("007a AC14: no Debug Output line holds the Name, Description, a title, tag, group, collection name or path", async () => {
+  const secrets = ["Paper 1", "Paper 2", "Paper 3", "Heat index", "Temperature", "Mortality", "Exposure", "Outcome",
+    "F005 test", EXPORT_PATH, "secret-folder", "tester", "Private name", "Private description"];
+  for (const io of [fakeExportIo(), fakeExportIo({ picked: null }),
+    fakeExportIo({ writeError: Object.assign(new Error(`failed at ${EXPORT_PATH}`), { name: "NotAllowedError" }) })]) {
+    const { W, d, debug } = modalSetup(io);
+    W.onViewTableClick();
+    d("tabellify-view-name").value = "Private name";
+    d("tabellify-view-description").value = "Private description";
+    await W.onViewClick(click(d("tabellify-view-export")));
+    W.closeView();
+    assert.ok(debug.includes("Tabellify: workspace: export: started from View table"));
+    for (const line of debug) for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
   }
 });

@@ -214,6 +214,24 @@ tabellify-export-file-fallback = Tabellify table
 tabellify-csv-header-k = Tags used (k)
 tabellify-csv-header-m = Codebook tags (M)
 
+## Feature 007a: "View table" modal. The button, heading, note, labels, help line, Close
+## and the table area's screen-reader name are set in workspace.xhtml with data-l10n-id.
+## `tabellify-view-table-region` only sets `.aria-label` (read when the scrolling table
+## area gets keyboard focus). `tabellify-view-count-label` is read from JavaScript with
+## document.l10n.formatValue() (no arguments): the tooltip and screen-reader name of the
+## k/M header in the modal's table. "Export CSV" reuses `tabellify-export-csv`.
+
+tabellify-view-table = View table
+tabellify-view-heading = View table
+tabellify-view-not-saved = Name and description are kept only while this tab is open. They are not saved yet.
+tabellify-view-name-label = Name
+tabellify-view-name-help = Used as the name of the exported CSV file.
+tabellify-view-description-label = Description
+tabellify-view-table-region =
+    .aria-label = Table preview
+tabellify-view-close = Close
+tabellify-view-count-label = Codebook tags used on the paper (k of M)
+
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
 ## messages use attributes: `.label` (header text) and `.tooltiptext` (icon tooltip), like
