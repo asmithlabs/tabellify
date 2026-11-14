@@ -11,9 +11,12 @@
 #   Alternatives considered: none practical for checkout (a manual `git clone` would need
 #          token handling we'd rather not write). For Node, relying on the Node that comes
 #          preinstalled on the runner image is not guaranteed to be >=22.2.
-#   Pinning: major version tags (@v7), the owner's choice. A major tag gets bug and
-#          security fixes automatically but no breaking changes. (Pinning to a commit SHA
-#          is stricter but needs manual updates.)
+#   Pinning: full commit SHAs (SEC-005, owner-approved pre-release fix), with the release
+#          tag in a comment. A tag like @v7 can be moved by whoever controls the action's
+#          repository; a commit SHA cannot, so CI always runs exactly the code reviewed.
+#          Updating means looking up the new release's commit SHA by hand, e.g.
+#          `gh api repos/actions/checkout/git/ref/tags/v7.0.1` (if the ref is an annotated
+#          tag, follow it with `gh api repos/actions/checkout/git/tags/<sha>` to the commit).
 #
 # Concepts for newcomers:
 #   - A *workflow* is this YAML file: GitHub runs it when one of its triggers (`on:`) fires.
@@ -42,13 +45,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Don't leave the GITHUB_TOKEN in .git/config; later steps never need git auth.
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # "22" means the latest 22.x release, which satisfies engines ">=22.2".
           # No `cache:` option: npm caching needs a lockfile, and we have no dependencies.
