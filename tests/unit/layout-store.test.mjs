@@ -1,4 +1,4 @@
-// Feature 005c T6 (ADR-0014): layout store (src/content/layout-store.js) with a fake file
+// Feature 005c T6 (ADR-0014) and 006c Amendment 2 AC28 (ADR-0019, schema 3): layout store (src/content/layout-store.js) with a fake file
 // system, like tests/unit/codebook-store.test.mjs.
 //
 // The store takes its file functions as a parameter (`fs`), so Node can test it without
@@ -65,11 +65,24 @@ function fakeFs(initial = {}, opts = {}) {
 
 function sample(revision = 3) {
   return {
+    schemaVersion: 3,
+    revision,
+    perPaperTable: {
+      topOrder: [{ group: "g3" }, { tag: "age" }, { group: "ungrouped" }, { group: "g2" }],
+      tagOrder: { g2: ["Temperature", "Heat index"] },
+      manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] },
+    },
+  };
+}
+
+/** A schema 2 file (groupOrder + tagOrder), as written before ADR-0019. */
+function sampleV2(revision = 3) {
+  return {
     schemaVersion: 2,
     revision,
     perPaperTable: {
-      groupOrder: ["g3", "g2"],
-      tagOrder: { g2: ["Temperature", "Heat index"] },
+      groupOrder: ["g3", "ungrouped", "g2"],
+      tagOrder: { g2: ["Temperature", "Heat index"], ungrouped: ["age"] },
       manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] },
     },
   };
@@ -87,7 +100,7 @@ function sampleV1(revision = 3) {
   };
 }
 
-const table = (manualOrders = {}, groupOrder = [], tagOrder = {}) => ({ groupOrder, tagOrder, manualOrders });
+const table = (manualOrders = {}, topOrder = [], tagOrder = {}) => ({ topOrder, tagOrder, manualOrders });
 
 // ---------------------------------------------------------------------------------------
 // load
@@ -111,34 +124,75 @@ test("T6: valid file → its cleaned data, existed true, nothing written", async
   const r = await Store.load(fs, DIR);
   assert.equal(r.status, "ok");
   assert.equal(r.existed, true);
-  assert.equal(r.fromVersion, 2);
+  assert.equal(r.fromVersion, 3);
   assert.deepEqual(plain(r.data), sample());
   assert.deepEqual(fs.writes(), []);
 });
 
-test("schema 1 file → migrated in memory to 2 (old columns dropped, manual orders kept), nothing written", async () => {
+test("schema 1 file → migrated in memory to 3 (old columns dropped, manual orders kept), nothing written", async () => {
   const text = JSON.stringify(sampleV1(4));
   const fs = fakeFs({ [FILE]: text });
   const r = await Store.load(fs, DIR);
   assert.equal(r.status, "ok");
   assert.equal(r.fromVersion, 1);
   assert.deepEqual(plain(r.data), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 4,
-    perPaperTable: { groupOrder: [], tagOrder: {}, manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] } },
+    perPaperTable: { topOrder: [], tagOrder: {}, manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] } },
   });
   assert.deepEqual(fs.writes(), []);
   assert.equal(fs.files.get(FILE), text, "the file stays version 1 until the next save");
 });
 
-test("a save over a schema 1 file writes schema 2 and keeps the version 1 file as .bak", async () => {
-  const fs = fakeFs({ [FILE]: JSON.stringify(sampleV1(4)) });
-  const r = await Store.saveData(fs, DIR, table({ "1/ABCD2345": ["JKLM2345", "EFGH6789"] }, ["g2"]), 4);
+test("AC28: schema 2 file → migrated in memory to 3 (same order), nothing written", async () => {
+  const text = JSON.stringify(sampleV2(4));
+  const fs = fakeFs({ [FILE]: text });
+  const r = await Store.load(fs, DIR);
+  assert.equal(r.status, "ok");
+  assert.equal(r.fromVersion, 2);
+  assert.deepEqual(plain(r.data), {
+    schemaVersion: 3,
+    revision: 4,
+    perPaperTable: {
+      topOrder: [{ group: "g3" }, { tag: "age" }, { group: "ungrouped" }, { group: "g2" }],
+      tagOrder: { g2: ["Temperature", "Heat index"] },
+      manualOrders: { "1/ABCD2345": ["EFGH6789", "JKLM2345"] },
+    },
+  });
+  assert.deepEqual(fs.writes(), []);
+  assert.equal(fs.files.get(FILE), text, "the file stays version 2 until the next save");
+});
+
+test("AC28: a save over a schema 2 file with the same revision writes schema 3 and keeps version 2 as .bak", async () => {
+  const fs = fakeFs({ [FILE]: JSON.stringify(sampleV2(4)) });
+  const r = await Store.saveData(fs, DIR, table({}, [{ tag: "age" }, { group: "g2" }]), 4);
   assert.equal(r.status, "saved");
   assert.deepEqual(JSON.parse(fs.files.get(FILE)), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 5,
-    perPaperTable: { groupOrder: ["g2"], tagOrder: {}, manualOrders: { "1/ABCD2345": ["JKLM2345", "EFGH6789"] } },
+    perPaperTable: { topOrder: [{ tag: "age" }, { group: "g2" }], tagOrder: {}, manualOrders: {} },
+  });
+  assert.deepEqual(JSON.parse(fs.files.get(`${FILE}.bak`)), sampleV2(4));
+});
+
+test("AC28: a schema 4 file is never overwritten (load: newer; save: conflict)", async () => {
+  const text = JSON.stringify({ ...sample(4), schemaVersion: 4 });
+  const fs = fakeFs({ [FILE]: text });
+  assert.equal((await Store.load(fs, DIR)).status, "newer");
+  const r = await Store.saveData(fs, DIR, table(), 4);
+  assert.equal(r.status, "conflict");
+  assert.deepEqual(fs.writes(), []);
+  assert.equal(fs.files.get(FILE), text);
+});
+
+test("a save over a schema 1 file writes schema 3 and keeps the version 1 file as .bak", async () => {
+  const fs = fakeFs({ [FILE]: JSON.stringify(sampleV1(4)) });
+  const r = await Store.saveData(fs, DIR, table({ "1/ABCD2345": ["JKLM2345", "EFGH6789"] }, [{ group: "g2" }]), 4);
+  assert.equal(r.status, "saved");
+  assert.deepEqual(JSON.parse(fs.files.get(FILE)), {
+    schemaVersion: 3,
+    revision: 5,
+    perPaperTable: { topOrder: [{ group: "g2" }], tagOrder: {}, manualOrders: { "1/ABCD2345": ["JKLM2345", "EFGH6789"] } },
   });
   assert.deepEqual(JSON.parse(fs.files.get(`${FILE}.bak`)), sampleV1(4));
 });
@@ -156,7 +210,7 @@ test("T6: corrupt file → invalid, nothing written, file unchanged", async () =
 test("T6: JSON that fails the frame check → invalid; newer schema → newer; read error → invalid", async () => {
   let fs = fakeFs({ [FILE]: JSON.stringify({ revision: 1 }) });
   assert.equal((await Store.load(fs, DIR)).status, "invalid");
-  fs = fakeFs({ [FILE]: JSON.stringify({ ...sample(), schemaVersion: 3 }) });
+  fs = fakeFs({ [FILE]: JSON.stringify({ ...sample(), schemaVersion: 4 }) });
   assert.equal((await Store.load(fs, DIR)).status, "newer");
   fs = fakeFs({}, { failRead: true });
   const r = await Store.load(fs, DIR);
@@ -177,16 +231,16 @@ test("T6: first save creates the folder, then writes atomically with .tmp and .b
   assert.deepEqual(fs.writes().map((c) => c[0]), ["makeDirectory", "writeJSON"]);
   assert.deepEqual(plain(fs.writes()[1][2]), { tmpPath: `${FILE}.tmp`, backupFile: `${FILE}.bak` });
   assert.deepEqual(JSON.parse(fs.files.get(FILE)), {
-    schemaVersion: 2, revision: 1, perPaperTable: { groupOrder: [], tagOrder: {}, manualOrders: { "1/AAAA1111": ["K1"] } },
+    schemaVersion: 3, revision: 1, perPaperTable: { topOrder: [], tagOrder: {}, manualOrders: { "1/AAAA1111": ["K1"] } },
   });
 });
 
 test("T6: a later save bumps the revision and keeps the previous file as .bak", async () => {
   const fs = fakeFs({ [FILE]: JSON.stringify(sample(3)) });
-  const r = await Store.saveData(fs, DIR, table({}, ["g5", "g5"], { g5: ["Cohort", "RCT"] }), 3);
+  const r = await Store.saveData(fs, DIR, table({}, [{ group: "g5" }, { group: "g5" }], { g5: ["Cohort", "RCT"] }), 3);
   assert.equal(r.status, "saved");
   assert.equal(r.data.revision, 4);
-  assert.deepEqual(plain(r.data.perPaperTable.groupOrder), ["g5"]);
+  assert.deepEqual(plain(r.data.perPaperTable.topOrder), [{ group: "g5" }]);
   assert.deepEqual(plain(r.data.perPaperTable.tagOrder), { g5: ["Cohort", "RCT"] });
   assert.deepEqual(JSON.parse(fs.files.get(`${FILE}.bak`)), sample(3));
   assert.equal(JSON.parse(fs.files.get(FILE)).revision, 4);
@@ -219,7 +273,7 @@ test("T6: a broken file on disk is never overwritten (conflict, nothing written)
 
 test("T6: invalid data to save → error, nothing written", async () => {
   const fs = fakeFs();
-  const r = await Store.saveData(fs, DIR, { groupOrder: "g2", tagOrder: {}, manualOrders: {} }, 0);
+  const r = await Store.saveData(fs, DIR, { topOrder: "g2", tagOrder: {}, manualOrders: {} }, 0);
   assert.equal(r.status, "error");
   assert.deepEqual(fs.writes(), []);
 });

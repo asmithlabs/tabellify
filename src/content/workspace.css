@@ -440,6 +440,12 @@
   margin-block: var(--tabellify-space-3);
 }
 
+/* Feature 006c: what the drop of a dragged tag column will do (plain text). */
+#tabellify-drop-hint {
+  color: var(--tabellify-color-text-muted);
+  font-style: italic;
+}
+
 /* "Manual order" while the manual order is shown (aria-pressed is set by workspace.js):
    bold text and an outline, so the pressed state is not colour alone. */
 #tabellify-table-toolbar button[aria-pressed="true"] {
@@ -495,8 +501,8 @@
   font-weight: bold;
 }
 
-/* F006a: the blank group header over the tags without a group. It shows only its grip
-   (its name "Ungrouped tags" is for screen readers), so it stays visually quiet. */
+/* F006c Amendment 2: the "Ungrouped" super-header over each run of tags without a group.
+   Muted text, so it stays visually quiet next to the real group names; it has no grip. */
 .tabellify-grid thead th.tabellify-col-group-ungrouped {
   color: var(--tabellify-color-text-muted);
 }
@@ -657,6 +663,34 @@
 }
 
 .tabellify-grid tr.tabellify-drop-after > td {
+  box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
+}
+
+/* Feature 006c: marks for regrouping a dragged tag column. They differ by SHAPE (and the
+   toolbar hint names the action), so their meaning never depends on colour alone.
+   Amendment 2: the marks follow the EDGE of the cell the pointer is in.
+   - Joining a group: a line under that group's name. */
+.tabellify-grid th.tabellify-drop-into {
+  box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
+}
+
+/* - Nesting below an ungrouped tag (its bottom edge, or its cells): lines on both sides of
+     that tag's cells. Two inset shadows, one per side. */
+.tabellify-grid .tabellify-drop-nest {
+  box-shadow:
+    inset var(--tabellify-border-width-strong) 0 0 var(--tabellify-color-action),
+    inset calc(-1 * var(--tabellify-border-width-strong)) 0 0 var(--tabellify-color-action);
+}
+
+/* - Top edge of an ungrouped tag (the dragged tag becomes a group name above it): a line
+     along the top of its header. */
+.tabellify-grid th.tabellify-drop-above {
+  box-shadow: inset 0 var(--tabellify-border-width-strong) 0 var(--tabellify-color-action);
+}
+
+/* - Bottom edge of an ungrouped tag (it becomes a group name, the dragged tag goes under
+     it): a line along the bottom of its header. */
+.tabellify-grid th.tabellify-drop-below {
   box-shadow: inset 0 calc(-1 * var(--tabellify-border-width-strong)) 0 var(--tabellify-color-action);
 }
 

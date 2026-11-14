@@ -316,6 +316,67 @@ var TabellifyCodebook = {
   },
 
   /**
+   * Put `tag` under `anchor` (Feature 006c: a tag column dropped below another tag column,
+   * ADR-0016 §7, amended by the owner on 2026-11-13). Both must already be in the codebook.
+   * - `anchor` in group G: `tag` joins G (as setTagGroup; `created: false`). `anchor` stays.
+   * - `anchor` ungrouped: `anchor` becomes ONLY a group name (owner's smoke-test choice: not
+   *   a super-header and a column at once). The group named like `anchor` (ignoring case;
+   *   its stored spelling wins) is used, or a new one named exactly `anchor` is created
+   *   (`created: true`, id from nextId). The TAG `anchor` is removed from the codebook (only
+   *   the codebook: nothing in Zotero changes), and `tag` moves into the group (end of list).
+   * Refused (ERR_TAG_MISSING) when either tag is unknown or `tag === anchor`.
+   * @param {CodebookData} data
+   * @param {string} tag     The dragged tag
+   * @param {string} anchor  The tag it was dropped below
+   * @returns {{ ok: true, data: CodebookData, groupId: string, created: boolean, anchorRemoved: boolean }
+   *   | { ok: false, error: string }}
+   */
+  groupUnderTag(data, tag, anchor) {
+    const record = this.findTag(data, tag);
+    const anchorRecord = this.findTag(data, anchor);
+    if (!record || !anchorRecord || tag === anchor) return this.refuse(this.ERR_TAG_MISSING);
+    if (anchorRecord.group !== null) {
+      const result = this.setTagGroup(data, tag, anchorRecord.group);
+      if (!result.ok) return result;
+      return { ok: true, data: result.data, groupId: anchorRecord.group, created: false, anchorRemoved: false };
+    }
+    const result = this.tagToGroupName(data, anchor, tag);
+    if (!result.ok) return result;
+    return { ...result, anchorRemoved: true };
+  },
+
+  /**
+   * Turn the TAG `nameTag` into a group NAME and put `childTag` in that group (Feature 006c
+   * Amendment 2: the bottom nest calls it with the target tag as the name, the flipped
+   * "top edge" drop with the dragged tag as the name). Both must already be in the codebook.
+   * - The group named like `nameTag` (ignoring case; its stored spelling wins) is reused,
+   *   even if it is `nameTag`'s own group; otherwise a new group named exactly `nameTag` is
+   *   created (id from nextId, `created: true`).
+   * - The tag `nameTag` is removed from the codebook, wherever it was (grouped or not). Only
+   *   the codebook changes: the Zotero tag and its uses stay.
+   * - `childTag` moves into the group (end of the tag list) unless it is already there.
+   * Refused (ERR_TAG_MISSING) when either tag is unknown or they are the same tag.
+   * Returns a new data object; the input is never changed.
+   * @param {CodebookData} data
+   * @param {string} nameTag   The tag that becomes the group's name
+   * @param {string} childTag  The tag that goes into the group
+   * @returns {{ ok: true, data: CodebookData, groupId: string, created: boolean }
+   *   | { ok: false, error: string }}
+   */
+  tagToGroupName(data, nameTag, childTag) {
+    if (!this.findTag(data, nameTag) || !this.findTag(data, childTag) || nameTag === childTag) {
+      return this.refuse(this.ERR_TAG_MISSING);
+    }
+    const next = this.clone(data);
+    const lower = nameTag.toLowerCase();
+    const existing = next.codebooks[0].groups.find((g) => g.name.toLowerCase() === lower);
+    const groupId = existing ? existing.id : this.pushGroup(next, nameTag);
+    next.codebooks[0].tags = next.codebooks[0].tags.filter((t) => t.name !== nameTag);
+    if (this.findTag(next, childTag).group !== groupId) this.moveTagRecord(next, childTag, groupId);
+    return { ok: true, data: next, groupId, created: !existing };
+  },
+
+  /**
    * Apply one tag-script entry (Feature 006a), all or nothing. `items` is what
    * TabellifyTagScript.parse() returns: `{ kind: "tag", name }` or
    * `{ kind: "group", name, tags: string[] }`, in the order typed.

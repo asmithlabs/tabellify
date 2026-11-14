@@ -63,8 +63,18 @@ per-paper table (column widths per `<col>`, the two sticky header rows) stay on
 - numbers right-aligned with tabular figures; `td.tabellify-count-complete` in
   `status-positive` with a "✓"
 - group start lines (`.tabellify-group-start`), grips, `.tabellify-dragging`, drop lines
-- the blank group header of tags without a group (`th.tabellify-col-group-ungrouped`,
-  Feature 006a): no text, only its grip; its name is for screen readers
+- regroup drop marks while a tag column is dragged (Feature 006c, Amendment 2: the edge of
+  the cell under the pointer decides), all in `action` and told apart by shape:
+  `th.tabellify-drop-into` (a 2px line under the name of the group joined),
+  `th.tabellify-drop-above` / `th.tabellify-drop-below` (a 2px line along the top / bottom of
+  the header of the tag that becomes a group name), `.tabellify-drop-nest` (2px lines on both
+  sides of that tag's cells), and the drop lines `tabellify-drop-before` / `-after` (on a
+  group's or run's super-header and its first / last tag header together for "beside the
+  group"); the toolbar's `#tabellify-drop-hint` names the action in `text-muted` italics.
+  The dashed `tabellify-drop-ungroup` outline is retired (no zone ungroups a whole row)
+- the "Ungrouped" super-header over each run of tags without a group
+  (`th.tabellify-col-group-ungrouped`, `data-run`, Feature 006c Amendment 2): the text
+  "Ungrouped" in `text-muted`, no grip
 
 ## 5a. Workspace page components (Features 006a, 006b)
 The per-group summary cards and the Remaining/Used chip lists of Feature 005/005d were
