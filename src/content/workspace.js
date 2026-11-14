@@ -47,6 +47,11 @@
  *   Alt+Down on its grip do the same. Each such regroup is a normal codebook edit (same
  *   save as the script box); what a drop does is pure logic in regroup-model.js
  *   (TabellifyRegroup). Reordering stays in layout.json.
+ * - F008: "Export CSV" under the table saves exactly what the table shows (same columns,
+ *   same papers, same order) as a CSV file where the user chooses. The text is built by
+ *   csv-model.js (TabellifyCsv, pure); the save dialog and the one file write are in
+ *   csv-export.js (TabellifyCsvExport, ADR-0017). This file never touches the file system
+ *   for an export, and nothing in the library changes.
  *
  * THE LIBRARY IS READ-ONLY. Every Zotero call here only reads (see the "Read-only
  * guarantee" row in docs/zotero-api-notes.md). Nothing is saved, changed or deleted in the
@@ -70,6 +75,8 @@
  * F005c adds at most one pending layout-save timer of this window (cleared in onUnload).
  * F006b adds three delegated listeners on the codebook section (focusin, focusout,
  * mousedown), removed in onUnload; no observer, timer or pref.
+ * F008 adds one click listener on "Export CSV", removed in onUnload, which also sets
+ * `unloaded` so an export whose save dialog is still open writes nothing.
  * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
  * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
@@ -220,6 +227,8 @@ var TabellifyWorkspace = {
     table.addEventListener("dragend", this.onTableDragEnd);
     table.addEventListener("keydown", this.onTableKeydown);
     this.el("tabellify-table-toolbar").addEventListener("click", this.onToolbarClick);
+    // F008: "Export CSV" under the table (removed in onUnload).
+    this.el("tabellify-export-csv").addEventListener("click", this.onExportClick);
     this.columnLayout = TabellifyTableLayout.emptyColumnLayout();
     // Owner decision 2026-11-13: the "count item tags" checkbox (removed in onUnload).
     const countBox = this.el("tabellify-monitor-count-item-tags");
@@ -235,6 +244,8 @@ var TabellifyWorkspace = {
       this.untitledText = (await document.l10n?.formatValue("tabellify-untitled")) ?? "";
       // F005: the tag monitor's texts, formatted once (see MONITOR_STRINGS).
       await this.formatStrings(this.MONITOR_STRINGS);
+      // F008: the export's texts (dialog, status line, CSV headers), formatted once.
+      await this.formatStrings(this.EXPORT_STRINGS);
       // F005c: the saved layout (and its strings) must be ready before the first table is
       // shown. initLayout never throws (it has its own try/catch).
       await this.layoutLoading;
@@ -613,6 +624,9 @@ var TabellifyWorkspace = {
 
     const shown = this.displayedPapers(result.papers);
     this.displayedPaperIds = shown.map((p) => p.id);
+    // F008: what the table shows, kept for "Export CSV" (it never re-sorts or re-reads).
+    this.tableRows = shown;
+    this.tableCounting = counting;
     // F005c: shade every other paper row (pure rule in TabellifyTableLayout.stripeFlags).
     const stripes = TabellifyTableLayout.stripeFlags(shown.map(() => "paper"));
     const usedText = this.text("tabellify-table-tag-used");
@@ -744,6 +758,12 @@ var TabellifyWorkspace = {
    */
   tableGroups: [],
 
+  /** F008: the papers in the order the table shows them (renderPaperTable), for the export. */
+  tableRows: [],
+
+  /** F008: false when the k/M cells show "–" (no codebook or no tags), for the export. */
+  tableCounting: false,
+
   /** What the header was last built from; the header is rebuilt only when it changes. */
   headerSignature: null,
 
@@ -812,10 +832,11 @@ var TabellifyWorkspace = {
     return TabellifyTagMonitor.sortPapers(papers, this.sortKey, this.sortDirection);
   },
 
-  /** Show or hide the per-paper table and its toolbar together. */
+  /** Show or hide the per-paper table, its toolbar and (F008) the actions under it together. */
   setTableHidden(hidden) {
     this.el("tabellify-items-table").hidden = hidden;
     this.el("tabellify-table-toolbar").hidden = hidden;
+    this.el("tabellify-table-actions").hidden = hidden;
   },
 
   /** The codebook's groups (`{ id, name, tags }`, codebook order), or [] without a codebook. */
@@ -2792,11 +2813,166 @@ var TabellifyWorkspace = {
     W.updateSuggestions();
   },
 
+  // ---------------------------------------------------------------------------------------
+  // Feature 008: Export CSV (ADR-0017). The text is built by TabellifyCsv (pure, unit-
+  // tested) from what the table last showed; TabellifyCsvExport opens the save dialog and
+  // writes the file. Debug Output gets counts and outcomes only: never a title, tag name,
+  // group name, collection name, file name or path.
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * Fluent IDs the export shows or writes, formatted once in init() into `strings`.
+   * tests/static/workspace-script.test.mjs checks that each exists in tabellify.ftl.
+   */
+  EXPORT_STRINGS: [
+    "tabellify-column-title",
+    "tabellify-export-dialog-title",
+    "tabellify-export-filter",
+    "tabellify-export-saved",
+    "tabellify-export-picker-error",
+    "tabellify-export-write-error",
+    "tabellify-export-file-fallback",
+    "tabellify-csv-header-k",
+    "tabellify-csv-header-m",
+  ],
+
+  /** True while an export runs (dialog open or writing): one click = one dialog. */
+  exportBusy: false,
+
+  /** True once this document is unloading (set first thing in onUnload). */
+  unloaded: false,
+
+  /**
+   * The export's platform functions (the save dialog and the file write); null means the
+   * real ones (TabellifyCsvExport.platformIo with this document's window). Tests set a fake.
+   */
+  exportIo: null,
+
+  /**
+   * "click" handler of "Export CSV". Returns the export's Promise (the tests wait for it).
+   * An arrow function property, so onUnload can remove exactly this listener.
+   */
+  onExportClick: () => TabellifyWorkspace.exportCsv(),
+
+  /**
+   * Export the table as shown now. Spec F008 "Save flow".
+   * @param {string | null} [baseName]  Suggested file name without date and ".csv";
+   *   null = the chosen collection's name. (Hook for 007a, whose "View table" modal passes
+   *   its Name field.)
+   * @returns {Promise<object | null>}  TabellifyCsvExport's result, or null
+   */
+  async exportCsv(baseName = null) {
+    if (this.exportBusy) return null;
+    const button = this.el("tabellify-export-csv");
+    this.exportBusy = true;
+    button.disabled = true;
+    this.showExportStatus(null);
+    let result = null;
+    try {
+      // Snapshot: the rows and columns the table shows at the moment of the click. If the
+      // library changes while the dialog is open, the file still matches this moment.
+      const csv = TabellifyCsv.build(
+        { groups: this.tableGroups, papers: this.tableRows, counting: this.tableCounting },
+        {
+          title: this.text("tabellify-column-title"),
+          untitled: this.untitledText,
+          k: this.text("tabellify-csv-header-k"),
+          m: this.text("tabellify-csv-header-m"),
+        },
+      );
+      const stats = csv.stats;
+      this.log(
+        `export: CSV built: ${stats.papers} paper(s), ${stats.tagColumns} tag column(s), ` +
+        `${stats.groups} group(s), ${stats.headerRows} header row(s)`,
+      );
+      // Today's LOCAL date (getMonth() counts from 0, hence + 1).
+      const d = new Date();
+      const defaultName = TabellifyCsv.fileName(
+        baseName ?? this.exportBaseName(),
+        { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() },
+        this.text("tabellify-export-file-fallback"),
+      );
+      const io = this.exportIo ?? TabellifyCsvExport.platformIo(window);
+      result = await TabellifyCsvExport.exportText(csv.text, {
+        title: this.text("tabellify-export-dialog-title"),
+        filterTitle: this.text("tabellify-export-filter"),
+        defaultName,
+        // Checked after the dialog closes: if the tab was closed meanwhile, write nothing.
+        shouldWrite: () => !this.unloaded,
+      }, io);
+      this.reportExport(result);
+    } catch (e) {
+      // Not expected (exportText never throws); e.g. building the text failed.
+      this.log("export: failed unexpectedly; nothing written");
+      Zotero.logError(e);
+      if (!this.unloaded) this.showExportStatus("tabellify-export-picker-error", null, true);
+    } finally {
+      this.exportBusy = false;
+      if (!this.unloaded) button.disabled = false;
+    }
+    return result;
+  },
+
+  /** The chosen (top) collection's own name, from the data already read; "" if unknown. */
+  exportBaseName() {
+    const data = this.monitorData;
+    return data?.collections?.find((c) => c.id === data.rootId)?.name ?? "";
+  },
+
+  /**
+   * Log the outcome (numbers and error names only) and, unless the page is gone, show it.
+   * @param {object} result  From TabellifyCsvExport.exportText
+   */
+  reportExport(result) {
+    switch (result.status) {
+      case "saved": {
+        const bytes = Number.isFinite(result.bytes) ? result.bytes : "?";
+        this.log(`export: CSV written: ${bytes} bytes (replaced an existing file: ${result.replaced ? "yes" : "no"})`);
+        break;
+      }
+      case "cancelled":
+        this.log(result.reason === "closed"
+          ? "export: tab closed while the save dialog was open; nothing written"
+          : "export: save dialog cancelled");
+        break;
+      default:
+        // The error object goes to Zotero's error console (local; its message may contain
+        // the chosen path, ADR-0017 §5); Debug Output gets only its name.
+        if (result.stage === "write") this.log(`export: CSV not written: write failed (${result.errorName})`);
+        else this.log(`export: save dialog failed (${result.errorName})`);
+        Zotero.logError(result.error ?? new Error(`Tabellify export failed: ${result.errorName}`));
+    }
+    if (this.unloaded) return;
+    if (result.status === "saved") this.showExportStatus("tabellify-export-saved", result.path);
+    else if (result.status === "error" && result.stage === "write") this.showExportStatus("tabellify-export-write-error", result.path, true);
+    else if (result.status === "error") this.showExportStatus("tabellify-export-picker-error", null, true);
+    // Cancelled: no message (the status stays hidden).
+  },
+
+  /**
+   * Show one message in the export status line (or hide it with `null`). The path is put
+   * in as plain text (textContent), never as markup.
+   * @param {string | null} id  Fluent ID (one of EXPORT_STRINGS)
+   * @param {string | null} [path]
+   * @param {boolean} [isError]
+   */
+  showExportStatus(id, path = null, isError = false) {
+    const status = this.el("tabellify-export-status");
+    const pathEl = this.el("tabellify-export-status-path");
+    status.hidden = id === null;
+    status.classList.toggle("tabellify-export-error", isError);
+    this.el("tabellify-export-status-text").textContent = id === null ? "" : this.text(id);
+    pathEl.textContent = path ?? "";
+    pathEl.hidden = !path;
+  },
+
   /**
    * Remove our listeners and the Notifier observer when the document goes away
    * (lifecycle symmetry).
    */
   onUnload: () => {
+    // F008: an export whose save dialog is open now writes nothing (spec Q13).
+    TabellifyWorkspace.unloaded = true;
     TabellifyWorkspace.unregisterMonitorObserver("workspace closed");
     TabellifyWorkspace.stopLayoutSaveTimer();
     TabellifyWorkspace.el("tabellify-collection-select")
@@ -2813,6 +2989,8 @@ var TabellifyWorkspace = {
     table?.removeEventListener("keydown", TabellifyWorkspace.onTableKeydown);
     TabellifyWorkspace.el("tabellify-table-toolbar")
       ?.removeEventListener("click", TabellifyWorkspace.onToolbarClick);
+    TabellifyWorkspace.el("tabellify-export-csv")
+      ?.removeEventListener("click", TabellifyWorkspace.onExportClick);
     TabellifyWorkspace.el("tabellify-monitor-count-item-tags")
       ?.removeEventListener("change", TabellifyWorkspace.onCountItemTagsChange);
     const section = TabellifyWorkspace.el("tabellify-codebook");

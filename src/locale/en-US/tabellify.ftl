@@ -196,6 +196,24 @@ tabellify-drop-hint-new-group = Turn into a group name:
 # Added after the hint above when the drop empties a group; the group's name follows.
 tabellify-drop-hint-group-to-tag = · Group becomes a tag:
 
+## Feature 008: "Export CSV" under the per-paper table. The button is set in
+## workspace.xhtml with data-l10n-id. The other messages are read from JavaScript with
+## document.l10n.formatValue() (no arguments): the save dialog's title and filter name,
+## the status line (workspace.js adds the saved file's path after "CSV saved:" and after
+## the write error, as plain text), the fallback file name, and the two k/M column headers
+## written into the CSV file. The Title header and "(untitled)" reuse the messages above.
+
+tabellify-export-csv = Export CSV
+tabellify-export-dialog-title = Export table as CSV
+tabellify-export-filter = CSV files
+tabellify-export-saved = CSV saved:
+tabellify-export-picker-error = The save dialog could not be opened. Nothing was saved.
+tabellify-export-write-error = The CSV file could not be saved. Check that you can write to this folder, then try again:
+# Suggested file name when the collection name has no usable characters (the date follows).
+tabellify-export-file-fallback = Tabellify table
+tabellify-csv-header-k = Tags used (k)
+tabellify-csv-header-m = Codebook tags (M)
+
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
 ## messages use attributes: `.label` (header text) and `.tooltiptext` (icon tooltip), like

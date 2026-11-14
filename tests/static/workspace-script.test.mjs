@@ -55,6 +55,14 @@
 //   - the new Fluent IDs exist, start with tabellify-, and are formatted at start-up
 //   - the tag list is marked stale on "item-tag" before the no-collection early return; the
 //     Zotero allow-list above gains no entry
+// Feature 008 (AC17) adds:
+//   - script order: …, layout-store, csv-model, csv-export, workspace
+//   - csv-model.js uses no Zotero / DOM / IOUtils / ChromeUtils globals; workspace.js never
+//     touches IOUtils, ChromeUtils or FilePicker (csv-export.js does, ADR-0017)
+//   - the export Fluent IDs exist, start with tabellify-, and are formatted at start-up; the
+//     new element IDs exist; the "Export CSV" click listener is removed in onUnload, which
+//     also sets `unloaded`; the actions block is hidden with the table; the Zotero
+//     allow-list gains no entry
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -77,6 +85,7 @@ const scriptJs = code("content/tag-script-model.js");
 const suggestJs = code("content/script-suggest-model.js");
 const layoutModelJs = code("content/table-layout-model.js");
 const layoutStoreJs = code("content/layout-store.js");
+const csvModelJs = code("content/csv-model.js");
 const ftlIds = new Set([...read("locale/en-US/tabellify.ftl").matchAll(/^(tabellify-[\w-]+)\s*=/gm)].map((m) => m[1]));
 
 test("F003: workspace.xhtml loads include.js, then workspace.js, inside <window>", () => {
@@ -102,12 +111,12 @@ test("F004: codebook-model.js and codebook-store.js load after include.js, befor
 
 test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
   // 1. The lists workspace.js formats at start-up (F004 codebook, F005 tag monitor).
-  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "LAYOUT_STRINGS"].flatMap((name) => {
+  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "LAYOUT_STRINGS", "EXPORT_STRINGS"].flatMap((name) => {
     const list = new RegExp(`${name}:\\s*\\[([\\s\\S]*?)\\]`).exec(js)?.[1] ?? "";
     return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   });
   // 2. IDs passed to showCodebookStatus / text / actionButton as literals.
-  const literal = [...js.matchAll(/(?:showCodebookStatus|text|actionButton)\(\s*(?:"[^"]*",\s*)?"(tabellify-[^"]+)"/g)]
+  const literal = [...js.matchAll(/(?:showCodebookStatus|showExportStatus|text|actionButton)\(\s*(?:"[^"]*",\s*)?"(tabellify-[^"]+)"/g)]
     .map((m) => m[1]);
   // 3. The model's refusal reasons (ERR_… constants).
   const errors = [...modelJs.matchAll(/\bERR_\w+:\s*"([^"]+)"/g)].map((m) => m[1]);
@@ -116,7 +125,7 @@ test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   }
   // Every ID shown by text()/showCodebookStatus must have been formatted at start-up.
-  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS or LAYOUT_STRINGS`);
+  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS, LAYOUT_STRINGS or EXPORT_STRINGS`);
 });
 
 test("F003: Fluent IDs used in workspace.js exist in tabellify.ftl", () => {
@@ -378,7 +387,7 @@ test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never
 // Feature 006a AC17
 // ---------------------------------------------------------------------------------------
 
-test("F006a AC17 / F006b AC12 / F006c AC15: script order is model, store, tag script, suggestions, tag monitor, layout model, regroup model, layout store, workspace", () => {
+test("F006a AC17 / F006b AC12 / F006c AC15 / F008 AC17: script order is model, store, tag script, suggestions, tag monitor, layout model, regroup model, layout store, CSV model, CSV writer, workspace", () => {
   const scripts = [...xhtml.matchAll(/<script\s+src="chrome:\/\/tabellify\/content\/([\w-]+\.js)"\s*\/>/g)].map((m) => m[1]);
   assert.deepEqual(scripts, [
     "codebook-model.js",
@@ -389,6 +398,8 @@ test("F006a AC17 / F006b AC12 / F006c AC15: script order is model, store, tag sc
     "table-layout-model.js",
     "regroup-model.js",
     "layout-store.js",
+    "csv-model.js",
+    "csv-export.js",
     "workspace.js",
   ]);
 });
@@ -638,4 +649,69 @@ test("F006c AC15: the drop hint sits in the table toolbar, hidden and aria-hidde
   assert.equal([...js.matchAll(/setTimeout\(/g)].length, 2);
   // Names reach the hint and the announcements only as text.
   assert.match(js, /hint\.textContent = /);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 008 AC17 (the write-guard part of AC17 is in write-guard.test.mjs)
+// ---------------------------------------------------------------------------------------
+
+test("F008 AC17: csv-model.js uses no Zotero / DOM / IOUtils / ChromeUtils globals", () => {
+  assert.match(csvModelJs, /var TabellifyCsv\b/, "CSV model not found (check is vacuous)");
+  assert.doesNotMatch(csvModelJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils|FilePicker)\b/);
+});
+
+test("F008 AC17: workspace.js never touches IOUtils, ChromeUtils or FilePicker; it calls the writer", () => {
+  assert.doesNotMatch(js, /\b(?:IOUtils|PathUtils|ChromeUtils|FilePicker)\b/);
+  assert.match(js, /TabellifyCsvExport\.exportText\(/);
+  assert.match(js, /TabellifyCsv\.build\(/);
+  // The snapshot comes from what the table last rendered.
+  assert.match(js, /this\.tableRows = shown;/);
+  assert.match(js, /this\.tableCounting = counting;/);
+  assert.match(js, /groups: this\.tableGroups, papers: this\.tableRows, counting: this\.tableCounting/);
+});
+
+test("F008 AC17: export Fluent IDs exist, start with tabellify-, and are formatted at start-up", () => {
+  const list = /EXPORT_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const expected = [
+    "tabellify-export-dialog-title", "tabellify-export-filter", "tabellify-export-saved",
+    "tabellify-export-picker-error", "tabellify-export-write-error", "tabellify-export-file-fallback",
+    "tabellify-csv-header-k", "tabellify-csv-header-m", "tabellify-column-title",
+  ];
+  for (const id of expected) {
+    assert.ok(ids.includes(id), `${id} not in EXPORT_STRINGS`);
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+  }
+  for (const id of ids) assert.match(id, /^tabellify-/);
+  assert.ok(ftlIds.has("tabellify-export-csv"), "button label missing");
+  assert.match(xhtml, /id="tabellify-export-csv" data-l10n-id="tabellify-export-csv"/);
+  assert.match(js, /await this\.formatStrings\(this\.EXPORT_STRINGS\)/);
+  // No arguments in the new messages (paths are appended in JS as plain text).
+  const ftl = read("locale/en-US/tabellify.ftl");
+  for (const id of [...expected, "tabellify-export-csv"]) {
+    const line = new RegExp(`^${id}\\s*=(.*)$`, "m").exec(ftl)?.[1] ?? "";
+    assert.doesNotMatch(line, /\{/, `${id} has a Fluent argument`);
+  }
+});
+
+test("F008 AC17: actions block markup after the table; hidden with the table", () => {
+  for (const id of ["tabellify-table-actions", "tabellify-export-csv", "tabellify-export-status",
+    "tabellify-export-status-text", "tabellify-export-status-path"]) {
+    assert.match(xhtml, new RegExp(`\\bid="${id}"`), `#${id} missing`);
+  }
+  assert.ok(xhtml.indexOf('id="tabellify-table-actions"') > xhtml.indexOf("</html:table>"), "actions block must follow the table");
+  assert.match(xhtml, /<html:div id="tabellify-table-actions" hidden="hidden">/);
+  assert.match(xhtml, /<html:p id="tabellify-export-status" role="status" hidden="hidden">/);
+  const setHidden = /setTableHidden\(hidden\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(setHidden, /this\.el\("tabellify-table-actions"\)\.hidden = hidden;/);
+});
+
+test("F008 AC17: the Export CSV listener is added in init and removed in onUnload; unload sets `unloaded`", () => {
+  const init = /async init\(\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  const unload = /onUnload: \(\) => \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(init, /this\.el\("tabellify-export-csv"\)\.addEventListener\("click", this\.onExportClick\)/);
+  assert.match(unload, /el\("tabellify-export-csv"\)\s*\?\.removeEventListener\("click", TabellifyWorkspace\.onExportClick\)/);
+  assert.match(unload, /TabellifyWorkspace\.unloaded = true;/);
+  // The write is skipped when the page is gone (spec Q13).
+  assert.match(js, /shouldWrite: \(\) => !this\.unloaded/);
 });

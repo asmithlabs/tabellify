@@ -93,6 +93,7 @@
 .tabellify-status,
 #tabellify-codebook-status,
 #tabellify-layout-status,
+#tabellify-export-status,
 #tabellify-monitor-message {
   margin-block: var(--tabellify-space-3);
   padding: var(--tabellify-space-4);
@@ -104,6 +105,7 @@
 
 .tabellify-status::before,
 #tabellify-codebook-status.tabellify-codebook-error::before,
+#tabellify-export-status.tabellify-export-error::before,
 #tabellify-layout-status::before,
 #tabellify-monitor-message::before {
   display: inline-block;
@@ -135,6 +137,7 @@
    file message is a problem (ADR-0014), so the layout status always looks like an error. */
 #tabellify-load-error,
 #tabellify-codebook-status.tabellify-codebook-error,
+#tabellify-export-status.tabellify-export-error,
 #tabellify-layout-status {
   color: var(--tabellify-color-status-error);
   font-weight: bold;
@@ -142,13 +145,15 @@
 
 #tabellify-load-error::before,
 #tabellify-codebook-status.tabellify-codebook-error::before,
+#tabellify-export-status.tabellify-export-error::before,
 #tabellify-layout-status::before {
   content: "!";
 }
 
-/* The file path after a codebook or layout message. */
+/* The file path after a codebook, layout or export message. */
 #tabellify-codebook-status code,
-#tabellify-layout-status code {
+#tabellify-layout-status code,
+#tabellify-export-status code {
   margin-inline-start: var(--tabellify-space-2);
   font-weight: normal;
   color: var(--tabellify-color-text);
@@ -451,6 +456,16 @@
 #tabellify-table-toolbar button[aria-pressed="true"] {
   font-weight: bold;
   outline: var(--tabellify-border-width) solid var(--tabellify-color-action);
+}
+
+/* ---------------------------------------------------------------------------------------
+   Table actions (Feature 008): "Export CSV" under the table, left-aligned, ordinary button
+   style; the status line below it uses the status card rules above (error look via
+   .tabellify-export-error, set by workspace.js).
+   --------------------------------------------------------------------------------------- */
+
+#tabellify-table-actions {
+  margin-block: var(--tabellify-space-3) var(--tabellify-space-5);
 }
 
 /* ---------------------------------------------------------------------------------------

@@ -51,6 +51,9 @@
        layout.json, uses the model) also define one global each for workspace.js.
        regroup-model.js (F006c: pure rules for regrouping a dragged tag column) uses the
        codebook, tag-monitor and table-layout models, so it comes after them.
+       csv-model.js (F008: pure CSV builder) and csv-export.js (F008, ADR-0017: the save
+       dialog and the one write of the exported file) define TabellifyCsv and
+       TabellifyCsvExport for workspace.js.
        workspace.js only waits for "load" here, so the elements further down exist when it
        starts. -->
   <script src="chrome://zotero/content/include.js"/>
@@ -62,6 +65,8 @@
   <script src="chrome://tabellify/content/table-layout-model.js"/>
   <script src="chrome://tabellify/content/regroup-model.js"/>
   <script src="chrome://tabellify/content/layout-store.js"/>
+  <script src="chrome://tabellify/content/csv-model.js"/>
+  <script src="chrome://tabellify/content/csv-export.js"/>
   <script src="chrome://tabellify/content/workspace.js"/>
 
   <html:main id="tabellify-workspace-main">
@@ -229,5 +234,18 @@
       </html:thead>
       <html:tbody id="tabellify-items-body"></html:tbody>
     </html:table>
+
+    <!-- Feature 008 (ADR-0017): actions under the table. Shown and hidden together with
+         the table. "Export CSV" opens the system save dialog and saves exactly what the
+         table shows; workspace.js disables the button while an export runs. The status
+         line says where the file was saved (the path follows in <code>, as plain text)
+         or why it was not; a cancelled dialog shows nothing. -->
+    <html:div id="tabellify-table-actions" hidden="hidden">
+      <html:button id="tabellify-export-csv" data-l10n-id="tabellify-export-csv"></html:button>
+      <html:p id="tabellify-export-status" role="status" hidden="hidden">
+        <html:span id="tabellify-export-status-text"></html:span>
+        <html:code id="tabellify-export-status-path" hidden="hidden"></html:code>
+      </html:p>
+    </html:div>
   </html:main>
 </window>
