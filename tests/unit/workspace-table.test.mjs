@@ -2074,7 +2074,7 @@ function modalSetup(io = fakeExportIo(), options) {
   const d = (id) => env.document.getElementById(id);
   d("tabellify-view-dialog").addEventListener("close", env.W.onViewClose);
   // Real buttons start enabled.
-  for (const id of ["tabellify-view-export", "tabellify-view-close", "tabellify-view-table", "tabellify-export-csv"]) {
+  for (const id of ["tabellify-view-export", "tabellify-view-close", "tabellify-view-table", "tabellify-export-csv", "tabellify-view-save"]) {
     d(id).localName = "button"; // the fake makes unknown IDs <div>s; the click handler looks for a button
     d(id).id = id;
     d(id).disabled = false;
@@ -2281,4 +2281,474 @@ test("007a AC14: no Debug Output line holds the Name, Description, a title, tag,
     assert.ok(debug.includes("Tabellify: workspace: export: started from View table"));
     for (const line of debug) for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
   }
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 007b AC19–AC21: saved tables (list, modal, export, log) with a fake store `fs`
+// ---------------------------------------------------------------------------------------
+
+const SAVED_TEXTS = {
+  "tabellify-saved-empty": "No saved tables yet.",
+  "tabellify-saved-empty-collection": "No saved tables for this collection.",
+  "tabellify-saved-choose": "Choose a collection to see its saved tables.",
+  "tabellify-saved-load-error": "The saved tables file could not be read. File:",
+  "tabellify-saved-newer": "The saved tables file was made by a newer version of Tabellify. File:",
+  "tabellify-saved-papers": "papers",
+  "tabellify-saved-columns": "columns",
+  "tabellify-saved-on": "Saved",
+  "tabellify-saved-collection-missing": "(collection not found)",
+  "tabellify-saved-open": "Open",
+  "tabellify-saved-delete": "Delete",
+  "tabellify-saved-delete-question": "Delete this saved table? This cannot be undone.",
+  "tabellify-saved-delete-confirm": "Delete",
+  "tabellify-saved-delete-cancel": "Cancel",
+  "tabellify-saved-deleted": "Saved table deleted.",
+  "tabellify-saved-conflict": "Saved tables were changed in another Tabellify tab and have been reloaded.",
+  "tabellify-saved-save-error": "The saved tables could not be saved. File:",
+  "tabellify-saved-gone": "This saved table was deleted in another Tabellify tab.",
+  "tabellify-saved-error-name-empty": "Type a name before saving.",
+  "tabellify-saved-error-limit-tables": "At most 100.",
+  "tabellify-saved-error-limit-rows": "Too many papers.",
+  "tabellify-saved-error-limit-columns": "Too many columns.",
+  "tabellify-saved-error-limit-file": "Too large.",
+  "tabellify-export-csv": "Export CSV",
+  "tabellify-view-heading": "View table",
+  "tabellify-view-heading-saved": "Saved table",
+  "tabellify-view-save": "Save table",
+  "tabellify-view-save-changes": "Save changes",
+  "tabellify-view-meta-snapshot": "Snapshot from",
+  "tabellify-view-saved": "Table saved.",
+  "tabellify-view-changes-saved": "Changes saved.",
+};
+const SAVED_DIR = "/Users/tester/Zotero tabellify-dev/tabellify";
+const SAVED_FILE = `${SAVED_DIR}/tables.json`;
+const T1_TIME = "2025-03-14T10:00:00.000Z";
+const T2_TIME = "2025-03-15T09:30:00.000Z";
+
+/** A fake store `fs` (like tests/unit/tables-store.test.mjs): "files" in a Map, calls recorded. */
+function savedFs(initial = {}, opts = {}) {
+  const files = new Map(Object.entries(initial));
+  const calls = [];
+  return {
+    files,
+    calls,
+    writes: () => calls.filter((c) => c[0] === "writeJSON"),
+    async readJSON(path) {
+      calls.push(["readJSON", path]);
+      if (!files.has(path)) throw Object.assign(new Error(`Could not open ${path}`), { name: "NotFoundError" });
+      return JSON.parse(files.get(path));
+    },
+    async writeJSON(path, value, options) {
+      calls.push(["writeJSON", path, options]);
+      if (opts.failWrite) throw Object.assign(new Error(`could not write ${path}`), { name: "NotAllowedError" });
+      if (options?.backupFile && files.has(path)) files.set(options.backupFile, files.get(path));
+      files.set(path, JSON.stringify(value));
+      return 1;
+    },
+    async makeDirectory(path) { calls.push(["makeDirectory", path]); },
+    join: (...parts) => parts.join("/"),
+  };
+}
+
+/** A tables.json text with saved tables built by the real model from a workspace view. */
+function savedFileText(sandbox, entries) {
+  const S = sandbox.TabellifySavedTables;
+  let data = S.emptyData();
+  for (const e of entries) {
+    const snapshot = e.snapshot ?? {
+      takenAt: e.time,
+      collectionName: e.collectionName ?? "F005 test",
+      blocks: [{ group: "Exposure", tags: ["Heat index", "Temperature"] }, { group: "Outcome", tags: ["Mortality"] }],
+      rows: [
+        { itemKey: "ITEM0102", title: e.title ?? "Saved paper A", untitled: false, present: [0, 1] },
+        { itemKey: "ITEM0101", title: "Saved paper B", untitled: false, present: [2] },
+      ],
+    };
+    const definition = S.buildDefinition({ collectionKey: e.collectionKey ?? "1/COLL0001", codebookId: "c1", columnLayout: null,
+      sort: { key: "count", direction: "desc" }, manualOrder: null, countItemTags: false });
+    data = S.addTable(data, { name: e.name, description: e.description ?? "", definition, snapshot }, e.time).data;
+  }
+  return JSON.stringify({ ...data, revision: 3 });
+}
+
+/** modalSetup() plus saved-table strings, a fake store fs, and the file loaded. */
+async function savedSetup({ entries = null, fileText = undefined, io = fakeExportIo(), options, fsOpts } = {}) {
+  const env = modalSetup(io, options);
+  const { W, sandbox } = env;
+  Object.assign(W.strings, SAVED_TEXTS);
+  const text = fileText !== undefined ? fileText : entries ? savedFileText(sandbox, entries) : null;
+  const fs = savedFs(text === null ? {} : { [SAVED_FILE]: text }, fsOpts);
+  W.savedFs = fs;
+  W.savedDir = SAVED_DIR;
+  W.collectionNames = new Map([["1/COLL0001", "F005 test"], ["1/COLL0002", "Second"]]);
+  await W.loadSavedTables();
+  return { ...env, fs, S: sandbox.TabellifySavedTables, Csv: sandbox.TabellifyCsv };
+}
+
+const TWO_TABLES = () => [
+  { name: "Older table", time: T1_TIME },
+  { name: "Newer <b>x</b>", time: T2_TIME, collectionKey: "1/GONE0001", collectionName: "Deleted coll" },
+];
+const listItems = (d) => d("tabellify-saved-list").children;
+const itemOf = (d, id) => listItems(d).find((li) => li.dataset.tableId === id);
+const buttonOf = (li, action) => li.querySelector(`button[data-action="${action}"]`);
+const savedStatus = (d) => ({
+  hidden: d("tabellify-saved-status").hidden,
+  text: d("tabellify-saved-status-text").textContent,
+  path: d("tabellify-saved-status-path").textContent,
+  error: d("tabellify-saved-status").classList.contains("tabellify-export-error"),
+});
+const fmt = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+
+test("007b AC19: entries newest first with name, collection, counts and date as text; missing collection marked", async () => {
+  const { d, debug } = await savedSetup({ entries: TWO_TABLES() });
+  const items = listItems(d);
+  assert.deepEqual(items.map((li) => li.dataset.tableId), ["t2", "t1"]);
+  const [newer, older] = items;
+  assert.equal(newer.querySelector(".tabellify-saved-name").textContent, "Newer <b>x</b>", "markup stays text");
+  assert.deepEqual(newer.querySelector(".tabellify-saved-meta").children.map((c) => c.textContent),
+    ["Deleted coll (collection not found)", "2 papers", "3 columns", `Saved ${fmt(T2_TIME)}`]);
+  assert.deepEqual(older.querySelector(".tabellify-saved-meta").children.map((c) => c.textContent),
+    ["F005 test", "2 papers", "3 columns", `Saved ${fmt(T1_TIME)}`]);
+  // Buttons: Open, Export CSV, Delete, each named with the table's Name.
+  assert.deepEqual(older.querySelectorAll("button").map((b) => [b.dataset.action, b.textContent, b.getAttribute("aria-label")]), [
+    ["open", "Open", "Open: Older table"],
+    ["export", "Export CSV", "Export CSV: Older table"],
+    ["delete", "Delete", "Delete: Older table"],
+  ]);
+  assert.equal(d("tabellify-saved-count").textContent, "2");
+  assert.equal(d("tabellify-saved-count").hidden, false);
+  assert.equal(d("tabellify-saved-message").hidden, true);
+  assert.ok(debug.includes("Tabellify: workspace: saved tables: loaded 2 table(s) (file schema 1)"), debug.join("\n"));
+});
+
+test("007b AC19: the filter and the three messages; the summary count follows the filter", async () => {
+  const empty = await savedSetup();
+  assert.equal(empty.d("tabellify-saved-count").textContent, "0");
+  assert.equal(empty.d("tabellify-saved-message-text").textContent, "No saved tables yet.");
+  assert.equal(empty.d("tabellify-saved-message").hidden, false);
+  assert.equal(empty.fs.writes().length, 0, "loading never writes");
+  assert.ok(empty.debug.includes("Tabellify: workspace: saved tables: no file yet"));
+
+  const { W, d } = await savedSetup({ entries: TWO_TABLES() });
+  W.onSavedFilterChange({ target: { value: "collection" } });
+  // Collection 1 ("1/COLL0001") is chosen in setup().
+  assert.deepEqual(listItems(d).map((li) => li.dataset.tableId), ["t1"]);
+  assert.equal(d("tabellify-saved-count").textContent, "1");
+  assert.equal(d("tabellify-saved-filter").value, "collection");
+  // A collection without saved tables.
+  W.collectionKeys = new Map([[1, "1/COLL0001"], [2, "1/COLL0002"]]);
+  W.currentCollection = "2";
+  W.renderSavedList();
+  assert.equal(listItems(d).length, 0);
+  assert.equal(d("tabellify-saved-count").textContent, "0");
+  assert.equal(d("tabellify-saved-message-text").textContent, "No saved tables for this collection.");
+  // No collection chosen.
+  W.currentCollection = "";
+  W.renderSavedList();
+  assert.equal(d("tabellify-saved-message-text").textContent, "Choose a collection to see its saved tables.");
+  W.onSavedFilterChange({ target: { value: "all" } });
+  assert.equal(listItems(d).length, 2);
+  assert.equal(d("tabellify-saved-message").hidden, true);
+});
+
+test("007b AC19: a damaged or newer file shows its message and path; no entries; Save off; nothing written", async () => {
+  for (const [fileText, message] of [["{ broken", "could not be read"], [JSON.stringify({ schemaVersion: 2, revision: 1 }), "newer version"]]) {
+    const { W, d, fs, debug } = await savedSetup({ fileText });
+    assert.equal(listItems(d).length, 0);
+    assert.match(d("tabellify-saved-message-text").textContent, new RegExp(message));
+    assert.equal(d("tabellify-saved-message-path").textContent, SAVED_FILE);
+    assert.equal(d("tabellify-saved-message-path").hidden, false);
+    assert.ok(d("tabellify-saved-message").classList.contains("tabellify-saved-error"));
+    assert.equal(d("tabellify-saved-count").hidden, true);
+    // The modal names the problem at once and its Save table is off.
+    W.onViewTableClick();
+    assert.equal(d("tabellify-view-save").disabled, true);
+    assert.match(d("tabellify-view-export-status-text").textContent, new RegExp(message));
+    assert.equal(d("tabellify-view-export-status-path").textContent, SAVED_FILE);
+    d("tabellify-view-name").value = "Anything";
+    await W.saveFromView();
+    assert.equal(fs.writes().length, 0);
+    assert.equal(fs.files.get(SAVED_FILE), fileText, "the file is unchanged");
+    assert.ok(debug.some((m) => /saved tables: could not load \((invalid|newer)\); saving off$/.test(m)), debug.join("\n"));
+    W.closeView();
+  }
+});
+
+test("007b AC19: Delete asks first (focus on Cancel); Cancel and Esc restore; confirm saves once without it", async () => {
+  const { W, d, fs, debug } = await savedSetup({ entries: TWO_TABLES() });
+  W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "delete")));
+  const asking = itemOf(d, "t1");
+  assert.equal(asking.querySelector(".tabellify-saved-question").textContent, "Delete this saved table? This cannot be undone.");
+  assert.deepEqual(asking.querySelectorAll("button").map((b) => b.dataset.action), ["confirm-delete", "cancel-delete"]);
+  assert.equal(activeElement, buttonOf(asking, "cancel-delete"), "focus on Cancel");
+  assert.equal(buttonOf(asking, "cancel-delete").getAttribute("aria-label"), "Cancel: Older table");
+  // Only one entry asks at a time.
+  assert.equal(buttonOf(itemOf(d, "t2"), "delete").dataset.action, "delete");
+  W.onSavedClick(click(buttonOf(asking, "cancel-delete")));
+  assert.equal(buttonOf(itemOf(d, "t1"), "delete").textContent, "Delete");
+  assert.equal(activeElement, buttonOf(itemOf(d, "t1"), "delete"));
+  // Esc cancels too.
+  W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "delete")));
+  const esc = key("Escape");
+  W.onSavedKeydown(esc);
+  assert.equal(esc.prevented, true);
+  assert.equal(W.confirmDeleteId, null);
+  assert.equal(fs.writes().length, 0);
+  // Confirm: one write, without t1; the .bak keeps the old file.
+  W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "delete")));
+  const before = fs.files.get(SAVED_FILE);
+  await W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "confirm-delete")));
+  assert.equal(fs.writes().length, 1);
+  const written = JSON.parse(fs.files.get(SAVED_FILE));
+  assert.deepEqual(written.tables.map((t) => t.id), ["t2"]);
+  assert.equal(written.nextId, 3);
+  assert.equal(fs.files.get(`${SAVED_FILE}.bak`), before);
+  assert.deepEqual(listItems(d).map((li) => li.dataset.tableId), ["t2"]);
+  assert.deepEqual(savedStatus(d), { hidden: false, text: "Saved table deleted.", path: "", error: false });
+  assert.ok(debug.includes("Tabellify: workspace: saved tables: deleted t1 (revision 4)"), debug.join("\n"));
+});
+
+test("007b AC19: Delete is off while a save runs; a conflict reloads and says so; a write error shows the path", async () => {
+  const { W, d, fs, debug } = await savedSetup({ entries: TWO_TABLES() });
+  // Another tab saved: the file on disk now has revision 9 and one more table.
+  const other = JSON.parse(fs.files.get(SAVED_FILE));
+  fs.files.set(SAVED_FILE, JSON.stringify({ ...other, revision: 9, nextId: 4, tables: [...other.tables, { ...other.tables[0], id: "t3", name: "From elsewhere" }] }));
+  W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "delete")));
+  const pending = W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "confirm-delete")));
+  assert.equal(W.savedBusy, true);
+  assert.equal(buttonOf(itemOf(d, "t2"), "delete").disabled, true, "Delete off while saving");
+  await pending;
+  assert.equal(fs.writes().length, 0);
+  assert.deepEqual(listItems(d).map((li) => li.dataset.tableId).sort(), ["t1", "t2", "t3"]);
+  assert.equal(savedStatus(d).text, "Saved tables were changed in another Tabellify tab and have been reloaded.");
+  assert.equal(savedStatus(d).error, true);
+  assert.ok(debug.includes("Tabellify: workspace: saved tables: not saved (conflict); reloaded"));
+  assert.equal(W.savedTables.revision, 9);
+
+  const failing = await savedSetup({ entries: TWO_TABLES(), fsOpts: { failWrite: true } });
+  failing.W.onSavedClick(click(buttonOf(itemOf(failing.d, "t1"), "delete")));
+  await failing.W.onSavedClick(click(buttonOf(itemOf(failing.d, "t1"), "confirm-delete")));
+  assert.deepEqual(savedStatus(failing.d), { hidden: false, text: "The saved tables could not be saved. File:", path: SAVED_FILE, error: true });
+  assert.ok(failing.debug.includes("Tabellify: workspace: saved tables: not saved (error: NotAllowedError)"), failing.debug.join("\n"));
+  assert.equal(listItems(failing.d).length, 2, "nothing removed");
+});
+
+test("007b AC20: draft Save table with an empty Name writes nothing; the draft modal shows Save table first", async () => {
+  const { W, d, fs } = await savedSetup();
+  W.onViewTableClick();
+  assert.equal(d("tabellify-view-heading").textContent, "View table");
+  assert.equal(d("tabellify-view-save").textContent, "Save table");
+  assert.equal(d("tabellify-view-save").disabled, false);
+  assert.equal(d("tabellify-view-note").hidden, false);
+  assert.equal(d("tabellify-view-meta").hidden, true);
+  d("tabellify-view-name").value = "   ";
+  d("tabellify-view-name").focused = false;
+  await W.onViewClick(click(d("tabellify-view-save")));
+  assert.equal(fs.writes().length, 0);
+  assert.equal(d("tabellify-view-export-status-text").textContent, "Type a name before saving.");
+  assert.equal(d("tabellify-view-name").focused, true);
+  assert.equal(W.viewMode, "draft");
+});
+
+test("007b AC20: Save table saves the definition and the shown snapshot once, then switches to saved mode", async () => {
+  const { W, T, L, d, fs, S, debug } = await savedSetup({ options: { countItemTags: true, columnLayout: { topOrder: [{ group: "g3" }, { group: "g2" }], tagOrder: {} } } });
+  W.sortKey = T.tagSortKey("Mortality");
+  W.sortDirection = "desc";
+  W.renderMonitor();
+  W.onViewTableClick();
+  d("tabellify-view-name").value = "  Heat test A  ";
+  d("tabellify-view-description").value = " First pass ";
+  W.closeView(); // a draft is remembered …
+  assert.ok(W.viewDrafts.has("1/COLL0001"));
+  W.onViewTableClick();
+  const shownTitles = d("tabellify-view-body").children.map((tr) => tr.children[0].textContent);
+  await W.onViewClick(click(d("tabellify-view-save")));
+  assert.equal(fs.writes().length, 1);
+  const file = JSON.parse(fs.files.get(SAVED_FILE));
+  assert.equal(file.revision, 1);
+  const [t] = file.tables;
+  assert.equal(t.id, "t1");
+  assert.equal(t.name, "Heat test A");
+  assert.equal(t.description, "First pass");
+  assert.deepEqual(t.definition, {
+    collectionKey: "1/COLL0001", codebookId: "c1",
+    columnLayout: { topOrder: [{ group: "g3" }, { group: "g2" }], tagOrder: {} },
+    sort: { key: "tag:Mortality", direction: "desc" }, manualOrder: null, countItemTags: true,
+  });
+  assert.equal(t.snapshot.collectionName, "F005 test");
+  assert.deepEqual(t.snapshot.blocks, [{ group: "Outcome", tags: ["Mortality"] }, { group: "Exposure", tags: ["Heat index", "Temperature"] }]);
+  assert.deepEqual(t.snapshot.rows.map((r) => r.title), shownTitles);
+  assert.equal(t.createdAt, t.updatedAt);
+  assert.equal(t.snapshot.takenAt, t.createdAt);
+  // The draft is gone; the modal now shows the saved table.
+  assert.equal(W.viewDrafts.has("1/COLL0001"), false);
+  assert.equal(W.viewMode, "saved");
+  assert.equal(W.viewTableId, "t1");
+  assert.equal(d("tabellify-view-heading").textContent, "Saved table");
+  assert.equal(d("tabellify-view-save").textContent, "Save changes");
+  assert.equal(d("tabellify-view-note").hidden, true);
+  assert.equal(d("tabellify-view-meta").hidden, false);
+  assert.equal(d("tabellify-view-meta").textContent, `Snapshot from ${fmt(t.snapshot.takenAt)} · F005 test`);
+  assert.equal(d("tabellify-view-export-status-text").textContent, "Table saved.");
+  assert.equal(d("tabellify-saved").hasAttribute("open"), true, "the list is opened");
+  assert.deepEqual(listItems(d).map((li) => li.dataset.tableId), ["t1"]);
+  assert.ok(debug.includes("Tabellify: workspace: saved tables: saved new table t1: 3 paper(s), 3 column(s) (revision 1)"), debug.join("\n"));
+  // Saving the page table again from View table makes a second table (never overwrites).
+  W.closeView();
+  W.onViewTableClick();
+  assert.equal(W.viewMode, "draft");
+  await W.onViewClick(click(d("tabellify-view-save")));
+  assert.deepEqual(JSON.parse(fs.files.get(SAVED_FILE)).tables.map((x) => x.id), ["t1", "t2"]);
+  void L; void S;
+});
+
+test("007b AC20: manual order: the definition keeps the item keys in the order shown", async () => {
+  const { W, L, d, fs } = await savedSetup();
+  W.manualOrders = new Map([["1/COLL0001", ["ITEM0102"]]]);
+  W.sortKey = L.MANUAL;
+  W.renderMonitor();
+  W.onViewTableClick();
+  await W.onViewClick(click(d("tabellify-view-save")));
+  const [t] = JSON.parse(fs.files.get(SAVED_FILE)).tables;
+  assert.equal(t.definition.sort.key, "manual");
+  assert.deepEqual(t.definition.manualOrder, t.snapshot.rows.map((r) => r.itemKey));
+  assert.equal(t.definition.manualOrder[0], "ITEM0102");
+  assert.equal(t.definition.manualOrder.length, 3, "papers after the manual order are included as shown");
+});
+
+test("007b AC20: Open shows the snapshot (not the page); Save changes updates only Name and Description", async () => {
+  const { W, d, fs, S, debug } = await savedSetup({ entries: TWO_TABLES() });
+  W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "open")));
+  assert.equal(d("tabellify-view-dialog").open, true);
+  assert.equal(W.viewMode, "saved");
+  const snapshot = W.savedTables.tables[0].snapshot;
+  const expected = W.viewTableRows(S.snapshotView(snapshot), { count: "k/M", countLabel: "x" }).body.map((tr) => tr.textContent);
+  assert.deepEqual(d("tabellify-view-body").children.map((tr) => tr.textContent), expected);
+  assert.deepEqual(d("tabellify-view-body").children.map((tr) => tr.children[0].textContent), ["Saved paper A", "Saved paper B"]);
+  assert.equal(d("tabellify-view-name").value, "Older table");
+  assert.equal(d("tabellify-view-meta").textContent, `Snapshot from ${fmt(T1_TIME)} · F005 test`);
+  assert.ok(debug.includes("Tabellify: workspace: view: opened saved table t1 (snapshot): 2 paper(s), 3 tag column(s), 2 header row(s)"), debug.join("\n"));
+  // The page table changing does not touch the saved modal.
+  W.sortKey = "title";
+  W.renderMonitor();
+  W.setTableHidden(true);
+  assert.equal(d("tabellify-view-dialog").open, true);
+  assert.deepEqual(d("tabellify-view-body").children.map((tr) => tr.textContent), expected);
+  // Save changes.
+  const before = JSON.parse(fs.files.get(SAVED_FILE)).tables[0];
+  d("tabellify-view-name").value = " Renamed ";
+  d("tabellify-view-description").value = "New description";
+  await W.onViewClick(click(d("tabellify-view-save")));
+  const after = JSON.parse(fs.files.get(SAVED_FILE)).tables[0];
+  assert.equal(after.name, "Renamed");
+  assert.equal(after.description, "New description");
+  assert.deepEqual(after.snapshot, before.snapshot);
+  assert.deepEqual(after.definition, before.definition);
+  assert.equal(after.createdAt, before.createdAt);
+  assert.notEqual(after.updatedAt, before.updatedAt);
+  assert.equal(d("tabellify-view-export-status-text").textContent, "Changes saved.");
+  assert.equal(d("tabellify-view-name").value, "Renamed");
+  assert.equal(fs.writes().length, 1);
+  assert.ok(debug.includes("Tabellify: workspace: saved tables: changes saved for t1 (revision 4)"), debug.join("\n"));
+  // Newest first: the renamed table moves to the top.
+  assert.deepEqual(listItems(d).map((li) => li.dataset.tableId), ["t1", "t2"]);
+  // Close: focus returns to its Open button.
+  W.closeView();
+  assert.equal(activeElement, buttonOf(itemOf(d, "t1"), "open"));
+});
+
+test("007b AC20: unsaved saved-mode edits are kept per table id; Tab skips hidden buttons", async () => {
+  const { W, d } = await savedSetup({ entries: TWO_TABLES() });
+  W.openSaved("t1");
+  d("tabellify-view-name").value = "Unsaved edit";
+  W.closeView();
+  W.openSaved("t2");
+  assert.equal(d("tabellify-view-name").value, "Newer <b>x</b>");
+  W.closeView();
+  W.openSaved("t1");
+  assert.equal(d("tabellify-view-name").value, "Unsaved edit");
+  assert.ok(W.viewDrafts.has("saved:t1"));
+  assert.equal(W.viewDrafts.has("saved:t2"), false, "unchanged values are not kept");
+  // Tab order: Name, Description, table area, Save changes, Export CSV, Close; a hidden button is skipped.
+  assert.deepEqual([...W.viewFocusOrder()].map((el) => el.id), ["tabellify-view-name", "tabellify-view-description", "tabellify-view-scroll",
+    "tabellify-view-save", "tabellify-view-export", "tabellify-view-close"].map((id) => d(id).id));
+  d("tabellify-view-save").hidden = true;
+  assert.equal(W.viewFocusOrder().includes(d("tabellify-view-save")), false);
+  d("tabellify-view-save").hidden = false;
+  W.closeView();
+});
+
+test("007b AC20: a table deleted in another tab: the modal says so and Save changes is off", async () => {
+  const { W, d, fs } = await savedSetup({ entries: TWO_TABLES() });
+  W.openSaved("t1");
+  const other = JSON.parse(fs.files.get(SAVED_FILE));
+  fs.files.set(SAVED_FILE, JSON.stringify({ ...other, revision: 7, tables: other.tables.filter((t) => t.id !== "t1") }));
+  d("tabellify-view-name").value = "Renamed";
+  await W.onViewClick(click(d("tabellify-view-save")));
+  assert.equal(d("tabellify-view-export-status-text").textContent, "This saved table was deleted in another Tabellify tab.");
+  assert.equal(d("tabellify-view-save").disabled, true);
+  assert.equal(fs.writes().length, 0);
+  // The snapshot is still shown and can be exported.
+  assert.equal(d("tabellify-view-body").children.length, 2);
+});
+
+test("007b AC21: list Export CSV writes the snapshot's CSV under the table Name; result under the list", async () => {
+  let during = null;
+  let env = null;
+  const io = fakeExportIo({ onPick: () => {
+    const d = env.d;
+    during = [d("tabellify-export-csv").disabled, d("tabellify-view-export").disabled, buttonOf(itemOf(d, "t1"), "export").disabled];
+  } });
+  env = await savedSetup({ entries: TWO_TABLES(), io });
+  const { W, d, S, Csv, debug } = env;
+  W.showExportStatus("tabellify-export-saved", "/old/page.csv"); // the page's line must stay
+  const result = await W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "export")));
+  assert.equal(result.status, "saved");
+  assert.deepEqual(during, [true, true, true], "every Export CSV button is off during the export");
+  assert.equal(buttonOf(itemOf(d, "t1"), "export").disabled, false);
+  assert.match(io.picks[0].defaultName, /^Older table \d{4}-\d{2}-\d{2}\.csv$/);
+  const table = W.savedTables.tables.find((t) => t.id === "t1");
+  const expected = Csv.build(S.snapshotView(table.snapshot), {
+    title: "Title", untitled: "(untitled)", k: "Tags used (k)", m: "Codebook tags (M)",
+  }).text;
+  assert.equal(io.writes[0].text, expected);
+  assert.deepEqual(savedStatus(d), { hidden: false, text: "CSV saved:", path: EXPORT_PATH, error: false });
+  assert.equal(status(env.document).path, "/old/page.csv", "page line untouched");
+  assert.ok(debug.includes("Tabellify: workspace: export: started from saved tables list"));
+  // From the modal in saved mode: the snapshot too (not the page).
+  W.openSaved("t1");
+  await W.onViewClick(click(d("tabellify-view-export")));
+  assert.equal(io.writes[1].text, expected);
+  assert.match(io.picks[1].defaultName, /^Older table /);
+  W.closeView();
+  // A page export is unchanged: the page table, not the snapshot.
+  await W.onExportClick();
+  assert.notEqual(io.writes[2].text, expected);
+});
+
+test("007b AC21: no Debug Output line in a 007b flow holds a name, description, title, tag, group, collection, key or path", async () => {
+  const secrets = ["Paper 1", "Paper 2", "Paper 3", "Saved paper", "Heat index", "Temperature", "Mortality", "Exposure", "Outcome",
+    "F005 test", "Deleted coll", "Older table", "Newer", "Secret name", "Secret description", "ITEM01", "COLL0001", "GONE0001",
+    "tabellify-dev", "tables.json", "tester", EXPORT_PATH];
+  const { W, d, fs, debug } = await savedSetup({ entries: TWO_TABLES() });
+  // Save from View table, rename, export from the list, delete, a conflict and a write error.
+  W.onViewTableClick();
+  d("tabellify-view-name").value = "Secret name";
+  d("tabellify-view-description").value = "Secret description";
+  await W.onViewClick(click(d("tabellify-view-save")));
+  d("tabellify-view-name").value = "Secret name 2";
+  await W.onViewClick(click(d("tabellify-view-save")));
+  W.closeView();
+  await W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "export")));
+  W.onSavedClick(click(buttonOf(itemOf(d, "t2"), "delete")));
+  await W.onSavedClick(click(buttonOf(itemOf(d, "t2"), "confirm-delete")));
+  const disk = JSON.parse(fs.files.get(SAVED_FILE));
+  fs.files.set(SAVED_FILE, JSON.stringify({ ...disk, revision: disk.revision + 5 }));
+  W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "delete")));
+  await W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "confirm-delete")));
+  W.openSaved("t3");
+  W.closeView();
+  assert.ok(debug.length >= 8, "flows logged");
+  for (const line of debug) for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
 });

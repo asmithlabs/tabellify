@@ -107,6 +107,36 @@
     <html:p id="tabellify-monitor-message"></html:p>
     <html:p id="tabellify-monitor-warning" hidden="hidden"></html:p>
 
+    <!-- Feature 007b (ADR-0018): "Saved tables". A closed <details> disclosure (spec Q3):
+         clicking the summary line opens it. The summary reads "Saved tables" and the
+         number of entries the filter shows (the dot between them is drawn by
+         workspace.css). workspace.js fills the message, the list (one <li> per saved table
+         with Open, Export CSV and Delete) and the status line, all as plain text, from
+         Tabellify's own saved tables file. The filter is kept only while the tab is open.
+         Listeners are delegated on the section. -->
+    <html:details id="tabellify-saved">
+      <html:summary id="tabellify-saved-summary">
+        <html:span data-l10n-id="tabellify-saved-heading"></html:span>
+        <html:span id="tabellify-saved-count" hidden="hidden"></html:span>
+      </html:summary>
+      <html:div id="tabellify-saved-controls">
+        <html:label for="tabellify-saved-filter" data-l10n-id="tabellify-saved-filter-label"></html:label>
+        <html:select id="tabellify-saved-filter">
+          <html:option value="all" data-l10n-id="tabellify-saved-filter-all"></html:option>
+          <html:option value="collection" data-l10n-id="tabellify-saved-filter-collection"></html:option>
+        </html:select>
+      </html:div>
+      <html:p id="tabellify-saved-message" hidden="hidden">
+        <html:span id="tabellify-saved-message-text"></html:span>
+        <html:code id="tabellify-saved-message-path" hidden="hidden"></html:code>
+      </html:p>
+      <html:ul id="tabellify-saved-list" aria-labelledby="tabellify-saved-summary"></html:ul>
+      <html:p id="tabellify-saved-status" role="status" hidden="hidden">
+        <html:span id="tabellify-saved-status-text"></html:span>
+        <html:code id="tabellify-saved-status-path" hidden="hidden"></html:code>
+      </html:p>
+    </html:details>
+
     <!-- Codebook (Feature 004, restructured in 006a). The <fieldset> holds every editing
          control, so setting its `disabled` turns them all off at once (while saving, or
          when the file could not be loaded). Listeners are delegated on the section.
@@ -269,9 +299,15 @@
          buttons, no grips). The scroll area has tabindex="0" so the keyboard can reach it
          and scroll it with the arrow keys; its Fluent message sets only aria-label.
          "Export CSV" here uses the Name as the suggested file name; the result shows in
-         the dialog's own status line. -->
+         the dialog's own status line.
+         Feature 007b: the same dialog also shows a SAVED table (saved mode). The heading
+         and the first button change text with the mode, so workspace.js sets their text
+         (no data-l10n-id). "Save table" (draft) keeps the table in Tabellify's own file;
+         in saved mode the button reads "Save changes" and saves Name and Description.
+         The muted meta line under the heading names the snapshot's date and collection. -->
     <html:dialog id="tabellify-view-dialog" aria-labelledby="tabellify-view-heading">
-      <html:h2 id="tabellify-view-heading" data-l10n-id="tabellify-view-heading"></html:h2>
+      <html:h2 id="tabellify-view-heading"></html:h2>
+      <html:p id="tabellify-view-meta" hidden="hidden"></html:p>
       <html:p id="tabellify-view-note" data-l10n-id="tabellify-view-not-saved"></html:p>
       <html:div id="tabellify-view-fields">
         <html:label for="tabellify-view-name" data-l10n-id="tabellify-view-name-label"></html:label>
@@ -290,6 +326,7 @@
         </html:table>
       </html:div>
       <html:div id="tabellify-view-actions">
+        <html:button id="tabellify-view-save"></html:button>
         <html:button id="tabellify-view-export" data-l10n-id="tabellify-export-csv"></html:button>
         <html:button id="tabellify-view-close" data-l10n-id="tabellify-view-close"></html:button>
         <html:p id="tabellify-view-export-status" role="status" hidden="hidden">

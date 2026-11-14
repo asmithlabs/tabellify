@@ -223,7 +223,7 @@ tabellify-csv-header-m = Codebook tags (M)
 
 tabellify-view-table = View table
 tabellify-view-heading = View table
-tabellify-view-not-saved = Name and description are kept only while this tab is open. They are not saved yet.
+tabellify-view-not-saved = Not saved yet. Save table keeps this table with its name and description.
 tabellify-view-name-label = Name
 tabellify-view-name-help = Used as the name of the exported CSV file.
 tabellify-view-description-label = Description
@@ -231,6 +231,51 @@ tabellify-view-table-region =
     .aria-label = Table preview
 tabellify-view-close = Close
 tabellify-view-count-label = Codebook tags used on the paper (k of M)
+
+## Feature 007b: saved tables. The section's heading, filter label and filter options are
+## set in workspace.xhtml with data-l10n-id. Everything else is read from JavaScript with
+## document.l10n.formatValue() (no arguments): workspace.js appends numbers, names, dates
+## and file paths after these texts as plain text (for example "12 papers", "Saved
+## 14 Nov 2026, 15:40", "File: /path/tables.json").
+
+tabellify-saved-heading = Saved tables
+tabellify-saved-filter-label = Show
+tabellify-saved-filter-all = All collections
+tabellify-saved-filter-collection = This collection
+tabellify-saved-empty = No saved tables yet. Open "View table" and click "Save table".
+tabellify-saved-empty-collection = No saved tables for this collection.
+tabellify-saved-choose = Choose a collection to see its saved tables.
+tabellify-saved-load-error = The saved tables file could not be read. Saving is turned off so the file is not overwritten. File:
+tabellify-saved-newer = The saved tables file was made by a newer version of Tabellify. Saving is turned off. File:
+# After a number: "12 papers", "7 columns".
+tabellify-saved-papers = papers
+tabellify-saved-columns = columns
+# Before a date: "Saved 14 Nov 2026, 15:40".
+tabellify-saved-on = Saved
+# After the collection name saved with the table, when the collection was deleted.
+tabellify-saved-collection-missing = (collection not found)
+tabellify-saved-open = Open
+tabellify-saved-delete = Delete
+tabellify-saved-delete-question = Delete this saved table? This cannot be undone.
+tabellify-saved-delete-confirm = Delete
+tabellify-saved-delete-cancel = Cancel
+tabellify-saved-deleted = Saved table deleted.
+tabellify-saved-conflict = Saved tables were changed in another Tabellify tab and have been reloaded. Repeat your last change.
+tabellify-saved-save-error = The saved tables could not be saved. Nothing was changed. File:
+tabellify-saved-gone = This saved table was deleted in another Tabellify tab.
+tabellify-saved-error-name-empty = Type a name before saving.
+tabellify-saved-error-limit-tables = Tabellify keeps at most 100 saved tables. Delete one first.
+tabellify-saved-error-limit-rows = This table has more than 5,000 papers and cannot be saved.
+tabellify-saved-error-limit-columns = This table has more than 500 columns and cannot be saved.
+tabellify-saved-error-limit-file = The saved tables file would become too large. Delete some saved tables first.
+# "View table" modal, Feature 007b. The heading and the save button change with the mode.
+tabellify-view-heading-saved = Saved table
+tabellify-view-save = Save table
+tabellify-view-save-changes = Save changes
+# Before a date and the collection name: "Snapshot from 14 Nov 2026, 15:40 · F005 test".
+tabellify-view-meta-snapshot = Snapshot from
+tabellify-view-saved = Table saved.
+tabellify-view-changes-saved = Changes saved.
 
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two

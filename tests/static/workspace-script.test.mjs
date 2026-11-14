@@ -70,6 +70,17 @@
 //     the Fluent list check; the new markup Fluent IDs exist and have no arguments
 //   - the four new listeners are added in init and removed in onUnload; showModal appears
 //     only in workspace.js; the Zotero allow-list gains no entry
+// Feature 007b (AC22) adds:
+//   - script order: …, layout-store, saved-tables-model, tables-store, csv-model, …
+//   - saved-tables-model.js uses no Zotero / DOM / IOUtils / PathUtils / Services /
+//     ChromeUtils globals and no clock; tables-store.js no Zotero (folder from the codebook
+//     store)
+//   - SAVED_STRINGS exist, start with tabellify-, have no arguments, are formatted at
+//     start-up and are part of the Fluent list check (with the model's ERR_ IDs)
+//   - the "Saved tables" markup (closed <details> between the monitor lines and the
+//     codebook), the modal's new parts; the three new listeners are added in init and
+//     removed in onUnload; table IDs never go into a selector; the Zotero allow-list
+//     gains no entry
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -93,6 +104,8 @@ const suggestJs = code("content/script-suggest-model.js");
 const layoutModelJs = code("content/table-layout-model.js");
 const layoutStoreJs = code("content/layout-store.js");
 const csvModelJs = code("content/csv-model.js");
+const savedModelJs = code("content/saved-tables-model.js");
+const tablesStoreJs = code("content/tables-store.js");
 const ftlIds = new Set([...read("locale/en-US/tabellify.ftl").matchAll(/^(tabellify-[\w-]+)\s*=/gm)].map((m) => m[1]));
 
 test("F003: workspace.xhtml loads include.js, then workspace.js, inside <window>", () => {
@@ -118,7 +131,7 @@ test("F004: codebook-model.js and codebook-store.js load after include.js, befor
 
 test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
   // 1. The lists workspace.js formats at start-up (F004 codebook, F005 tag monitor).
-  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "LAYOUT_STRINGS", "EXPORT_STRINGS", "VIEW_STRINGS"].flatMap((name) => {
+  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "LAYOUT_STRINGS", "EXPORT_STRINGS", "VIEW_STRINGS", "SAVED_STRINGS"].flatMap((name) => {
     const list = new RegExp(`${name}:\\s*\\[([\\s\\S]*?)\\]`).exec(js)?.[1] ?? "";
     return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   });
@@ -132,7 +145,7 @@ test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   }
   // Every ID shown by text()/showCodebookStatus must have been formatted at start-up.
-  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS, LAYOUT_STRINGS, EXPORT_STRINGS or VIEW_STRINGS`);
+  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS, LAYOUT_STRINGS, EXPORT_STRINGS, VIEW_STRINGS or SAVED_STRINGS`);
 });
 
 test("F003: Fluent IDs used in workspace.js exist in tabellify.ftl", () => {
@@ -790,4 +803,93 @@ test("F007a AC16: the modal CSS uses [open] for its layout and has no ::backdrop
   assert.doesNotMatch(css, /#tabellify-view-dialog \{[^}]*display:/, "display only under [open]");
   assert.doesNotMatch(css, /::backdrop/);
   assert.doesNotMatch(css, /\bCanvas(?:Text)?\b/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 007b AC22
+// ---------------------------------------------------------------------------------------
+
+test("F007b AC22: saved-tables-model.js is pure (no Zotero, DOM, file, Services, ChromeUtils or clock)", () => {
+  assert.match(savedModelJs, /var TabellifySavedTables\b/, "model not found (check is vacuous)");
+  assert.doesNotMatch(savedModelJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
+  assert.doesNotMatch(savedModelJs, /Date\.now|new Date\(/);
+});
+
+test("F007b AC22: tables-store.js uses no Zotero; workspace.js gets its folder from the codebook store", () => {
+  assert.match(tablesStoreJs, /var TabellifyTablesStore\b/, "store not found (check is vacuous)");
+  assert.doesNotMatch(tablesStoreJs, /\bZotero\b/);
+  assert.match(js, /this\.savedDir = TabellifyCodebookStore\.dataDir\(\)/);
+  assert.match(js, /this\.savedFs = TabellifyTablesStore\.platformFs\(\)/);
+  // The workspace never writes the file itself and never names it in code.
+  assert.doesNotMatch(js, /\b(?:IOUtils|PathUtils)\b/);
+  assert.doesNotMatch(js, /tables\.json/);
+});
+
+test("F007b AC22: SAVED_STRINGS and the model's ERR_ IDs exist, start with tabellify-, have no arguments, are formatted", () => {
+  const list = /SAVED_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(ids.length >= 20, "SAVED_STRINGS not found (check is vacuous)");
+  const errors = [...savedModelJs.matchAll(/\bERR_\w+:\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(errors.length >= 5, "model ERR_ IDs not found");
+  for (const id of errors) assert.ok(ids.includes(id), `${id} (model refusal) is not in SAVED_STRINGS`);
+  assert.match(js, /await this\.formatStrings\(this\.SAVED_STRINGS\)/);
+  const ftl = read("locale/en-US/tabellify.ftl");
+  const markupIds = ["tabellify-saved-heading", "tabellify-saved-filter-label", "tabellify-saved-filter-all",
+    "tabellify-saved-filter-collection"];
+  for (const id of [...ids, ...markupIds, "tabellify-view-not-saved"]) {
+    assert.match(id, /^tabellify-/);
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+    const block = new RegExp(`^${id}\\s*=([^\\n]*(?:\\n\\s+[^\\n]*)*)`, "m").exec(ftl)?.[1] ?? "";
+    assert.doesNotMatch(block, /\{/, `${id} has a Fluent argument`);
+  }
+  for (const id of markupIds) assert.match(xhtml, new RegExp(`data-l10n-id="${id}"`), `${id} not used in workspace.xhtml`);
+  assert.match(ftl, /^tabellify-view-not-saved = Not saved yet\. Save table keeps this table with its name and description\.$/m);
+});
+
+test("F007b AC22: the Saved tables section: a closed details between the monitor lines and the codebook", () => {
+  assert.match(xhtml, /<html:details id="tabellify-saved">/, "closed by default (no open attribute)");
+  const at = xhtml.indexOf('id="tabellify-saved"');
+  assert.ok(at > xhtml.indexOf('id="tabellify-monitor-warning"'), "after the monitor warning");
+  assert.ok(at < xhtml.indexOf('id="tabellify-codebook"'), "before the codebook section");
+  for (const id of ["tabellify-saved-summary", "tabellify-saved-count", "tabellify-saved-controls", "tabellify-saved-filter",
+    "tabellify-saved-message", "tabellify-saved-message-text", "tabellify-saved-message-path", "tabellify-saved-list",
+    "tabellify-saved-status", "tabellify-saved-status-text", "tabellify-saved-status-path",
+    "tabellify-view-meta", "tabellify-view-save"]) {
+    assert.match(xhtml, new RegExp(`\\bid="${id}"`), `#${id} missing`);
+  }
+  assert.match(xhtml, /<html:ul id="tabellify-saved-list" aria-labelledby="tabellify-saved-summary">/);
+  assert.match(xhtml, /<html:option value="all" data-l10n-id="tabellify-saved-filter-all">/);
+  assert.match(xhtml, /<html:option value="collection" data-l10n-id="tabellify-saved-filter-collection">/);
+  assert.match(xhtml, /<html:p id="tabellify-saved-status" role="status" hidden="hidden">/);
+  // Modal: Save table first, then Export CSV and Close; heading and save button text set from JS.
+  assert.match(xhtml, /<html:button id="tabellify-view-save"><\/html:button>\s*<html:button id="tabellify-view-export"/);
+  assert.match(xhtml, /<html:h2 id="tabellify-view-heading"><\/html:h2>/);
+  // The status lines' IDs are built from one prefix in showExportStatus.
+  assert.match(js, /target === "saved" \? "tabellify-saved-status"/);
+});
+
+test("F007b AC22: the three new listeners are added in init and removed in onUnload", () => {
+  const init = /async init\(\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  const unload = /onUnload: \(\) => \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(init, /saved\.addEventListener\("click", this\.onSavedClick\)/);
+  assert.match(init, /saved\.addEventListener\("keydown", this\.onSavedKeydown\)/);
+  assert.match(init, /this\.el\("tabellify-saved-filter"\)\.addEventListener\("change", this\.onSavedFilterChange\)/);
+  assert.match(unload, /saved\?\.removeEventListener\("click", TabellifyWorkspace\.onSavedClick\)/);
+  assert.match(unload, /saved\?\.removeEventListener\("keydown", TabellifyWorkspace\.onSavedKeydown\)/);
+  assert.match(unload, /el\("tabellify-saved-filter"\)\s*\?\.removeEventListener\("change", TabellifyWorkspace\.onSavedFilterChange\)/);
+  const onLoad = /onLoad: \(\) => \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(onLoad, /initSavedTables\(\)/);
+});
+
+test("F007b AC22: table IDs are never put into a selector; saved-mode texts go in with textContent", () => {
+  // Every querySelector(All) argument in workspace.js is a fixed string literal or a
+  // template whose only interpolation is a numeric paper ID (Owner 2026-11-13 test).
+  assert.doesNotMatch(js, /tableId\}|\$\{[^}]*tableId|data-table-id="\$/);
+  for (const m of js.matchAll(/querySelector(?:All)?\(([^)]*)\)/g)) {
+    assert.doesNotMatch(m[1], /tableId|\.id\b|viewTableId|confirmDeleteId/, `selector built from a table ID: ${m[1]}`);
+  }
+  assert.match(js, /li\.dataset\.tableId = entry\.id;/);
+  assert.match(js, /name\.textContent = entry\.name;/);
+  // The clock is read only in workspace.js (the model gets `now`).
+  assert.match(js, /new Date\(\)\.toISOString\(\)/);
 });
