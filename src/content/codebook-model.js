@@ -340,13 +340,40 @@ var TabellifyCodebook = {
       if (!result.ok) return result;
       return { ok: true, data: result.data, groupId: anchorRecord.group, created: false, anchorRemoved: false };
     }
+    const result = this.tagToGroupName(data, anchor, tag);
+    if (!result.ok) return result;
+    return { ...result, anchorRemoved: true };
+  },
+
+  /**
+   * Turn the TAG `nameTag` into a group NAME and put `childTag` in that group (Feature 006c
+   * Amendment 2: the bottom nest calls it with the target tag as the name, the flipped
+   * "top edge" drop with the dragged tag as the name). Both must already be in the codebook.
+   * - The group named like `nameTag` (ignoring case; its stored spelling wins) is reused,
+   *   even if it is `nameTag`'s own group; otherwise a new group named exactly `nameTag` is
+   *   created (id from nextId, `created: true`).
+   * - The tag `nameTag` is removed from the codebook, wherever it was (grouped or not). Only
+   *   the codebook changes: the Zotero tag and its uses stay.
+   * - `childTag` moves into the group (end of the tag list) unless it is already there.
+   * Refused (ERR_TAG_MISSING) when either tag is unknown or they are the same tag.
+   * Returns a new data object; the input is never changed.
+   * @param {CodebookData} data
+   * @param {string} nameTag   The tag that becomes the group's name
+   * @param {string} childTag  The tag that goes into the group
+   * @returns {{ ok: true, data: CodebookData, groupId: string, created: boolean }
+   *   | { ok: false, error: string }}
+   */
+  tagToGroupName(data, nameTag, childTag) {
+    if (!this.findTag(data, nameTag) || !this.findTag(data, childTag) || nameTag === childTag) {
+      return this.refuse(this.ERR_TAG_MISSING);
+    }
     const next = this.clone(data);
-    const lower = anchor.toLowerCase();
+    const lower = nameTag.toLowerCase();
     const existing = next.codebooks[0].groups.find((g) => g.name.toLowerCase() === lower);
-    const groupId = existing ? existing.id : this.pushGroup(next, anchor);
-    next.codebooks[0].tags = next.codebooks[0].tags.filter((t) => t.name !== anchor);
-    if (this.findTag(next, tag).group !== groupId) this.moveTagRecord(next, tag, groupId);
-    return { ok: true, data: next, groupId, created: !existing, anchorRemoved: true };
+    const groupId = existing ? existing.id : this.pushGroup(next, nameTag);
+    next.codebooks[0].tags = next.codebooks[0].tags.filter((t) => t.name !== nameTag);
+    if (this.findTag(next, childTag).group !== groupId) this.moveTagRecord(next, childTag, groupId);
+    return { ok: true, data: next, groupId, created: !existing };
   },
 
   /**
