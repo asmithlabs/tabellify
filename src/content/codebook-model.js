@@ -285,6 +285,30 @@ var TabellifyCodebook = {
   },
 
   /**
+   * Turn a group back into a tag (Feature 006c Amendment 3, owner 2026-11-13: an emptied
+   * group must not vanish from the table, which only shows groups with columns). The group
+   * is removed and its name is added as an UNGROUPED tag at the end of the tag list, unless
+   * a tag with exactly that name is already in the codebook (then the group is only
+   * removed and that tag stays where it is). Tags still in the group become ungrouped, as
+   * with deleteGroup (normally the group is empty when this is called). Only the codebook
+   * changes: nothing in Zotero.
+   * @param {CodebookData} data
+   * @param {string} groupId
+   * @returns {{ ok: true, data: CodebookData, tag: string, added: boolean } | { ok: false, error: string }}
+   */
+  groupToTag(data, groupId) {
+    const group = this.findGroup(data, groupId);
+    if (!group) return this.refuse(this.ERR_GROUP_MISSING);
+    const name = group.name;
+    const deleted = this.deleteGroup(data, groupId);
+    if (!deleted.ok) return deleted;
+    const next = deleted.data;
+    const added = !this.findTag(next, name);
+    if (added) next.codebooks[0].tags.push({ name, group: null });
+    return { ok: true, data: next, tag: name, added };
+  },
+
+  /**
    * Remove a tag from the codebook (its column disappears). Only the codebook changes.
    * @param {CodebookData} data
    * @param {string} tag  Exact tag string as stored

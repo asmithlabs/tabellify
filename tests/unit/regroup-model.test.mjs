@@ -114,7 +114,7 @@ test("AC30 Table 1 bottom: B becomes a group name at B's place, A under it (AC17
   assert.deepEqual(plain(p.layout.tagOrder), { g5: ["sex"] });
   assert.ok(plain(p.layout.topOrder).some((e) => e.group === U), "home marker kept");
   assert.deepEqual(plain(R.describe(cb, EMPTY, { groupId: U, tag: "sex" }, tagCell(U, "age", "bottom"))),
-    { kind: "regroup", hint: "new-group", effect: "created", name: "age", edge: "bottom", named: "below" });
+    { kind: "regroup", hint: "new-group", effect: "created", name: "age", edge: "bottom", named: "below", revived: "" });
 });
 
 test("AC30 Table 1 top (flip): A becomes a group name at B's place, B under it (AC18)", () => {
@@ -221,7 +221,7 @@ test("AC30 Table 2 bottom: A joins G at its end; already in G = move to the end 
   assert.equal(a.p.groupId, "g3");
   assert.deepEqual(a.shown.at(-1), ["g3", ["Hospitalization", "Mortality", "Heat index"]]);
   assert.deepEqual(plain(R.describe(cb, EMPTY, { groupId: "g2", tag: "Heat index" }, groupCell("g3", "bottom"))),
-    { kind: "regroup", hint: "join", effect: "joined", name: "Outcome", edge: "bottom", named: null });
+    { kind: "regroup", hint: "join", effect: "joined", name: "Outcome", edge: "bottom", named: null, revived: "" });
   const b = drop(cb, EMPTY, { groupId: "g3", tag: "Hospitalization" }, groupCell("g3", "bottom"));
   assert.equal(b.p.kind, "reorder");
   assert.deepEqual(b.shown.at(-1), ["g3", ["Mortality", "Hospitalization"]]);
@@ -258,16 +258,33 @@ test("AC30 Table 2 top falls back to the pointer's side (never 'above a group')"
   assert.equal(R.describe(cb, EMPTY, { groupId: U, tag: "age" }, groupCell("g9", "bottom")), null);
 });
 
-test("never disappears: the last tag of a group can't leave it (the group would vanish), refused", () => {
+test("Amendment 3: the last tag leaving a group: the group turns back into a tag at its place", () => {
   // Was Q3 ("an emptied group stays as 'G · 0'"): the group then vanished from the table.
-  // Owner, 2026-11-13: nothing may just disappear, so the drop is refused instead.
-  const cb = book([{ id: "g2", name: "Solo" }], [["only", "g2"], ["age", null]]);
-  for (const target of [groupCell("g2", "left"), groupCell("g2", "right"), tagCell(U, "age", "left"), tagCell(U, "age", "bottom"), tagCell(U, "age", "top")]) {
-    assert.deepEqual(plain(R.plan(cb, EMPTY, { groupId: "g2", tag: "only" }, target)), { kind: "refused", error: R.ERR_WOULD_HIDE }, JSON.stringify(target));
-    assert.equal(R.describe(cb, EMPTY, { groupId: "g2", tag: "only" }, target), null, "no indicator, no hint");
-  }
-  // Inside its own group it is a no-op reorder (nothing changes, nothing hidden).
-  assert.equal(R.plan(cb, EMPTY, { groupId: "g2", tag: "only" }, groupCell("g2", "bottom")).kind, "reorder");
+  // Owner, 2026-11-13 (option B): the group becomes an ungrouped tag with its name instead.
+  const cb = book([{ id: "g2", name: "Solo" }, { id: "g3", name: "Pair" }], [["only", "g2"], ["p", "g3"], ["q", "g3"], ["age", null]]);
+  const layout = frozen({ topOrder: [{ tag: "age" }, { group: "g2" }, { group: "g3" }], tagOrder: { g2: ["only"] } });
+  const { p, shown, data } = drop(cb, layout, { groupId: "g2", tag: "only" }, groupCell("g2", "left"));
+  assert.equal(p.kind, "regroup");
+  assert.deepEqual(plain(p.revived), { groupId: "g2", tag: "Solo", added: true });
+  assert.deepEqual(plain(C.groups(data)), [{ id: "g3", name: "Pair" }], "the group is gone");
+  assert.deepEqual(plain(data.codebooks[0].tags.find((t) => t.name === "Solo")), { name: "Solo", group: null });
+  // "only" lands left of where the group was; "Solo" takes the group's place.
+  assert.deepEqual(shown, [[U, ["age", "only", "Solo"]], ["g3", ["p", "q"]]]);
+  assert.equal(Object.hasOwn(p.layout.tagOrder, "g2"), false, "the group's tag order is pruned");
+  assert.equal(R.describe(cb, layout, { groupId: "g2", tag: "only" }, groupCell("g2", "left")).revived, "Solo");
+  // Joining another group: the emptied group's name stays where the group was.
+  const join = drop(cb, layout, { groupId: "g2", tag: "only" }, groupCell("g3", "bottom"));
+  assert.deepEqual(join.shown, [[U, ["age", "Solo"]], ["g3", ["p", "q", "only"]]]);
+  // A tag with that exact name already in the codebook: the group is only removed.
+  const cb2 = book([{ id: "g2", name: "Solo" }], [["only", "g2"], ["Solo", null], ["age", null]]);
+  const again = drop(cb2, EMPTY, { groupId: "g2", tag: "only" }, tagCell(U, "age", "right"));
+  assert.deepEqual(plain(again.p.revived), { groupId: "g2", tag: "Solo", added: false });
+  assert.deepEqual(again.shown, [[U, ["Solo", "age", "only"]]]);
+  assert.equal(again.data.codebooks[0].tags.filter((t) => t.name === "Solo").length, 1);
+  // Inside its own group it is a no-op reorder (nothing changes).
+  assert.equal(R.plan(cb, layout, { groupId: "g2", tag: "only" }, groupCell("g2", "bottom")).kind, "reorder");
+  // Other drops report no revived group.
+  assert.equal(R.plan(cb, layout, { groupId: "g3", tag: "p" }, groupCell("g3", "left")).revived, null);
 });
 
 // ---------------------------------------------------------------------------------------
@@ -479,32 +496,36 @@ test("AC30 keyboard: an ungrouped tag flips / nests with its left neighbour, or 
 // vanished from the table.
 // ---------------------------------------------------------------------------------------
 
-test("never disappears (repro): after a flip, dragging the group's only tag out is refused", () => {
+test("never disappears (repro): after a flip, the group's only tag leaving turns the group back into a tag", () => {
   // Flip: bmi becomes a group name over smoker (AC18).
   const flip = drop(setup(), EMPTY, { groupId: U, tag: "bmi" }, tagCell(U, "smoker", "top"));
   assert.equal(flip.p.named, "above");
   const cb = frozen(flip.data);
   const layout = frozen(flip.p.layout);
   const drag = { groupId: "g5", tag: "smoker" };
-  // Every place to the west (left edge) and the other ways out of the group.
+  // The owner's case: the west (left) edge of the "bmi" header. bmi is a tag again, at the
+  // group's place, with smoker right before it.
+  const west = drop(cb, layout, drag, groupCell("g5", "left"));
+  assert.deepEqual(plain(west.p.revived), { groupId: "g5", tag: "bmi", added: true });
+  assert.deepEqual(west.shown.slice(0, 1), [[U, ["age", "sex", "smoker", "bmi", "diet"]]]);
+  // Every other way out keeps "bmi" on screen too.
   const targets = [
-    groupCell("g5", "left"), groupCell("g5", "top", "left"), groupCell("g5", "right"),
+    groupCell("g5", "top", "left"), groupCell("g5", "right"),
     tagCell(U, "age", "left"), tagCell(U, "diet", "left"), tagCell(U, "age", "bottom"), tagCell(U, "age", "top"),
     tagCell("g2", "Heat index", "left"), groupCell("g2", "left"), groupCell("g2", "bottom"),
     runCell(0, "left"), runCell(1, "left"),
     R.keyboardTarget(cb, layout, drag, "up"),
   ];
   for (const target of targets) {
-    const p = R.plan(cb, layout, frozen(drag), frozen(target));
-    assert.deepEqual(plain(p), { kind: "refused", error: R.ERR_WOULD_HIDE }, JSON.stringify(target));
-    assert.equal(R.describe(cb, layout, frozen(drag), frozen(target)), null);
+    const { p, shown } = drop(cb, layout, drag, target);
+    assert.equal(p.kind, "regroup", JSON.stringify(target));
+    assert.equal(p.revived?.tag, "bmi", JSON.stringify(target));
+    assert.ok(shown.some(([, tags]) => tags.includes("bmi")), `bmi is a column after ${JSON.stringify(target)}`);
   }
-  // The "bmi" super-header stays shown over smoker.
-  assert.deepEqual(shownAfter(cb, layout)[1], ["g5", ["smoker"]]);
-  // Once the group has a second tag, smoker may leave: "bmi" stays shown over the other one.
+  // With a second tag in the group, smoker leaves and "bmi" stays a group over the other.
   const join = drop(cb, layout, { groupId: U, tag: "diet" }, groupCell("g5", "bottom"));
   const out = drop(join.data, join.p.layout, drag, groupCell("g5", "left"));
-  assert.equal(out.p.kind, "regroup");
+  assert.equal(out.p.revived, null);
   assert.deepEqual(out.shown.slice(0, 2), [[U, ["age", "sex", "smoker"]], ["g5", ["diet"]]]);
 });
 
@@ -521,13 +542,16 @@ test("never disappears: hiddenBy names lost tags and groups; the nest / flip nam
   // A group that loses its last column is reported.
   const emptied = C.setTagGroup(C.setTagGroup(cb, "Heat index", null).data, "Temperature", null).data;
   assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, emptied, EMPTY)), [{ group: "g2" }]);
+  // ... unless its name is a column after (Amendment 3: the group turned into a tag).
+  const revived = C.groupToTag(emptied, "g2").data;
+  assert.deepEqual(plain(R.hiddenBy(cb, EMPTY, revived, EMPTY)), []);
 });
 
 /**
  * Independent check (not R.hiddenBy): what disappeared between two table states. Every tag
  * of `tagsToKeep` must be a column after, or (only for `nameTag`, a nest / flip) have left
  * the codebook and be the name of a group shown after; every group shown before must still
- * be shown after.
+ * be shown, as a group or (Amendment 3) as a tag column with its name.
  */
 function disappeared(cbBefore, layoutBefore, cbAfter, layoutAfter, nameTag, tagsToKeep) {
   const shownBefore = L.orderedGroups(TM.codebookGroups(cbBefore), layoutBefore);
@@ -541,8 +565,11 @@ function disappeared(cbBefore, layoutBefore, cbAfter, layoutAfter, nameTag, tags
     if (!inCodebook.has(tag) && names.includes(tag.toLowerCase()) && (nameTag === undefined || tag === nameTag)) continue;
     out.push(`tag ${tag}`);
   }
+  // Every group shown before: still a group (same name, ignoring case: a revived name may
+  // become a group again later), or a tag column with its exact name (Amendment 3).
   for (const g of shownBefore) {
-    if (!g.ungrouped && !shown.some((h) => !h.ungrouped && h.id === g.id)) out.push(`group ${g.id}`);
+    if (g.ungrouped || names.includes(g.name.toLowerCase()) || columns.includes(g.name)) continue;
+    out.push(`group ${g.name}`);
   }
   if (new Set(columns).size !== columns.length) out.push("a column shown twice");
   return out;
@@ -560,6 +587,8 @@ const NEVER_BOOKS = {
   two: () => book([], [["a", null], ["b", null]]),
   // Group names like tags (reuse, Q2), an empty group ("Empty · 0") that has no column.
   sameName: () => book([{ id: "g2", name: "A" }, { id: "g3", name: "Empty" }, { id: "g4", name: "Country" }], [["x", "g2"], ["a", null], ["b", null], ["country", null]]),
+  // A group whose name is also a tag (exact): emptying it only removes the group.
+  exactName: () => book([{ id: "g2", name: "b" }, { id: "g3", name: "H" }], [["x", "g2"], ["y", "g3"], ["b", null], ["a", null]]),
   // Groups only (no ungrouped tags, so no run headers).
   groupsOnly: () => book([{ id: "g2", name: "G" }, { id: "g3", name: "H" }], [["x", "g2"], ["y", "g3"], ["z", "g3"]]),
 };
@@ -622,7 +651,7 @@ function allMoves(cb, layout) {
 }
 
 test("never disappears (exhaustive): every source × target × edge × side, and every key", () => {
-  const seen = { sources: new Set(), targets: new Set(), refused: 0, named: 0 };
+  const seen = { sources: new Set(), targets: new Set(), revived: 0, named: 0 };
   for (const [name, make] of Object.entries(NEVER_BOOKS)) {
     const cb = frozen(make());
     for (const layout of neverLayouts(cb).map(frozen)) {
@@ -630,10 +659,8 @@ test("never disappears (exhaustive): every source × target × edge × side, and
       for (const m of allMoves(cb, layout)) {
         const lost = disappeared(cb, layout, m.codebook, m.layout, m.nameTag ?? null, tags);
         assert.deepEqual(lost, [], `${name}: ${m.label} made something disappear`);
-        if (m.p?.kind === "refused") {
-          seen.refused++;
-          assert.equal(m.p.error, R.ERR_WOULD_HIDE);
-        }
+        assert.notEqual(m.p?.kind, "refused", `${name}: ${m.label} was refused`);
+        if (m.p?.revived) seen.revived++;
         if (m.p?.named) seen.named++;
       }
       // Kinds covered (so the loop is not vacuous).
@@ -653,11 +680,11 @@ test("never disappears (exhaustive): every source × target × edge × side, and
   assert.deepEqual([...seen.targets].sort(), [
     "first tag column (next to Title)", "group header", "leftmost column of a group", "run header", "tag inside a group", "ungrouped tag",
   ]);
-  assert.ok(seen.refused > 0, "some drops were refused");
+  assert.ok(seen.revived > 0, "some drops emptied a group (it became a tag)");
   assert.ok(seen.named > 0, "some nests / flips happened");
 });
 
-test("never disappears (two steps): every tag of the start is still a column or a shown group name", () => {
+test("never disappears (two steps): every tag and group of the start is still a column or a shown group", () => {
   // Two changes in a row (e.g. a flip, then a drop of the new group's only tag to the
   // west): the original tags must all still be on screen.
   const start = frozen(book([{ id: "g2", name: "Exposure" }, { id: "g3", name: "Solo" }], [["Heat", "g2"], ["Temp", "g2"], ["x", "g3"], ["a", null], ["b", null]]));

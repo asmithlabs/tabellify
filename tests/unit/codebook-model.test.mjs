@@ -88,7 +88,7 @@ test("the file defines TabellifyCodebook without Zotero/DOM/IOUtils", () => {
   assert.equal(M.SCHEMA_VERSION, 2);
   assert.equal(M.UNGROUPED_ID, "ungrouped");
   for (const fn of ["emptyData", "validate", "migrate", "groups", "tagsIn", "addGroup", "renameGroup",
-    "deleteGroup", "removeTagFromCodebook", "setTagGroup", "applyScript", "availableTags"]) {
+    "deleteGroup", "groupToTag", "removeTagFromCodebook", "setTagGroup", "applyScript", "availableTags"]) {
     assert.equal(typeof M[fn], "function", fn);
   }
   // Replaced by the v2 edits (ADR-0016).
@@ -179,6 +179,32 @@ test("AC13: deleteGroup removes the group; its tags become ungrouped in place (Q
   ]);
   assert.deepEqual(plain(M.validate(d)), { ok: true });
   assert.deepEqual(plain(M.deleteGroup(d, "g2")), { ok: false, error: M.ERR_GROUP_MISSING });
+});
+
+test("006c Amendment 3: groupToTag removes a group and adds its name as an ungrouped tag", () => {
+  const book = (groups, pairs) => v2(groups, pairs.map(([name, group]) => ({ name, group })));
+  const d = book([{ id: "g2", name: "Solo" }, { id: "g3", name: "Pair" }], [["p", "g3"], ["age", null]]);
+  const before = JSON.stringify(d);
+  const r = M.groupToTag(d, "g2");
+  assert.equal(r.ok, true);
+  assert.equal(r.tag, "Solo");
+  assert.equal(r.added, true);
+  assert.deepEqual(plain(M.groups(r.data)), [{ id: "g3", name: "Pair" }]);
+  assert.deepEqual(plain(r.data.codebooks[0].tags), [{ name: "p", group: "g3" }, { name: "age", group: null }, { name: "Solo", group: null }]);
+  assert.deepEqual(plain(M.validate(r.data)), { ok: true });
+  assert.equal(JSON.stringify(d), before, "input not mutated");
+  // A tag with exactly that name exists (anywhere): only the group goes; the tag stays put.
+  const e = book([{ id: "g2", name: "Solo" }, { id: "g3", name: "Pair" }], [["Solo", "g3"], ["age", null]]);
+  const r2 = M.groupToTag(e, "g2");
+  assert.equal(r2.added, false);
+  assert.deepEqual(plain(r2.data.codebooks[0].tags), [{ name: "Solo", group: "g3" }, { name: "age", group: null }]);
+  // Exact match only: "solo" is a different tag, so "Solo" is added.
+  const f = book([{ id: "g2", name: "Solo" }], [["solo", null]]);
+  assert.equal(M.groupToTag(f, "g2").added, true);
+  // Tags still in the group become ungrouped (as deleteGroup); a missing group is refused.
+  const g = book([{ id: "g2", name: "Solo" }], [["x", "g2"]]);
+  assert.deepEqual(plain(M.groupToTag(g, "g2").data.codebooks[0].tags), [{ name: "x", group: null }, { name: "Solo", group: null }]);
+  assert.deepEqual(plain(M.groupToTag(g, "g9")), { ok: false, error: M.ERR_GROUP_MISSING });
 });
 
 // ---------------------------------------------------------------------------------------

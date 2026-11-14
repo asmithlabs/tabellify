@@ -17,9 +17,12 @@
  * (left / right), so what the indicator shows is always what the drop does. Body cells
  * below a tag act as that tag's header with the bottom edge (the workspace passes
  * `edge: "bottom"`).
- * NOTHING DISAPPEARS (owner, 2026-11-13): a drop that would leave a tag without a column,
- * or a group without a column (so its super-header would vanish), is refused (hiddenBy).
- * The only tag that may leave the table is the one a nest or flip turns into a group name.
+ * NOTHING DISAPPEARS (owner, 2026-11-13; spec Amendment 3): the table only shows a group
+ * that has at least one tag column. So when a drop (or Alt+arrow key) takes the LAST tag
+ * out of a group, that group turns back into an ungrouped tag with its name, at the
+ * group's place (TabellifyCodebook.groupToTag). The only tag that may leave the table is
+ * the one a nest or flip turns into a group name. hiddenBy() states the rule; a drop that
+ * would still break it is not allowed (a safety net the exhaustive tests show never fires).
  *
  * "Plan, then apply": this file only COMPUTES what a drop would do: a new codebook object
  * (through TabellifyCodebook's edit functions) and a new column layout (through
@@ -64,22 +67,25 @@ var TabellifyRegroup = {
    *   | { kind: "reorder", layout: ColumnLayout, edge: string }
    *   | { kind: "regroup", edit: { ok: true, data: object }, layout: ColumnLayout,
    *       effect: "joined" | "created" | "ungrouped", groupId: string,
-   *       named: "below" | "above" | null, edge: string }
+   *       named: "below" | "above" | null, edge: string,
+   *       revived: { groupId: string, tag: string, added: boolean } | null }
    *   | { kind: "refused", error: string }}
    * `groupId`: the view ID of the block the drop makes (A's new block; for a flip, the
    * group A became the name of). `named`: which tag became a group name ("below" = the
-   * target B, bottom nest; "above" = the dragged A, flip), or null.
+   * target B, bottom nest; "above" = the dragged A, flip), or null. `revived`: the group
+   * the drop emptied, which turned back into the tag `tag` (`added` false when a tag with
+   * that name was already in the codebook), or null.
    */
   plan(codebook, columnLayout, drag, target) {
     const e = this.evaluate(codebook, columnLayout, drag, target);
     if (!e) return { kind: "none" };
     if (e.error) return { kind: "refused", error: e.error };
-    const { r, layout } = e;
+    const { r, layout, revived } = e;
     // A codebook edit that changes nothing is only a reorder (never a codebook save).
     if (!this.changed(codebook, r.edit.data)) return { kind: "reorder", layout, edge: r.edge };
     return {
       kind: "regroup", edit: { ok: true, data: r.edit.data }, layout,
-      effect: r.effect, groupId: r.blockId, named: r.named, edge: r.edge,
+      effect: r.effect, groupId: r.blockId, named: r.named, edge: r.edge, revived,
     };
   },
 
@@ -88,23 +94,27 @@ var TabellifyRegroup = {
    * `hint`: "reorder" | "join" | "to-ungrouped" | "new-group". `name`: the group joined
    * (stored spelling), or for "new-group" the group name the drop makes (the tag's own
    * spelling, or the stored spelling of an existing group with that name), as plain text;
-   * "" otherwise. `edge`: the edge after the fallback (what the indicator draws). null when
-   * nothing would happen or the codebook edit is refused.
+   * "" otherwise. `edge`: the edge after the fallback (what the indicator draws).
+   * `revived`: the name of the group the drop would empty (it turns back into a tag), or
+   * "". null when nothing would happen or the codebook edit is refused.
    * @param {object | null} codebook
    * @param {{ topOrder?: unknown, tagOrder?: unknown } | null} columnLayout
    * @param {{ groupId: string, tag: string }} drag
    * @param {RegroupTarget} target
    * @returns {{ kind: "reorder" | "regroup", hint: string, effect: string | null, name: string,
-   *   edge: string, named: "below" | "above" | null } | null}
+   *   edge: string, named: "below" | "above" | null, revived: string } | null}
    */
   describe(codebook, columnLayout, drag, target) {
     const e = this.evaluate(codebook, columnLayout, drag, target);
     if (!e || e.error) return null;
     const r = e.r;
     if (!this.changed(codebook, r.edit.data)) {
-      return { kind: "reorder", hint: "reorder", effect: null, name: "", edge: r.edge, named: null };
+      return { kind: "reorder", hint: "reorder", effect: null, name: "", edge: r.edge, named: null, revived: "" };
     }
-    return { kind: "regroup", hint: r.hint, effect: r.effect, name: r.name, edge: r.edge, named: r.named };
+    return {
+      kind: "regroup", hint: r.hint, effect: r.effect, name: r.name, edge: r.edge, named: r.named,
+      revived: e.revived ? e.revived.tag : "",
+    };
   },
 
   /**
@@ -151,46 +161,66 @@ var TabellifyRegroup = {
   // ---------------------------------------------------------------------------------------
 
   /**
-   * Classify a drop (resolve), compute the layout after it (layoutAfter) and check the
-   * "nothing disappears" rule (hiddenBy). Returns null when nothing would happen,
-   * `{ r, error }` when the drop is refused (the codebook edit was refused, or the drop
-   * would make a tag or a group disappear from the table), otherwise `{ r, layout }`.
-   * plan() and describe() both go through here, so the drop indicator is never shown for a
-   * drop that plan() would refuse.
+   * Classify a drop (resolve), turn a group the drop empties back into a tag
+   * (reviveEmptied), compute the layout after it (layoutAfter) and check the "nothing
+   * disappears" rule (hiddenBy). Returns null when nothing would happen (or, as a safety
+   * net, when something would still disappear), `{ r, error }` when the codebook edit is
+   * refused, otherwise `{ r, layout, revived }`. plan() and describe() both go through
+   * here, so the indicator and hint always match what the drop does.
    */
   evaluate(codebook, columnLayout, drag, target) {
-    const r = this.resolve(codebook, columnLayout, drag, target);
-    if (!r) return null;
-    if (!r.edit.ok) return { r, error: r.edit.error };
-    const layout = this.layoutAfter(codebook, columnLayout, drag.tag, r);
+    const resolved = this.resolve(codebook, columnLayout, drag, target);
+    if (!resolved) return null;
+    if (!resolved.edit.ok) return { r: resolved, error: resolved.edit.error };
+    const revive = this.reviveEmptied(codebook, resolved.edit.data);
+    if (!revive.ok) return { r: resolved, error: revive.error };
+    // Object spread makes a NEW object (the resolved result is not changed).
+    const r = { ...resolved, edit: { ok: true, data: revive.data } };
+    const revived = revive.revived[0] ?? null;
+    const layout = this.layoutAfter(codebook, columnLayout, drag.tag, r, revive.revived);
     const nameTag = r.place.kind === "nest" ? r.place.nameTag : null;
-    if (this.hiddenBy(codebook, columnLayout, r.edit.data, layout, nameTag).length > 0) {
-      return { r, error: this.ERR_WOULD_HIDE };
-    }
-    return { r, layout };
+    if (this.hiddenBy(codebook, columnLayout, r.edit.data, layout, nameTag).length > 0) return null;
+    return { r, layout, revived };
   },
 
   /**
-   * Fluent ID of the refusal shown when a drop or Alt+arrow key would make a tag or a
-   * group disappear from the table (owner, 2026-11-13: "they should be groups, grouped tags
-   * or ungrouped tags. they should never just disappear").
+   * Spec 006c Amendment 3: every group that had tags in `before` and has none in `after`
+   * (a drop took its last tag out) turns back into a tag (TabellifyCodebook.groupToTag).
+   * A drop moves one tag, so at most one group is emptied; the loop is only defensive.
+   * @param {object} before  Codebook before the drop
+   * @param {object} after   Codebook after the drop's own edit
+   * @returns {{ ok: true, data: object, revived: Array<{ groupId: string, tag: string, added: boolean }> }
+   *   | { ok: false, error: string }}
    */
-  ERR_WOULD_HIDE: "tabellify-regroup-error-would-hide",
+  reviveEmptied(before, after) {
+    const TM = TabellifyTagMonitor;
+    const had = new Set(TM.codebookGroups(before).filter((g) => !g.ungrouped && g.tags.length > 0).map((g) => g.id));
+    let data = after;
+    const revived = [];
+    for (const g of TM.codebookGroups(after)) {
+      if (g.ungrouped || g.tags.length > 0 || !had.has(g.id)) continue;
+      const result = TabellifyCodebook.groupToTag(data, g.id);
+      if (!result.ok) return result;
+      data = result.data;
+      revived.push({ groupId: g.id, tag: result.tag, added: result.added });
+    }
+    return { ok: true, data, revived };
+  },
 
   /**
-   * THE "NOTHING DISAPPEARS" RULE (owner, 2026-11-13). What a change from (codebookBefore,
-   * layoutBefore) to (codebookAfter, layoutAfter) would make disappear from the table, as a
-   * list of `{ tag }` / `{ group }` entries ([] = nothing disappears):
+   * THE "NOTHING DISAPPEARS" RULE (owner, 2026-11-13; spec Amendment 3). What a change from
+   * (codebookBefore, layoutBefore) to (codebookAfter, layoutAfter) would make disappear from
+   * the table, as a list of `{ tag }` / `{ group }` entries ([] = nothing disappears):
    * - every tag in the codebook before must still have a column after (inside a group or
    *   ungrouped). The one exception is `nameTag`, the tag a nest (bottom edge of an
    *   ungrouped tag) or a flip (top edge) turns into a group name: it may leave the
    *   codebook, but only if a group with that name (ignoring case) is shown after;
-   * - every group shown before (a super-header) must still be shown after.
+   * - every group shown before (a super-header) must still be shown after, either as a
+   *   group, or (after its last tag left, Amendment 3) as a tag column with its name.
    * Why groups count: the table only shows a group that has at least one tag column
-   * (TabellifyTableLayout.orderedGroups). A group whose LAST tag moves out disappears from
-   * the table (only its "G · 0" pill stays). When that group's name came from a tag (a
-   * nest or a flip), the user saw that tag vanish. The codebook does not record where a
-   * group's name came from, so the rule protects every group.
+   * (TabellifyTableLayout.orderedGroups). Without Amendment 3 a group whose LAST tag moved
+   * out vanished from the table; when its name had come from a tag (a nest or a flip), the
+   * user saw that tag vanish.
    * @param {object | null} codebookBefore
    * @param {{ topOrder?: unknown, tagOrder?: unknown } | null} layoutBefore
    * @param {object | null} codebookAfter
@@ -214,7 +244,9 @@ var TabellifyRegroup = {
       if (nameTag !== null && tag === nameTag && isGroupName(tag)) continue;
       lost.push({ tag });
     }
-    for (const g of before) if (!g.ungrouped && !shownIds.has(g.id)) lost.push({ group: g.id });
+    for (const g of before) {
+      if (!g.ungrouped && !shownIds.has(g.id) && !columns.has(g.name)) lost.push({ group: g.id });
+    }
     return lost;
   },
 
@@ -330,7 +362,7 @@ var TabellifyRegroup = {
    * shown top-level item (the home marker copied through), `tagOrder` is updated for the
    * group A (or the nested tag) went into, and the moved tags are pruned elsewhere.
    */
-  layoutAfter(codebook, columnLayout, A, r) {
+  layoutAfter(codebook, columnLayout, A, r, revived = []) {
     const L = TabellifyTableLayout;
     const groupsBefore = TabellifyTagMonitor.codebookGroups(codebook);
     const groupsAfter = TabellifyTagMonitor.codebookGroups(r.edit.data);
@@ -382,6 +414,15 @@ var TabellifyRegroup = {
     let layout = { topOrder: top, tagOrder };
     if (setGroup !== null && blockAfter) {
       layout = L.withTagOrder(layout, setGroup, L.mergeOrder(blockAfter.tags, setTags));
+    }
+    // Amendment 3: a group the drop emptied became a tag; a NEW tag takes the group's
+    // top-level place (a tag that was already in the codebook keeps its own place), and the
+    // group's tag order goes.
+    for (const { groupId, tag, added } of revived) {
+      layout = {
+        topOrder: layout.topOrder.flatMap((e) => (isGroup(e, groupId) ? (added ? [{ tag }] : []) : [e])),
+        tagOrder: Object.fromEntries(Object.entries(layout.tagOrder).filter(([id]) => id !== groupId)),
+      };
     }
     // topItems against the codebook AFTER the edit drops the entries the drop made stale
     // (an emptied group, a tag that became a group name) and keeps the home marker.
