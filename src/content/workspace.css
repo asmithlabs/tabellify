@@ -910,6 +910,7 @@
 
 #tabellify-view-note,
 #tabellify-view-meta,
+#tabellify-view-live-note,
 #tabellify-view-name-help {
   font-size: var(--tabellify-font-size-sm);
   color: var(--tabellify-color-text-muted);
@@ -944,6 +945,13 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--tabellify-space-3);
+}
+
+/* F007b: "Show live" while the live view is shown (aria-pressed): bold text and an
+   outline, so the pressed state is not colour alone (as "Manual order"). */
+#tabellify-view-actions button[aria-pressed="true"] {
+  font-weight: bold;
+  outline: var(--tabellify-border-width) solid var(--tabellify-color-action);
 }
 
 #tabellify-view-actions #tabellify-view-export-status {

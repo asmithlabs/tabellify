@@ -2074,7 +2074,8 @@ function modalSetup(io = fakeExportIo(), options) {
   const d = (id) => env.document.getElementById(id);
   d("tabellify-view-dialog").addEventListener("close", env.W.onViewClose);
   // Real buttons start enabled.
-  for (const id of ["tabellify-view-export", "tabellify-view-close", "tabellify-view-table", "tabellify-export-csv", "tabellify-view-save"]) {
+  for (const id of ["tabellify-view-export", "tabellify-view-close", "tabellify-view-table", "tabellify-export-csv", "tabellify-view-save",
+    "tabellify-view-live", "tabellify-view-update", "tabellify-view-save-new"]) {
     d(id).localName = "button"; // the fake makes unknown IDs <div>s; the click handler looks for a button
     d(id).id = id;
     d(id).disabled = false;
@@ -2319,6 +2320,18 @@ const SAVED_TEXTS = {
   "tabellify-view-meta-snapshot": "Snapshot from",
   "tabellify-view-saved": "Table saved.",
   "tabellify-view-changes-saved": "Changes saved.",
+  "tabellify-view-show-live": "Show live",
+  "tabellify-view-show-snapshot": "Show snapshot",
+  "tabellify-view-update": "Update snapshot",
+  "tabellify-view-save-new": "Save as new table",
+  "tabellify-view-meta-live": "Live: built from your library now",
+  "tabellify-view-saved-new": "Saved as a new table.",
+  "tabellify-view-snapshot-updated": "Snapshot updated.",
+  "tabellify-view-loading": "Building the live table…",
+  "tabellify-view-live-missing": "Saved columns that are no longer in the codebook:",
+  "tabellify-view-live-no-collection": "This table's collection is no longer in My Library.",
+  "tabellify-view-live-no-codebook": "The codebook could not be loaded.",
+  "tabellify-view-live-error": "The live table could not be built.",
 };
 const SAVED_DIR = "/Users/tester/Zotero tabellify-dev/tabellify";
 const SAVED_FILE = `${SAVED_DIR}/tables.json`;
@@ -2670,9 +2683,10 @@ test("007b AC20: unsaved saved-mode edits are kept per table id; Tab skips hidde
   assert.equal(d("tabellify-view-name").value, "Unsaved edit");
   assert.ok(W.viewDrafts.has("saved:t1"));
   assert.equal(W.viewDrafts.has("saved:t2"), false, "unchanged values are not kept");
-  // Tab order: Name, Description, table area, Save changes, Export CSV, Close; a hidden button is skipped.
+  // Tab order: Name, Description, table area, Save changes, Show live, Export CSV, Close
+  // (Update snapshot and Save as new table are hidden on the snapshot); hidden buttons are skipped.
   assert.deepEqual([...W.viewFocusOrder()].map((el) => el.id), ["tabellify-view-name", "tabellify-view-description", "tabellify-view-scroll",
-    "tabellify-view-save", "tabellify-view-export", "tabellify-view-close"].map((id) => d(id).id));
+    "tabellify-view-save", "tabellify-view-live", "tabellify-view-export", "tabellify-view-close"].map((id) => d(id).id));
   d("tabellify-view-save").hidden = true;
   assert.equal(W.viewFocusOrder().includes(d("tabellify-view-save")), false);
   d("tabellify-view-save").hidden = false;
@@ -2751,4 +2765,174 @@ test("007b AC21: no Debug Output line in a 007b flow holds a name, description, 
   W.closeView();
   assert.ok(debug.length >= 8, "flows logged");
   for (const line of debug) for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 007b AC20 (live part) / AC21: Show live, Update snapshot, Save as new table
+// ---------------------------------------------------------------------------------------
+
+/**
+ * savedSetup() with a fake gatherMonitorData (counts calls). The live library has a new
+ * ungrouped tag "age" and no "Mortality" any more, so the saved "Mortality" column is missing.
+ */
+async function liveSetup(options = {}) {
+  const env = await savedSetup({ entries: TWO_TABLES(), ...options });
+  const { W } = env;
+  env.reads = [];
+  env.release = null;
+  W.codebook = codebookData([{ id: "g2", name: "Exposure", tags: ["Heat index", "Temperature"] }], ["age"]);
+  W.gatherMonitorData = async (id) => {
+    env.reads.push(id);
+    if (env.hold) await new Promise((resolve) => { env.release = resolve; });
+    if (env.readError) throw env.readError;
+    const data = monitorData();
+    data.papers[2].annotationTags = [{ tag: "age" }];
+    return data;
+  };
+  return env;
+}
+
+test("007b AC20: Show live reads once, renders the live table with the note; Show snapshot goes back; nothing written", async () => {
+  const { W, d, fs, reads, debug } = await liveSetup();
+  W.openSaved("t1");
+  const snapshotRows = d("tabellify-view-body").children.map((tr) => tr.textContent);
+  assert.equal(d("tabellify-view-live").hidden, false);
+  assert.equal(d("tabellify-view-live").textContent, "Show live");
+  assert.equal(d("tabellify-view-live").getAttribute("aria-pressed"), "false");
+  assert.equal(d("tabellify-view-update").hidden, true);
+  assert.equal(d("tabellify-view-save-new").hidden, true);
+  assert.equal(d("tabellify-view-live-note").hidden, true);
+  await W.onViewClick(click(d("tabellify-view-live")));
+  assert.deepEqual(reads, [1], "one read of the saved collection");
+  assert.equal(W.viewShowingLive, true);
+  // Live columns: today's codebook (age, Heat index, Temperature), not the saved Mortality.
+  const heads = d("tabellify-view-head").children.flatMap((tr) => tr.children.map((th) => th.textContent));
+  assert.ok(heads.includes("age") && !heads.includes("Mortality"), heads.join("|"));
+  assert.equal(d("tabellify-view-body").children.length, 3, "today's three papers");
+  assert.equal(d("tabellify-view-live-note").textContent, "Saved columns that are no longer in the codebook: Mortality");
+  assert.equal(d("tabellify-view-live-note").hidden, false);
+  assert.equal(d("tabellify-view-meta").textContent, "Live: built from your library now · F005 test");
+  assert.equal(d("tabellify-view-live").textContent, "Show snapshot");
+  assert.equal(d("tabellify-view-live").getAttribute("aria-pressed"), "true");
+  assert.equal(d("tabellify-view-update").hidden, false);
+  assert.equal(d("tabellify-view-save-new").hidden, false);
+  assert.equal(d("tabellify-view-export-status").hidden, true);
+  assert.ok(debug.includes("Tabellify: workspace: view: live table for t1: 3 paper(s), 3 tag column(s), 1 saved column(s) missing"), debug.join("\n"));
+  // Saved order (sort count desc): most codebook tags first.
+  assert.equal(d("tabellify-view-body").children[0].children[0].textContent, "Paper 2");
+  // Back to the snapshot.
+  await W.onViewClick(click(d("tabellify-view-live")));
+  assert.equal(W.viewShowingLive, false);
+  assert.deepEqual(d("tabellify-view-body").children.map((tr) => tr.textContent), snapshotRows);
+  assert.equal(d("tabellify-view-update").hidden, true);
+  assert.equal(d("tabellify-view-live-note").hidden, true);
+  assert.equal(fs.writes().length, 0);
+  // The workspace is unchanged: sort, layout and the counting switch.
+  assert.equal(W.sortKey, "count");
+  assert.equal(W.countItemTags, false);
+  W.closeView();
+});
+
+test("007b AC20: a live read that finishes after the modal closed changes nothing; a read error keeps the snapshot", async () => {
+  const env = await liveSetup();
+  const { W, d } = env;
+  W.openSaved("t1");
+  env.hold = true;
+  const pending = W.onViewClick(click(d("tabellify-view-live")));
+  assert.equal(d("tabellify-view-live").disabled, true, "off while reading");
+  assert.equal(d("tabellify-view-export-status-text").textContent, "Building the live table…");
+  W.closeView();
+  env.release();
+  assert.equal(await pending, null);
+  assert.equal(W.viewShowingLive, false);
+  assert.equal(W.viewLive, null);
+  // A read error: the note says so, the snapshot stays.
+  env.hold = false;
+  env.readError = new Error("read failed");
+  W.openSaved("t1");
+  await W.onViewClick(click(d("tabellify-view-live")));
+  assert.equal(W.viewShowingLive, false);
+  assert.equal(d("tabellify-view-live-note").textContent, "The live table could not be built.");
+  assert.equal(d("tabellify-view-body").children.length, 2);
+  W.closeView();
+});
+
+test("007b AC20: Show live is off with a note for an unknown collection key and for a missing codebook", async () => {
+  const { W, d, reads } = await liveSetup();
+  W.openSaved("t2"); // saved from "1/GONE0001"
+  assert.equal(d("tabellify-view-live").disabled, true);
+  assert.equal(d("tabellify-view-live-note").textContent, "This table's collection is no longer in My Library.");
+  assert.equal(d("tabellify-view-meta").textContent, `Snapshot from ${fmt(T2_TIME)} · Deleted coll (collection not found)`);
+  await W.showLive();
+  assert.deepEqual(reads, []);
+  W.closeView();
+  W.codebook = null;
+  W.openSaved("t1");
+  assert.equal(d("tabellify-view-live").disabled, true);
+  assert.equal(d("tabellify-view-live-note").textContent, "The codebook could not be loaded.");
+  // Export CSV still works (the snapshot).
+  assert.equal(d("tabellify-view-export").disabled, false);
+  W.closeView();
+});
+
+test("007b AC20: Update snapshot and Save as new table save once each", async () => {
+  const { W, d, fs, debug } = await liveSetup();
+  W.openSaved("t1");
+  await W.onViewClick(click(d("tabellify-view-live")));
+  await W.onViewClick(click(d("tabellify-view-update")));
+  assert.equal(fs.writes().length, 1);
+  let file = JSON.parse(fs.files.get(SAVED_FILE));
+  const t1 = file.tables.find((t) => t.id === "t1");
+  assert.deepEqual(t1.snapshot.blocks, [{ group: null, tags: ["age"] }, { group: "Exposure", tags: ["Heat index", "Temperature"] }]);
+  assert.equal(t1.snapshot.rows.length, 3);
+  assert.equal(t1.snapshot.takenAt, t1.updatedAt);
+  assert.equal(t1.createdAt, T1_TIME);
+  assert.equal(W.viewShowingLive, false, "the new snapshot is shown");
+  assert.equal(d("tabellify-view-export-status-text").textContent, "Snapshot updated.");
+  assert.equal(d("tabellify-view-meta").textContent, `Snapshot from ${fmt(t1.snapshot.takenAt)} · F005 test`);
+  assert.equal(d("tabellify-view-body").children.length, 3);
+  assert.ok(debug.includes("Tabellify: workspace: saved tables: snapshot updated for t1: 3 paper(s), 3 column(s) (revision 4)"), debug.join("\n"));
+  // Save as new: current Name, the saved definition, the live snapshot.
+  await W.onViewClick(click(d("tabellify-view-live")));
+  d("tabellify-view-name").value = "Heat test B";
+  await W.onViewClick(click(d("tabellify-view-save-new")));
+  assert.equal(fs.writes().length, 2);
+  file = JSON.parse(fs.files.get(SAVED_FILE));
+  const t3 = file.tables.find((t) => t.id === "t3");
+  assert.equal(t3.name, "Heat test B");
+  assert.deepEqual(t3.definition, t1.definition);
+  assert.equal(file.tables.find((t) => t.id === "t1").name, "Older table", "the source table is unchanged");
+  assert.equal(W.viewTableId, "t3");
+  assert.equal(d("tabellify-view-export-status-text").textContent, "Saved as a new table.");
+  assert.deepEqual(listItems(d).map((li) => li.dataset.tableId).slice(0, 1), ["t3"]);
+  assert.equal(W.viewDrafts.has("saved:t1"), false);
+  W.closeView();
+});
+
+test("007b AC21: an export from the modal in live view exports the live table", async () => {
+  const io = fakeExportIo();
+  const { W, d, S, Csv } = await liveSetup({ io });
+  W.openSaved("t1");
+  await W.onViewClick(click(d("tabellify-view-live")));
+  await W.onViewClick(click(d("tabellify-view-export")));
+  const labels = { title: "Title", untitled: "(untitled)", k: "Tags used (k)", m: "Codebook tags (M)" };
+  assert.equal(io.writes[0].text, Csv.build(W.viewLive.view, labels).text);
+  assert.notEqual(io.writes[0].text, Csv.build(S.snapshotView(W.savedTables.tables[0].snapshot), labels).text);
+  W.closeView();
+});
+
+test("007b AC21: no Debug Output line in the live flows holds a name, title, tag, collection or key", async () => {
+  const secrets = ["Paper", "Saved paper", "Heat index", "Temperature", "Mortality", "age", "Exposure", "F005 test",
+    "Older table", "Heat test", "ITEM01", "COLL0001", "tables.json", "tester"];
+  const { W, d, debug } = await liveSetup();
+  W.openSaved("t1");
+  await W.onViewClick(click(d("tabellify-view-live")));
+  await W.onViewClick(click(d("tabellify-view-update")));
+  await W.onViewClick(click(d("tabellify-view-live")));
+  d("tabellify-view-name").value = "Heat test B";
+  await W.onViewClick(click(d("tabellify-view-save-new")));
+  W.closeView();
+  const own = debug.filter((m) => /saved tables:|view:/.test(m));
+  assert.ok(own.length >= 5);
+  for (const line of own) for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
 });

@@ -854,7 +854,8 @@ test("F007b AC22: the Saved tables section: a closed details between the monitor
   for (const id of ["tabellify-saved-summary", "tabellify-saved-count", "tabellify-saved-controls", "tabellify-saved-filter",
     "tabellify-saved-message", "tabellify-saved-message-text", "tabellify-saved-message-path", "tabellify-saved-list",
     "tabellify-saved-status", "tabellify-saved-status-text", "tabellify-saved-status-path",
-    "tabellify-view-meta", "tabellify-view-save"]) {
+    "tabellify-view-meta", "tabellify-view-save", "tabellify-view-live", "tabellify-view-update", "tabellify-view-save-new",
+    "tabellify-view-live-note"]) {
     assert.match(xhtml, new RegExp(`\\bid="${id}"`), `#${id} missing`);
   }
   assert.match(xhtml, /<html:ul id="tabellify-saved-list" aria-labelledby="tabellify-saved-summary">/);
@@ -862,7 +863,8 @@ test("F007b AC22: the Saved tables section: a closed details between the monitor
   assert.match(xhtml, /<html:option value="collection" data-l10n-id="tabellify-saved-filter-collection">/);
   assert.match(xhtml, /<html:p id="tabellify-saved-status" role="status" hidden="hidden">/);
   // Modal: Save table first, then Export CSV and Close; heading and save button text set from JS.
-  assert.match(xhtml, /<html:button id="tabellify-view-save"><\/html:button>\s*<html:button id="tabellify-view-export"/);
+  assert.match(xhtml, /<html:button id="tabellify-view-save"><\/html:button>\s*<html:button id="tabellify-view-live" aria-pressed="false" hidden="hidden"><\/html:button>\s*<html:button id="tabellify-view-update" hidden="hidden"><\/html:button>\s*<html:button id="tabellify-view-save-new" hidden="hidden"><\/html:button>\s*<html:button id="tabellify-view-export"/);
+  assert.match(xhtml, /<html:p id="tabellify-view-live-note" hidden="hidden"><\/html:p>\s*<html:div id="tabellify-view-scroll"/);
   assert.match(xhtml, /<html:h2 id="tabellify-view-heading"><\/html:h2>/);
   // The status lines' IDs are built from one prefix in showExportStatus.
   assert.match(js, /target === "saved" \? "tabellify-saved-status"/);

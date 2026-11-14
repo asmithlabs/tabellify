@@ -3201,6 +3201,17 @@ var TabellifyWorkspace = {
   viewTableId: null,
   viewSnapshot: null,
 
+  /**
+   * F007b live view of the open saved table: `{ view, missing, keyOf, collectionName }`
+   * built by showLive(), or null. `viewShowingLive` says whether the modal shows it.
+   * `viewLiveRequest` counts live reads (as requestCounter does for collections): a read
+   * that finishes after the modal closed or switched table is dropped.
+   */
+  viewLive: null,
+  viewShowingLive: false,
+  viewLiveLoading: false,
+  viewLiveRequest: 0,
+
   /** "click" handler of "View table" (an arrow function, so onUnload can remove it). */
   onViewTableClick: () => TabellifyWorkspace.openView(),
 
@@ -3209,7 +3220,10 @@ var TabellifyWorkspace = {
    * mode (F007a), the saved snapshot through the snapshotView adapter in saved mode (F007b).
    */
   viewSource() {
-    if (this.viewMode === "saved") return TabellifySavedTables.snapshotView(this.viewSnapshot);
+    if (this.viewMode === "saved") {
+      if (this.viewShowingLive && this.viewLive) return this.viewLive.view;
+      return TabellifySavedTables.snapshotView(this.viewSnapshot);
+    }
     return this.pageView();
   },
 
@@ -3295,7 +3309,7 @@ var TabellifyWorkspace = {
 
   /**
    * "Export CSV" in the modal: the trimmed Name is the file name (blank = collection name).
-   * F007b: a saved table exports what the modal shows (its snapshot).
+   * F007b: a saved table exports what the modal shows (its snapshot, or the live view).
    */
   exportFromView() {
     this.rememberViewDraft();
@@ -3311,7 +3325,8 @@ var TabellifyWorkspace = {
    */
   viewFocusOrder() {
     return ["tabellify-view-name", "tabellify-view-description", "tabellify-view-scroll",
-      "tabellify-view-save", "tabellify-view-export", "tabellify-view-close"]
+      "tabellify-view-save", "tabellify-view-live", "tabellify-view-update", "tabellify-view-save-new",
+      "tabellify-view-export", "tabellify-view-close"]
       .map((id) => this.el(id))
       .filter((el) => !el.disabled && !el.hidden);
   },
@@ -3340,9 +3355,11 @@ var TabellifyWorkspace = {
       return;
     }
     const key = table?.definition.collectionKey ?? null;
+    const collection = this.collectionLabel(key, this.viewSnapshot.collectionName);
     meta.hidden = false;
-    meta.textContent = `${this.text("tabellify-view-meta-snapshot")} ${this.formatDate(this.viewSnapshot.takenAt)} · ` +
-      this.collectionLabel(key, this.viewSnapshot.collectionName);
+    meta.textContent = this.viewShowingLive && this.viewLive
+      ? `${this.text("tabellify-view-meta-live")} · ${collection}`
+      : `${this.text("tabellify-view-meta-snapshot")} ${this.formatDate(this.viewSnapshot.takenAt)} · ${collection}`;
   },
 
   /** The saved table the modal shows (from the loaded data), or undefined (deleted elsewhere). */
@@ -3360,8 +3377,149 @@ var TabellifyWorkspace = {
    * could not be loaded (it must never be overwritten), and for a table deleted elsewhere.
    */
   updateViewControls() {
-    const save = this.el("tabellify-view-save");
-    save.disabled = this.savedBusy || this.savedState !== "ok" || this.viewGone();
+    const saved = this.viewMode === "saved";
+    const cannotSave = this.savedBusy || this.savedState !== "ok" || this.viewGone();
+    this.el("tabellify-view-save").disabled = cannotSave;
+    // F007b: Show live / Show snapshot (a toggle: aria-pressed), and, in live view only,
+    // Update snapshot and Save as new table.
+    const showing = saved && this.viewShowingLive && this.viewLive !== null;
+    const blocker = saved ? this.liveBlocker() : null;
+    const live = this.el("tabellify-view-live");
+    live.hidden = !saved;
+    live.disabled = this.viewLiveLoading || (blocker !== null && !showing) || this.viewGone();
+    live.textContent = this.text(showing ? "tabellify-view-show-snapshot" : "tabellify-view-show-live");
+    live.setAttribute("aria-pressed", showing ? "true" : "false");
+    const update = this.el("tabellify-view-update");
+    const saveNew = this.el("tabellify-view-save-new");
+    update.hidden = !showing;
+    saveNew.hidden = !showing;
+    update.disabled = cannotSave;
+    saveNew.disabled = this.savedBusy || this.savedState !== "ok";
+    this.renderLiveNote(saved ? blocker : null);
+  },
+
+  /**
+   * Why "Show live" cannot run for the open saved table, as a Fluent ID, or null:
+   * - its collection is not among My Library's collections (deleted, or in the trash:
+   *   getByLibrary leaves trashed collections out);
+   * - the codebook is not loaded, or does not have the saved codebook ID.
+   * A table deleted elsewhere returns "" (no note; the gone message is shown instead).
+   * @returns {string | null}
+   */
+  liveBlocker() {
+    const table = this.viewTable();
+    if (!table) return "";
+    if (this.liveCollectionId(table) === null) return "tabellify-view-live-no-collection";
+    const codebooks = this.codebook?.codebooks ?? [];
+    if (!codebooks.some((c) => c?.id === table.definition.codebookId)) return "tabellify-view-live-no-codebook";
+    return null;
+  },
+
+  /** The numeric ID of the saved table's collection (by its key), or null when not found. */
+  liveCollectionId(table) {
+    for (const [id, key] of this.collectionKeys) if (key === table.definition.collectionKey) return id;
+    return null;
+  },
+
+  /**
+   * The note above the modal's table (saved mode): why live is not possible, or, in live
+   * view, the saved columns that are no longer in the codebook (names as plain text).
+   * @param {string | null} blocker  From liveBlocker()
+   */
+  renderLiveNote(blocker) {
+    const note = this.el("tabellify-view-live-note");
+    let text = "";
+    if (this.viewLiveError) text = this.text("tabellify-view-live-error");
+    else if (blocker) text = this.text(blocker);
+    else if (this.viewShowingLive && this.viewLive?.missing.length > 0) {
+      text = `${this.text("tabellify-view-live-missing")} ${this.viewLive.missing.join(", ")}`;
+    }
+    note.hidden = text === "";
+    note.textContent = text;
+  },
+
+  /** True after a live read failed (until the next try or another table). */
+  viewLiveError: false,
+
+  /** "Show live" / "Show snapshot" clicked. */
+  toggleLive() {
+    if (this.viewShowingLive) {
+      this.showSnapshot();
+      return null;
+    }
+    return this.showLive();
+  },
+
+  /**
+   * Build the open saved table from today's library (ADR-0018 §2): read its collection
+   * again with the same read-only calls as the page (gatherMonitorData, which changes no
+   * workspace state), then TabellifySavedTables.liveView with the current codebook and the
+   * SAVED order, sort and counting switch. Built once per click; it does not follow later
+   * library changes. Nothing is written.
+   * @returns {Promise<object | null>}  The live view, or null
+   */
+  async showLive() {
+    if (this.viewMode !== "saved" || this.viewLiveLoading) return null;
+    const table = this.viewTable();
+    if (!table || this.liveBlocker() !== null) {
+      this.updateViewControls();
+      return null;
+    }
+    const id = table.id;
+    const request = ++this.viewLiveRequest;
+    this.viewLiveLoading = true;
+    this.viewLiveError = false;
+    this.updateViewControls();
+    this.showExportStatus("tabellify-view-loading", null, false, "view");
+    let data;
+    try {
+      data = await this.gatherMonitorData(this.liveCollectionId(table));
+    } catch (e) {
+      if (request !== this.viewLiveRequest || this.unloaded) return null;
+      this.viewLiveLoading = false;
+      this.viewLiveError = true;
+      this.showExportStatus(null, null, false, "view");
+      this.updateViewControls();
+      this.log(`view: live table for ${id} could not be built`);
+      Zotero.logError(e);
+      return null;
+    }
+    // Closed, switched to another table, or the tab closed meanwhile: drop the result.
+    if (request !== this.viewLiveRequest || this.unloaded) return null;
+    this.viewLiveLoading = false;
+    if (!this.el("tabellify-view-dialog").open || this.viewTableId !== id) return null;
+    const live = TabellifySavedTables.liveView({
+      codebook: this.codebook, monitorData: data, definition: table.definition, snapshot: this.viewSnapshot,
+    });
+    const keys = data.keys;
+    this.viewLive = {
+      view: live.view,
+      missing: live.missing,
+      keyOf: (p) => keys?.get(p.id),
+      collectionName: data.collections.find((c) => c.id === data.rootId)?.name ?? "",
+    };
+    this.viewShowingLive = true;
+    const shown = this.renderViewTable();
+    this.renderViewMeta();
+    this.showExportStatus(null, null, false, "view");
+    this.updateViewControls();
+    this.log(`view: live table for ${id}: ${shown.papers} paper(s), ${shown.tagColumns} tag column(s), ` +
+      `${live.missing.length} saved column(s) missing`);
+    return this.viewLive;
+  },
+
+  /** "Show snapshot": back to the saved snapshot (a running live read is dropped). */
+  showSnapshot() {
+    this.viewLiveRequest++;
+    this.viewLiveLoading = false;
+    this.viewShowingLive = false;
+    this.viewLive = null;
+    this.viewLiveError = false;
+    if (this.viewMode !== "saved") return;
+    this.renderViewTable();
+    this.renderViewMeta();
+    this.showExportStatus(null, null, false, "view");
+    this.updateViewControls();
   },
 
   /**
@@ -3378,6 +3536,9 @@ var TabellifyWorkspace = {
     }
     if (button.id === "tabellify-view-export") return W.exportFromView();
     if (button.id === "tabellify-view-save") return W.viewMode === "saved" ? W.saveViewChanges() : W.saveFromView();
+    if (button.id === "tabellify-view-live") return W.toggleLive();
+    if (button.id === "tabellify-view-update") return W.updateSnapshot();
+    if (button.id === "tabellify-view-save-new") return W.saveAsNewTable();
     return null;
   },
 
@@ -3417,6 +3578,9 @@ var TabellifyWorkspace = {
   onViewClose: () => {
     const W = TabellifyWorkspace;
     W.rememberViewDraft();
+    // F007b: a live read still running for this modal is dropped (request counter).
+    W.viewLiveRequest++;
+    W.viewLiveLoading = false;
     if (W.viewMode === "saved") {
       const open = W.savedItem(W.viewTableId)?.querySelector('button[data-action="open"]');
       (open ?? W.el("tabellify-saved-summary")).focus();
@@ -3477,6 +3641,18 @@ var TabellifyWorkspace = {
     "tabellify-view-meta-snapshot",
     "tabellify-view-saved",
     "tabellify-view-changes-saved",
+    "tabellify-view-show-live",
+    "tabellify-view-show-snapshot",
+    "tabellify-view-update",
+    "tabellify-view-save-new",
+    "tabellify-view-meta-live",
+    "tabellify-view-saved-new",
+    "tabellify-view-snapshot-updated",
+    "tabellify-view-loading",
+    "tabellify-view-live-missing",
+    "tabellify-view-live-no-collection",
+    "tabellify-view-live-no-codebook",
+    "tabellify-view-live-error",
   ],
 
   /** The loaded tables.json data (TabellifySavedTables shape), or null. */
@@ -3860,6 +4036,12 @@ var TabellifyWorkspace = {
     this.viewMode = "saved";
     this.viewTableId = table.id;
     this.viewSnapshot = table.snapshot;
+    // A new table (or a reopened one) starts on its snapshot.
+    this.viewLiveRequest++;
+    this.viewLiveLoading = false;
+    this.viewShowingLive = false;
+    this.viewLive = null;
+    this.viewLiveError = false;
     this.viewKey = `saved:${table.id}`;
     this.viewDefaultName = table.name;
     this.viewDefaultDescription = table.description;
@@ -3966,6 +4148,88 @@ var TabellifyWorkspace = {
       this.showExportStatus("tabellify-view-changes-saved", null, false, "view");
     }
     return result;
+  },
+
+  /**
+   * "Update snapshot" (live view): the live table becomes the saved snapshot (with the
+   * current Name and Description). The definition stays. Then the new snapshot is shown.
+   */
+  async updateSnapshot() {
+    if (this.viewMode !== "saved" || !this.viewShowingLive || !this.viewLive) return null;
+    const fields = this.viewFields();
+    if (!fields) return null;
+    if (this.showSavedFileProblem("view") || !this.canChangeSaved()) return null;
+    const id = this.viewTableId;
+    const now = new Date().toISOString();
+    const built = this.liveSnapshot(now);
+    if (!built) return null;
+    const edit = TabellifySavedTables.updateTable(this.savedTables, id, { ...fields, snapshot: built }, now);
+    if (!edit.ok) {
+      this.log(`saved tables: not saved (limit: ${this.limitName(edit.error)})`);
+      this.showExportStatus(edit.error, null, true, "view");
+      this.updateViewControls();
+      return null;
+    }
+    const result = await this.saveTables(edit.data, "view");
+    if (result.status !== "saved" || this.unloaded) return result;
+    const table = TabellifySavedTables.findTable(result.data, id);
+    this.log(`saved tables: snapshot updated for ${id}: ${table.snapshot.rows.length} paper(s), ` +
+      `${TabellifySavedTables.snapshotColumns(table.snapshot).length} column(s) (revision ${result.data.revision})`);
+    this.viewDrafts.delete(`saved:${id}`);
+    if (this.el("tabellify-view-dialog").open && this.viewTableId === id) {
+      this.enterSavedMode(table);
+      this.renderViewTable();
+      this.showExportStatus("tabellify-view-snapshot-updated", null, false, "view");
+    }
+    return result;
+  },
+
+  /**
+   * "Save as new table" (live view): a new saved table with the current Name and
+   * Description, the SAVED definition and the live snapshot. The modal switches to it.
+   */
+  async saveAsNewTable() {
+    if (this.viewMode !== "saved" || !this.viewShowingLive || !this.viewLive) return null;
+    const fields = this.viewFields();
+    if (!fields) return null;
+    if (this.showSavedFileProblem("view") || !this.canChangeSaved()) return null;
+    const source = this.viewTable();
+    if (!source) return null;
+    const now = new Date().toISOString();
+    const built = this.liveSnapshot(now);
+    if (!built) return null;
+    const edit = TabellifySavedTables.addTable(this.savedTables, { ...fields, definition: source.definition, snapshot: built }, now);
+    if (!edit.ok) {
+      this.log(`saved tables: not saved (limit: ${this.limitName(edit.error)})`);
+      this.showExportStatus(edit.error, null, true, "view");
+      return null;
+    }
+    const result = await this.saveTables(edit.data, "view");
+    if (result.status !== "saved" || this.unloaded) return result;
+    const table = TabellifySavedTables.findTable(result.data, edit.id);
+    this.log(`saved tables: saved new table ${edit.id}: ${table.snapshot.rows.length} paper(s), ` +
+      `${TabellifySavedTables.snapshotColumns(table.snapshot).length} column(s) (revision ${result.data.revision})`);
+    // The typed Name belonged to the new table, not to the one it was copied from.
+    this.viewDrafts.delete(`saved:${source.id}`);
+    if (this.el("tabellify-view-dialog").open && this.viewTableId === source.id) {
+      this.enterSavedMode(table);
+      this.renderViewTable();
+      this.showExportStatus("tabellify-view-saved-new", null, false, "view");
+    }
+    return result;
+  },
+
+  /**
+   * The snapshot of the live view shown now, or null (a limit; the message is shown).
+   * @param {string} now  ISO time: the snapshot's takenAt
+   */
+  liveSnapshot(now) {
+    const live = this.viewLive;
+    const built = TabellifySavedTables.buildSnapshot(live.view, { keyOf: live.keyOf, collectionName: live.collectionName, takenAt: now });
+    if (built.ok) return built.snapshot;
+    this.log(`saved tables: not saved (limit: ${built.limit})`);
+    this.showExportStatus(built.error, null, true, "view");
+    return null;
   },
 
   /** "rows", "columns", "tables" or "file" for a limit's Fluent ID (Debug Output only). */

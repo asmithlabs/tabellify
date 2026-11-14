@@ -276,6 +276,21 @@ tabellify-view-save-changes = Save changes
 tabellify-view-meta-snapshot = Snapshot from
 tabellify-view-saved = Table saved.
 tabellify-view-changes-saved = Changes saved.
+# Live view of a saved table (rebuilt from the library now; nothing is changed).
+tabellify-view-show-live = Show live
+tabellify-view-show-snapshot = Show snapshot
+tabellify-view-update = Update snapshot
+tabellify-view-save-new = Save as new table
+# Before the collection name: "Live: built from your library now · F005 test".
+tabellify-view-meta-live = Live: built from your library now
+tabellify-view-saved-new = Saved as a new table.
+tabellify-view-snapshot-updated = Snapshot updated.
+tabellify-view-loading = Building the live table…
+# The column names follow, separated by commas.
+tabellify-view-live-missing = Saved columns that are no longer in the codebook:
+tabellify-view-live-no-collection = This table's collection is no longer in My Library, so only the saved snapshot can be shown.
+tabellify-view-live-no-codebook = The codebook could not be loaded, so the live table cannot be built.
+tabellify-view-live-error = The live table could not be built. The saved snapshot is still shown.
 
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two

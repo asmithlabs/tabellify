@@ -304,7 +304,11 @@
          and the first button change text with the mode, so workspace.js sets their text
          (no data-l10n-id). "Save table" (draft) keeps the table in Tabellify's own file;
          in saved mode the button reads "Save changes" and saves Name and Description.
-         The muted meta line under the heading names the snapshot's date and collection. -->
+         The muted meta line under the heading names the snapshot's date and collection.
+         "Show live" (a toggle with aria-pressed; it reads "Show snapshot" while pressed)
+         rebuilds the saved table from today's library without changing anything; "Update
+         snapshot" and "Save as new table" appear only then. The live note says why live
+         is not possible, or which saved columns left the codebook. -->
     <html:dialog id="tabellify-view-dialog" aria-labelledby="tabellify-view-heading">
       <html:h2 id="tabellify-view-heading"></html:h2>
       <html:p id="tabellify-view-meta" hidden="hidden"></html:p>
@@ -318,6 +322,7 @@
                     data-l10n-id="tabellify-view-description-label"></html:label>
         <html:textarea id="tabellify-view-description" rows="3" maxlength="2000"></html:textarea>
       </html:div>
+      <html:p id="tabellify-view-live-note" hidden="hidden"></html:p>
       <html:div id="tabellify-view-scroll" role="region" tabindex="0"
                 data-l10n-id="tabellify-view-table-region">
         <html:table id="tabellify-view-grid" class="tabellify-grid">
@@ -327,6 +332,9 @@
       </html:div>
       <html:div id="tabellify-view-actions">
         <html:button id="tabellify-view-save"></html:button>
+        <html:button id="tabellify-view-live" aria-pressed="false" hidden="hidden"></html:button>
+        <html:button id="tabellify-view-update" hidden="hidden"></html:button>
+        <html:button id="tabellify-view-save-new" hidden="hidden"></html:button>
         <html:button id="tabellify-view-export" data-l10n-id="tabellify-export-csv"></html:button>
         <html:button id="tabellify-view-close" data-l10n-id="tabellify-view-close"></html:button>
         <html:p id="tabellify-view-export-status" role="status" hidden="hidden">

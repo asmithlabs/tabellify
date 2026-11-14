@@ -115,7 +115,10 @@ removed in Feature 006a. The page now uses:
   Messages (`#tabellify-saved-message`, error look `.tabellify-saved-error`) and the status
   line (`#tabellify-saved-status`) reuse the state-panel and export-status rules. In the
   modal's saved mode the muted `#tabellify-view-meta` line ("Snapshot from … · F005 test")
-  replaces the "not saved" note, and "Save table" / "Save changes" comes first in the actions
+  replaces the "not saved" note, and "Save table" / "Save changes" comes first in the actions.
+  "Show live" is a toggle (`aria-pressed`): while pressed it is bold with a 1px `action`
+  outline (as "Manual order"), and the muted `#tabellify-view-live-note` names saved columns
+  that left the codebook or why live is not possible
 All of them are in the states gallery.
 
 ## 6. Light and dark
