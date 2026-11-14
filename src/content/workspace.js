@@ -823,15 +823,15 @@ var TabellifyWorkspace = {
    * @returns {P[]}
    */
   displayedPapers(papers) {
-    const manual = this.currentManualOrder();
-    if (this.sortKey === TabellifyTableLayout.MANUAL) {
-      const { key, direction } = TabellifyTagMonitor.DEFAULT_SORT;
-      const fallback = TabellifyTagMonitor.sortPapers(papers, key, direction);
-      if (!manual) return fallback;
-      const keys = this.monitorData.keys;
-      return TabellifyTableLayout.applyManualOrder(papers, manual, fallback, (p) => keys.get(p.id));
-    }
-    return TabellifyTagMonitor.sortPapers(papers, this.sortKey, this.sortDirection);
+    // F007b: the ordering rules live in the saved-tables model (orderPapers), so the page
+    // and a saved table's live view always sort the same way.
+    const keys = this.monitorData?.keys;
+    return TabellifySavedTables.orderPapers(
+      papers,
+      { key: this.sortKey, direction: this.sortDirection },
+      this.currentManualOrder(),
+      (p) => keys?.get(p.id),
+    );
   },
 
   /** Show or hide the per-paper table, its toolbar and (F008) the actions under it together. */
@@ -913,17 +913,20 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * F007a: the rows of the read-only "View table" copy, built from the same in-memory
-   * snapshot the CSV export uses (tableGroups, tableRows, tableCounting), so the copy, the
-   * page and the CSV always show the same table. A CLEAN copy, not a clone of the page
+   * F007a: the rows of the read-only "View table" copy, built from a view
+   * `{ groups, papers, counting }`: the same in-memory snapshot the CSV export uses (the
+   * page table: pageView()), or (F007b) a saved table's snapshot or live view. So the
+   * copy and the CSV always show the same table. A CLEAN copy, not a clone of the page
    * table: plain-text header cells (no sort buttons, no grips), no grip column, and no
    * id, draggable, tabindex, role or data-* attributes anywhere.
+   * @param {{ groups: Array<{ id: string, name: string, tags: string[] }>, papers: object[],
+   *   counting: boolean }} view
    * @param {{ count: string, countLabel: string }} texts  The k/M header text ("k/M") and
    *   its longer tooltip / screen-reader name
    * @returns {{ head: Element[], body: Element[] }}  <tr> elements for <thead> and <tbody>
    */
-  viewTableRows(texts) {
-    const groups = this.tableGroups;
+  viewTableRows(view, texts) {
+    const groups = view.groups;
     const { oneRow, twoRows } = this.headerShape(groups);
     const top = this.html("tr");
     const second = this.html("tr");
@@ -964,11 +967,11 @@ var TabellifyWorkspace = {
     count.setAttribute("aria-label", texts.countLabel);
     top.append(count);
 
-    const stripes = TabellifyTableLayout.stripeFlags(this.tableRows.map(() => "paper"));
-    const body = this.tableRows.map((paper, index) => {
+    const stripes = TabellifyTableLayout.stripeFlags(view.papers.map(() => "paper"));
+    const body = view.papers.map((paper, index) => {
       const tr = this.html("tr");
       tr.classList.toggle("tabellify-row-alt", stripes[index]);
-      const { title, tagCells, count: countCell } = this.paperCells(paper, groups, this.tableCounting);
+      const { title, tagCells, count: countCell } = this.paperCells(paper, groups, view.counting);
       tr.append(title, ...tagCells, countCell);
       return tr;
     });
@@ -2984,9 +2987,12 @@ var TabellifyWorkspace = {
    *   field.)
    * @param {"page" | "view"} [source]  Which "Export CSV" was clicked: the page's button
    *   or the modal's (F007a). Decides which status line shows the result.
+   * @param {{ groups: object[], papers: object[], counting: boolean } | null} [view]  The
+   *   table to export (F007b: a saved table's snapshot or live view); null = the page
+   *   table (pageView()).
    * @returns {Promise<object | null>}  TabellifyCsvExport's result, or null
    */
-  async exportCsv(baseName = null, source = "page") {
+  async exportCsv(baseName = null, source = "page", view = null) {
     if (this.exportBusy) return null;
     // Both "Export CSV" buttons (page and modal) are off while one export runs.
     const buttons = [this.el("tabellify-export-csv"), this.el("tabellify-view-export")];
@@ -2999,7 +3005,7 @@ var TabellifyWorkspace = {
       // Snapshot: the rows and columns the table shows at the moment of the click. If the
       // library changes while the dialog is open, the file still matches this moment.
       const csv = TabellifyCsv.build(
-        { groups: this.tableGroups, papers: this.tableRows, counting: this.tableCounting },
+        view ?? this.pageView(),
         {
           title: this.text("tabellify-column-title"),
           untitled: this.untitledText,
@@ -3038,6 +3044,14 @@ var TabellifyWorkspace = {
       if (!this.unloaded) for (const button of buttons) button.disabled = false;
     }
     return result;
+  },
+
+  /**
+   * The table the page shows now, as a view `{ groups, papers, counting }`: what "Export
+   * CSV" under the table and the draft "View table" modal use (F008, F007a).
+   */
+  pageView() {
+    return { groups: this.tableGroups, papers: this.tableRows, counting: this.tableCounting };
   },
 
   /** The chosen (top) collection's own name, from the data already read; "" if unknown. */
@@ -3138,18 +3152,24 @@ var TabellifyWorkspace = {
   /** "click" handler of "View table" (an arrow function, so onUnload can remove it). */
   onViewTableClick: () => TabellifyWorkspace.openView(),
 
+  /** The table the modal shows: the page table (F007a draft). */
+  viewSource() {
+    return this.pageView();
+  },
+
   /**
-   * Fill the modal's table from the current snapshot (viewTableRows), as plain text.
+   * Fill the modal's table from its current view (viewSource → viewTableRows), as plain text.
    * @returns {{ papers: number, tagColumns: number, headerRows: number }}
    */
   renderViewTable() {
-    const { head, body } = this.viewTableRows({
+    const view = this.viewSource();
+    const { head, body } = this.viewTableRows(view, {
       count: this.text("tabellify-column-count"),
       countLabel: this.text("tabellify-view-count-label"),
     });
     this.el("tabellify-view-head").replaceChildren(...head);
     this.el("tabellify-view-body").replaceChildren(...body);
-    return { papers: body.length, tagColumns: this.headerShape(this.tableGroups).tagCount, headerRows: head.length };
+    return { papers: body.length, tagColumns: this.headerShape(view.groups).tagCount, headerRows: head.length };
   },
 
   /** Open the modal (does nothing when it is already open or there is no table). */

@@ -51,6 +51,9 @@
        layout.json, uses the model) also define one global each for workspace.js.
        regroup-model.js (F006c: pure rules for regrouping a dragged tag column) uses the
        codebook, tag-monitor and table-layout models, so it comes after them.
+       saved-tables-model.js (F007b, ADR-0018: pure rules for saved tables; uses the
+       tag-monitor and table-layout models) and tables-store.js (F007b: loads and saves the
+       saved tables file, uses that model) define TabellifySavedTables and TabellifyTablesStore.
        csv-model.js (F008: pure CSV builder) and csv-export.js (F008, ADR-0017: the save
        dialog and the one write of the exported file) define TabellifyCsv and
        TabellifyCsvExport for workspace.js.
@@ -65,6 +68,8 @@
   <script src="chrome://tabellify/content/table-layout-model.js"/>
   <script src="chrome://tabellify/content/regroup-model.js"/>
   <script src="chrome://tabellify/content/layout-store.js"/>
+  <script src="chrome://tabellify/content/saved-tables-model.js"/>
+  <script src="chrome://tabellify/content/tables-store.js"/>
   <script src="chrome://tabellify/content/csv-model.js"/>
   <script src="chrome://tabellify/content/csv-export.js"/>
   <script src="chrome://tabellify/content/workspace.js"/>

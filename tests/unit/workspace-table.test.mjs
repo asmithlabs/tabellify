@@ -227,7 +227,8 @@ function load() {
   const Zotero = { debug: (m) => debug.push(m), logError: () => {} };
   const sandbox = vm.createContext({ document, Zotero });
   for (const name of ["codebook-model.js", "codebook-store.js", "tag-script-model.js", "script-suggest-model.js",
-    "tag-monitor-model.js", "table-layout-model.js", "regroup-model.js", "csv-model.js", "csv-export.js", "workspace.js"]) {
+    "tag-monitor-model.js", "table-layout-model.js", "regroup-model.js", "saved-tables-model.js", "tables-store.js",
+    "csv-model.js", "csv-export.js", "workspace.js"]) {
     const file = join(contentDir, name);
     vm.runInContext(readFileSync(file, "utf8"), sandbox, { filename: file });
   }
@@ -1915,7 +1916,7 @@ const VIEW_TEXTS = { count: "k/M", countLabel: "Codebook tags used on the paper 
 
 /** The copy's rows as arrays of this realm (the sandbox's arrays fail deepEqual). */
 function viewRows(W) {
-  const { head, body } = W.viewTableRows(VIEW_TEXTS);
+  const { head, body } = W.viewTableRows(W.pageView(), VIEW_TEXTS);
   return { head: [...head], body: [...body] };
 }
 

@@ -394,7 +394,7 @@ test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never
 // Feature 006a AC17
 // ---------------------------------------------------------------------------------------
 
-test("F006a AC17 / F006b AC12 / F006c AC15 / F008 AC17: script order is model, store, tag script, suggestions, tag monitor, layout model, regroup model, layout store, CSV model, CSV writer, workspace", () => {
+test("F006a AC17 / F006b AC12 / F006c AC15 / F008 AC17 / F007b AC22: script order is model, store, tag script, suggestions, tag monitor, layout model, regroup model, layout store, saved-tables model, tables store, CSV model, CSV writer, workspace", () => {
   const scripts = [...xhtml.matchAll(/<script\s+src="chrome:\/\/tabellify\/content\/([\w-]+\.js)"\s*\/>/g)].map((m) => m[1]);
   assert.deepEqual(scripts, [
     "codebook-model.js",
@@ -405,6 +405,8 @@ test("F006a AC17 / F006b AC12 / F006c AC15 / F008 AC17: script order is model, s
     "table-layout-model.js",
     "regroup-model.js",
     "layout-store.js",
+    "saved-tables-model.js",
+    "tables-store.js",
     "csv-model.js",
     "csv-export.js",
     "workspace.js",
@@ -675,6 +677,8 @@ test("F008 AC17: workspace.js never touches IOUtils, ChromeUtils or FilePicker; 
   assert.match(js, /this\.tableRows = shown;/);
   assert.match(js, /this\.tableCounting = counting;/);
   assert.match(js, /groups: this\.tableGroups, papers: this\.tableRows, counting: this\.tableCounting/);
+  // F007b: the page export still builds from that page view by default.
+  assert.match(js, /TabellifyCsv\.build\(\s*view \?\? this\.pageView\(\),/);
 });
 
 test("F008 AC17: export Fluent IDs exist, start with tabellify-, and are formatted at start-up", () => {
