@@ -705,6 +705,8 @@ var TabellifyWorkspace = {
     // F006c Amendment 2: the "Ungrouped" run headers and the flip announcement.
     "tabellify-table-ungrouped-label",
     "tabellify-regroup-announce-group-name",
+    // Refusal: the drop would make a tag or a group disappear from the table.
+    "tabellify-regroup-error-would-hide",
   ],
 
   /** F006c: TabellifyRegroup.describe() hint → Fluent ID of the drop-hint text. */

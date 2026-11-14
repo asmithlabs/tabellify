@@ -1554,3 +1554,46 @@ test("006c AC31: names with markup reach the hint and announcements only as text
   assert.equal(announce.children.length, 0);
   // (The fake DOM throws on innerHTML, so reaching this line also proves none was used.)
 });
+
+// Owner smoke test after the 006c merge (2026-11-13): "the tags disappear when dragged to
+// the western boundary ... they should never disappear". After a flip made "bmi" the name of
+// a group whose only column is smoker, dragging smoker out (e.g. to the left edge of the
+// "bmi" header) emptied the group, so the "bmi" header vanished from the table.
+test("never disappears: the only tag of a flipped group can't be dragged or keyed out; 'bmi' stays", async () => {
+  const s = regroupSetup({ ungrouped: A2_UNGROUPED });
+  startTagDrag(s.W, s.document, "bmi");
+  s.W.onTableDrop(dragEvent(tagTh(s.document, "smoker"), ZONE.top));
+  await tick();
+  assert.equal(superTh(s.document, "g9").textContent, "bmi");
+  const writes = s.writes.length;
+  const headersBefore = groupHeaders(s.document);
+  const refusedAt = (target, zone) => {
+    const ev = over(s.W, target, zone);
+    return !ev.prevented && marked(s.document).length === 0 && s.hint.hidden;
+  };
+  startTagDrag(s.W, s.document, "smoker");
+  // The west edge of every kind of cell, and the other ways out of the group.
+  assert.ok(refusedAt(superTh(s.document, "g9"), "left"), "left edge of its own group header");
+  assert.ok(refusedAt(superTh(s.document, "g9"), "right"), "right edge of its own group header");
+  assert.ok(refusedAt(tagTh(s.document, "age"), "left"), "first tag column (next to Title)");
+  assert.ok(refusedAt(tagTh(s.document, "diet"), "left"), "an ungrouped tag");
+  assert.ok(refusedAt(tagTh(s.document, "age"), "bottom"), "nest under an ungrouped tag");
+  assert.ok(refusedAt(tagTh(s.document, "Heat index"), "left"), "leftmost column of a group");
+  assert.ok(refusedAt(superTh(s.document, "g2"), "left"), "another group's header");
+  assert.ok(refusedAt(runTh(s.document, 0), "left"), "an 'Ungrouped' run header");
+  assert.ok(refusedAt(bodyCell(s.document, "Heat index"), "left"), "a body cell of another group");
+  // A drop there does nothing either (no save, same header).
+  s.W.onTableDrop(dragEvent(superTh(s.document, "g9"), ZONE.left));
+  await tick();
+  assert.equal(s.writes.length, writes);
+  assert.deepEqual(groupHeaders(s.document), headersBefore);
+  // Alt+Up (leave the group) is refused with a status message; nothing is saved.
+  altKey(s.W, regroupTagGrip(s.document, "smoker"), "ArrowUp");
+  await tick();
+  assert.equal(s.writes.length, writes);
+  assert.deepEqual(groupHeaders(s.document), headersBefore);
+  assert.equal(superTh(s.document, "g9").textContent, "bmi");
+  assert.equal(tagTh(s.document, "smoker").dataset.groupId, "g9");
+  assert.equal(s.document.getElementById("tabellify-codebook-status-text").textContent, "tabellify-regroup-error-would-hide");
+  assert.ok(s.W.LAYOUT_STRINGS.includes(s.R.ERR_WOULD_HIDE), "the refusal text is formatted at start-up");
+});
