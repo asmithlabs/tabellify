@@ -210,7 +210,7 @@ function load() {
   const Zotero = { debug: (m) => debug.push(m), logError: () => {} };
   const sandbox = vm.createContext({ document, Zotero });
   for (const name of ["codebook-model.js", "codebook-store.js", "tag-script-model.js", "script-suggest-model.js",
-    "tag-monitor-model.js", "table-layout-model.js", "regroup-model.js", "workspace.js"]) {
+    "tag-monitor-model.js", "table-layout-model.js", "regroup-model.js", "csv-model.js", "csv-export.js", "workspace.js"]) {
     const file = join(contentDir, name);
     vm.runInContext(readFileSync(file, "utf8"), sandbox, { filename: file });
   }
@@ -233,7 +233,7 @@ function load() {
   W.layoutEditable = false; // no layout file in these tests: layoutChanged() does nothing
   return {
     W, T: sandbox.TabellifyTagMonitor, L: sandbox.TabellifyTableLayout, C: sandbox.TabellifyCodebook,
-    S: sandbox.TabellifyScriptSuggest, R: sandbox.TabellifyRegroup, Zotero, document, debug,
+    S: sandbox.TabellifyScriptSuggest, R: sandbox.TabellifyRegroup, Zotero, document, debug, sandbox,
   };
 }
 
@@ -1602,4 +1602,266 @@ test("Amendment 3: Alt+Up on a group's only tag turns the group back into a tag 
   assert.equal(regroupTagGrip(s.document, "only").focused, true);
   assert.equal(s.document.byId.get("tabellify-table-announce").textContent, "only is now ungrouped. The group became a tag again.");
   assert.deepEqual(pills(s.document).slice(0, 1), ["Ungrouped · 3 (u)"]);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 008 AC16: "Export CSV" with a fake save dialog and a fake write (`exportIo`)
+// ---------------------------------------------------------------------------------------
+
+const EXPORT_TEXTS = {
+  "tabellify-column-title": "Title",
+  "tabellify-export-dialog-title": "Export table as CSV",
+  "tabellify-export-filter": "CSV files",
+  "tabellify-export-saved": "CSV saved:",
+  "tabellify-export-picker-error": "The save dialog could not be opened. Nothing was saved.",
+  "tabellify-export-write-error": "The CSV file could not be saved. Check that you can write to this folder, then try again:",
+  "tabellify-export-file-fallback": "Tabellify table",
+  "tabellify-csv-header-k": "Tags used (k)",
+  "tabellify-csv-header-m": "Codebook tags (M)",
+};
+const EXPORT_PATH = "/Users/tester/Desktop/secret-folder/F005 test.csv";
+
+/**
+ * A fake `exportIo`. `picked` is what the dialog returns (null = Cancel); `onPick` runs
+ * while the "dialog is open" (to look at the button, or to close the tab).
+ */
+function fakeExportIo({ picked = { path: EXPORT_PATH, replace: false }, pickError = null, writeError = null, onPick = null } = {}) {
+  const io = {
+    picks: [],
+    writes: [],
+    async pickSavePath(options) {
+      io.picks.push(options);
+      if (onPick) onPick();
+      if (pickError) throw pickError;
+      return picked;
+    },
+    async writeUTF8(path, text, options) {
+      io.writes.push({ path, text, options });
+      if (writeError) throw writeError;
+      return text.length + 3;
+    },
+  };
+  return io;
+}
+
+/** setup() plus the export's strings and a fake io. */
+function setupExport(io, options) {
+  const env = setup(options);
+  Object.assign(env.W.strings, EXPORT_TEXTS);
+  env.W.untitledText = "(untitled)";
+  env.W.exportIo = io;
+  return env;
+}
+
+/** The CSV rows (without BOM and the final CRLF), split into simple comma cells. */
+const csvLines = (text) => text.slice(1).split("\r\n").slice(0, -1);
+
+/** What the table shows now, as the expected CSV paper lines (title, 1/empty…, k, M). */
+function expectedPaperLines(doc) {
+  return bodyRows(doc).map((tr) => {
+    const cells = tr.children.slice(1);
+    const tags = cells.filter((td) => td.classList.contains("tabellify-col-tag")).map((td) => (td.classList.contains("tabellify-tag-used") ? "1" : ""));
+    const [k, m] = cells.at(-1).textContent.split("/");
+    return [cells[0].textContent, ...tags, k, m].join(",");
+  });
+}
+
+const status = (doc) => ({
+  hidden: doc.getElementById("tabellify-export-status").hidden,
+  text: doc.getElementById("tabellify-export-status-text").textContent,
+  path: doc.getElementById("tabellify-export-status-path").textContent,
+  pathHidden: doc.getElementById("tabellify-export-status-path").hidden,
+  error: doc.getElementById("tabellify-export-status").classList.contains("tabellify-export-error"),
+});
+
+test("008 AC16: the actions block is shown and hidden together with the table", () => {
+  const { W, document } = setupExport(fakeExportIo());
+  assert.equal(document.getElementById("tabellify-table-actions").hidden, false);
+  assert.equal(document.byId.get("tabellify-items-table").hidden, false);
+  // A collection without papers: no table, no button.
+  W.monitorData = { ...monitorData(), papers: [] };
+  W.renderMonitor();
+  assert.equal(document.byId.get("tabellify-items-table").hidden, true);
+  assert.equal(document.getElementById("tabellify-table-actions").hidden, true);
+  // Back to papers, then the placeholder: hidden again.
+  W.monitorData = monitorData();
+  W.renderMonitor();
+  assert.equal(document.getElementById("tabellify-table-actions").hidden, false);
+  W.setTableHidden(true);
+  assert.equal(document.getElementById("tabellify-table-actions").hidden, true);
+});
+
+test("008 AC16: a click exports exactly the rendered table (headers, rows, order) and shows the path", async () => {
+  const io = fakeExportIo();
+  const { W, document } = setupExport(io);
+  const result = await W.onExportClick();
+  assert.equal(result.status, "saved");
+  assert.equal(io.writes.length, 1);
+  const { path, text, options } = io.writes[0];
+  assert.equal(path, EXPORT_PATH);
+  assert.deepEqual(JSON.parse(JSON.stringify(options)), { tmpPath: `${EXPORT_PATH}.tabellify-tmp` });
+  assert.equal(text[0], "﻿");
+  const lines = csvLines(text);
+  assert.deepEqual(lines.slice(0, 2), [
+    ",Exposure,Exposure,Outcome,,",
+    "Title,Heat index,Temperature,Mortality,Tags used (k),Codebook tags (M)",
+  ]);
+  assert.deepEqual(lines.slice(2), expectedPaperLines(document));
+  assert.equal(lines.length - 2, 3, "one line per paper");
+  // Status: "CSV saved:" + the path, as text; not an error.
+  assert.deepEqual(status(document), { hidden: false, text: "CSV saved:", path: EXPORT_PATH, pathHidden: false, error: false });
+  // The dialog got the title, the filter and the suggested name.
+  assert.equal(io.picks[0].title, "Export table as CSV");
+  assert.equal(io.picks[0].filterTitle, "CSV files");
+});
+
+test("008 AC16: after a sort and after a column move the exported text follows the screen", async () => {
+  const io = fakeExportIo();
+  const { W, T, L, document } = setupExport(io);
+  W.sortKey = T.tagSortKey("Heat index");
+  W.sortDirection = "desc";
+  W.renderMonitor();
+  await W.onExportClick();
+  const sorted = csvLines(io.writes[0].text).slice(2);
+  assert.deepEqual(sorted, expectedPaperLines(document));
+  assert.deepEqual(sorted.map((l) => l.split(",")[0]), rowTitles(document));
+  // Move the whole Outcome group to the front.
+  W.columnLayout = L.moveTopItem(W.columnLayout, W.codebookGroups(), { group: "g3" }, 0);
+  W.renderMonitor();
+  await W.onExportClick();
+  const moved = csvLines(io.writes[1].text);
+  assert.deepEqual(moved.slice(0, 2), [
+    ",Outcome,Exposure,Exposure,,",
+    "Title,Mortality,Heat index,Temperature,Tags used (k),Codebook tags (M)",
+  ]);
+  assert.deepEqual(moved.slice(2), expectedPaperLines(document));
+});
+
+test("008 AC16: ungrouped tags get a blank super-header; untitled papers get the shown label", async () => {
+  const io = fakeExportIo();
+  const env = load();
+  const { W, L } = env;
+  Object.assign(W.strings, EXPORT_TEXTS);
+  W.untitledText = "(untitled)";
+  W.exportIo = io;
+  W.codebook = codebookData(GROUPS(), ["age"]);
+  const data = monitorData();
+  data.papers.push({ id: 104, title: "", collectionId: 1, itemTags: [], annotationTags: [{ tag: "age" }] });
+  data.keys.set(104, "ITEM0104");
+  W.monitorData = data;
+  W.collectionKeys = data.collectionKeys;
+  W.currentCollection = "1";
+  W.columnLayout = L.emptyColumnLayout();
+  W.renderMonitor();
+  await W.onExportClick();
+  const lines = csvLines(io.writes[0].text);
+  assert.equal(lines[0], ",,Exposure,Exposure,Outcome,,");
+  assert.equal(lines[1], "Title,age,Heat index,Temperature,Mortality,Tags used (k),Codebook tags (M)");
+  assert.ok(lines.includes("(untitled),1,,,,1,4"), lines.join("\n"));
+});
+
+test("008 AC16: the button is disabled while the export runs and enabled after", async () => {
+  let duringDialog = null;
+  let doc = null;
+  const io = fakeExportIo({ onPick: () => { duringDialog = doc.getElementById("tabellify-export-csv").disabled; } });
+  const { W, document } = setupExport(io);
+  doc = document;
+  const running = W.onExportClick();
+  // A second click while the first export runs does nothing (one click = one dialog).
+  assert.equal(await W.onExportClick(), null);
+  await running;
+  assert.equal(duringDialog, true);
+  assert.equal(document.getElementById("tabellify-export-csv").disabled, false);
+  assert.equal(io.picks.length, 1);
+  assert.equal(W.exportBusy, false);
+});
+
+test("008 AC16: Cancel writes nothing and shows no message; Export works again at once", async () => {
+  const io = fakeExportIo({ picked: null });
+  const { W, document } = setupExport(io);
+  W.showExportStatus("tabellify-export-saved", "/old/path.csv"); // an earlier message is cleared
+  const result = await W.onExportClick();
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { status: "cancelled", reason: "dialog" });
+  assert.equal(io.writes.length, 0);
+  assert.equal(status(document).hidden, true);
+  assert.equal(document.getElementById("tabellify-export-csv").disabled, false);
+});
+
+test("008 AC16: a failing dialog and a failing write each show their message in the error style", async () => {
+  const pickFail = setupExport(fakeExportIo({ pickError: new TypeError("no browsing context") }));
+  let errors = 0;
+  pickFail.Zotero.logError = () => errors++;
+  assert.equal((await pickFail.W.onExportClick()).stage, "picker");
+  assert.deepEqual(status(pickFail.document), {
+    hidden: false, text: EXPORT_TEXTS["tabellify-export-picker-error"], path: "", pathHidden: true, error: true,
+  });
+  assert.equal(errors, 1, "Zotero.logError called once");
+
+  const writeIo = fakeExportIo({ writeError: Object.assign(new Error(`cannot write ${EXPORT_PATH}`), { name: "NotAllowedError" }) });
+  const writeFail = setupExport(writeIo);
+  assert.equal((await writeFail.W.onExportClick()).stage, "write");
+  assert.deepEqual(status(writeFail.document), {
+    hidden: false, text: EXPORT_TEXTS["tabellify-export-write-error"], path: EXPORT_PATH, pathHidden: false, error: true,
+  });
+  assert.ok(writeFail.debug.some((m) => m.includes("export: CSV not written: write failed (NotAllowedError)")));
+  // Success afterwards drops the error style.
+  writeIo.writes.length = 0;
+  writeFail.W.exportIo = fakeExportIo();
+  await writeFail.W.onExportClick();
+  assert.equal(status(writeFail.document).error, false);
+});
+
+test("008 AC16: the tab closing while the dialog is open → no write and no DOM change", async () => {
+  let env = null;
+  const io = fakeExportIo({ onPick: () => { env.W.unloaded = true; } });
+  env = setupExport(io);
+  const { W, document } = env;
+  const result = await W.onExportClick();
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { status: "cancelled", reason: "closed" });
+  assert.equal(io.writes.length, 0);
+  assert.equal(status(document).hidden, true);
+  assert.equal(status(document).text, "");
+  assert.ok(env.debug.some((m) => m.includes("tab closed while the save dialog was open; nothing written")));
+  assert.equal(W.exportBusy, false);
+});
+
+test("008 AC16: the suggested name is the chosen collection's name and today's local date", async () => {
+  const io = fakeExportIo({ picked: null });
+  const { W } = setupExport(io);
+  const before = new Date();
+  await W.onExportClick();
+  const pad = (n) => String(n).padStart(2, "0");
+  const name = (d) => `F005 test ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.csv`;
+  assert.ok([name(before), name(new Date())].includes(io.picks[0].defaultName), io.picks[0].defaultName);
+  // A collection name with reserved characters is cleaned; the 007a hook overrides it.
+  W.monitorData.collections[0].name = "a/b: c";
+  await W.onExportClick();
+  assert.match(io.picks[1].defaultName, /^ab c \d{4}-\d{2}-\d{2}\.csv$/);
+  await W.exportCsv("My table");
+  assert.match(io.picks[2].defaultName, /^My table \d{4}-\d{2}-\d{2}\.csv$/);
+});
+
+test("008 AC16: Debug Output during an export holds no title, tag, group, collection name or path", async () => {
+  const secrets = ["Paper 1", "Paper 2", "Paper 3", "Heat index", "Temperature", "Mortality", "Exposure", "Outcome",
+    "F005 test", EXPORT_PATH, "secret-folder", "tester"];
+  for (const io of [
+    fakeExportIo({ picked: { path: EXPORT_PATH, replace: true } }),
+    fakeExportIo({ picked: null }),
+    fakeExportIo({ pickError: Object.assign(new Error(`failed at ${EXPORT_PATH}`), { name: "TypeError" }) }),
+    fakeExportIo({ writeError: Object.assign(new Error(`failed at ${EXPORT_PATH}`), { name: "NotAllowedError" }) }),
+  ]) {
+    const env = setupExport(io);
+    const start = env.debug.length;
+    await env.W.onExportClick();
+    const lines = env.debug.slice(start);
+    assert.ok(lines.length >= 2, "built + outcome logged");
+    for (const line of lines) {
+      assert.match(line, /^Tabellify: workspace: export: /);
+      for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
+    }
+  }
+  const env = setupExport(fakeExportIo({ picked: { path: EXPORT_PATH, replace: true } }));
+  await env.W.onExportClick();
+  assert.ok(env.debug.some((m) => /export: CSV built: 3 paper\(s\), 3 tag column\(s\), 2 group\(s\), 2 header row\(s\)$/.test(m)));
+  assert.ok(env.debug.some((m) => /export: CSV written: \d+ bytes \(replaced an existing file: yes\)$/.test(m)));
 });
