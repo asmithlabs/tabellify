@@ -18,6 +18,15 @@ and AI-agent contributors alike. Short version:
   link (see [Zotero APIs Used](Zotero-APIs-Used)).
 - **Protect library data:** no code that writes to the library unless a spec authorizes it.
 - **Lifecycle symmetry:** see [Plugin Lifecycle](Plugin-Lifecycle).
+- **Pure logic first:** rules go into the pure `src/content/*-model.js` files with unit
+  tests; see [Architecture](Architecture#layering) and [Testing](Testing).
+- **Untrusted text:** library text and Tabellify's JSON files are shown with `textContent`
+  only; log lines carry no paths, titles or names (static checks enforce this).
+- **Look:** workspace colours come only from the design tokens
+  ([docs/design-system.md](https://github.com/asmithlabs/tabellify/blob/main/docs/design-system.md),
+  ADR-0015).
+- **Strings:** every user-visible string is a Fluent message in
+  `src/locale/en-US/tabellify.ftl` with an ID starting `tabellify-`.
 - **No new dependencies** without written justification and maintainer approval.
 - **Docs:** update docs in the same PR as the code. Wiki pages are edited in `docs/wiki/`,
   not on the wiki itself (ADR-0010).
