@@ -1,6 +1,6 @@
 # Feature 007a: "View table" modal (Name and Description, not saved)
 
-- **Status:** Approved (owner, 2026-11-14, all recommendations Q1–Q13; RT-S3 and RT-S3b passed)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-14, all recommendations Q1–Q13; RT-S3 and RT-S3b passed)
 - **Branch:** `feat/007a-view-table` (from `main` after F008, merged as `6913524`)
 - **Related ADRs:** 0015 (Accepted: design tokens), 0017 (CSV export; 007a reuses its save
   path unchanged), 0016 / 0019 (Accepted: ungrouped tags, column order), 0011 (security

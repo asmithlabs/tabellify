@@ -1,6 +1,6 @@
 # Feature 007b: Saved tables
 
-- **Status:** Approved (owner, 2026-11-14, all recommendations Q1–Q5)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-14, all recommendations Q1–Q5)
 - **Branch:** `feat/007b-saved-tables` (from `main` after F007a, merged as `991512b`)
 - **Related ADRs:** **0018 (Proposed: what a saved table is, `tables.json`; this spec
   depends on it)**, 0012 (Accepted: storage rules, write-guard allow-list rule), 0014 / 0019

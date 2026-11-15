@@ -1,6 +1,6 @@
 # Feature 005d: Brand design system, phase 1 (tokens + workspace restyle)
 
-- **Status:** Approved (owner, 2026-11-13, all recommendations)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-13, all recommendations)
 - **Branch:** `feat/005d-design-system`
 - **Related ADRs:** **0015 (Proposed: brand palette and design tokens; this spec depends on
   it)**, 0009 (workspace tab), 0013 (reader section, stays native), 0003 (no bundler, no

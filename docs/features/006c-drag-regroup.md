@@ -1,6 +1,6 @@
 # Feature 006c: Drag regrouping in the table
 
-- **Status:** Approved (owner, 2026-11-13, all recommendations Q1–Q8)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-13, all recommendations Q1–Q8)
 - **Branch:** `feat/006c-drag-regroup` (start from `main` after 006b, merged as `4f7ea1a`)
 - **Related ADRs:** **0016 §7 (Accepted: regrouping drags write the codebook; reordering
   stays in `layout.json`)**, 0016 §6 (reserved `"ungrouped"` ID, Reset does not undo
@@ -17,8 +17,8 @@
   that is an ordinary layout save after a user action (ADR-0014 §4), not a new rule. No new
   storage, file, dependency, UI surface or `Zotero.*` call.
   **Superseded by Amendment 2:** the mixed top-level order needs a `layout.json` schema 3,
-  proposed in **ADR-0019** (`docs/decisions/0019-layout-mixed-top-level-order.md`,
-  Status: Proposed). Amendment 2 tasks T6–T9 wait for the owner's decision on ADR-0019.
+  decided in **ADR-0019** (`docs/decisions/0019-layout-mixed-top-level-order.md`,
+  Accepted 2026-11-13). Amendment 2 tasks T6–T9 were built after that decision.
 
 
 
@@ -50,9 +50,9 @@ Owner smoke test: after a nest, "alpha" appeared both as the super-header and as
 
 **Status of Amendment 2:** Approved by the owner 2026-11-13 (all recommendations A2-Q1 to A2-Q12; ADR-0019 accepted).
 - **Status:** rules approved by the owner ("yes", 2026-11-13). The details below (edge
-  geometry, indicators, hint texts, keyboard mapping, storage) are **Proposed**, waiting for
-  the owner's answers to A2-Q1 – A2-Q12 and a decision on **ADR-0019** (`layout.json`
-  schema 3, Status: Proposed).
+  geometry, indicators, hint texts, keyboard mapping, storage) are **Approved** (owner,
+  2026-11-13: all recommended answers to A2-Q1 – A2-Q12; **ADR-0019**, `layout.json`
+  schema 3, Accepted).
 - **Where this wins:** where Amendment 2 and older text in this spec disagree, Amendment 2
   applies. It **replaces**: the super-header row as an "ungroup" zone (rules table row
   "Super-header cell", Q8), the single ungrouped block and its blank header (ADR-0016 §5

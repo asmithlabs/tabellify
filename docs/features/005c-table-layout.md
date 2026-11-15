@@ -1,6 +1,6 @@
 # Feature 005c: Per-paper table layout (formatting, column and row drag-and-drop)
 
-- **Status:** Approved (owner, 2026-11-13: Q1 = C — layout saved via ADR-0014; Q2–Q6 recommended answers accepted).
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-13: Q1 = C — layout saved via ADR-0014; Q2–Q6 recommended answers accepted).
   Scope change approved by the owner 2026-11-13 after the first smoke test: see
   "Owner decisions 2026-11-13 #2" (codebook tag columns).
 - **Branch:** `feat/005c-table-layout`
