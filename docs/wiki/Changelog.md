@@ -1,41 +1,49 @@
 # Changelog
 
-All notable changes to Tabellify. No version has been released yet.
+All notable changes to Tabellify, newest first. The repository's
+[CHANGELOG.md](https://github.com/asmithlabs/tabellify/blob/main/CHANGELOG.md) is the
+authoritative copy; this page follows it.
 
-## Unreleased
+## 0.1.0 (not released yet)
+
+First public release. Works with Zotero 10.0.x.
 
 ### Added
-- **Feature 001, plugin shell (version 0.1.0).**
-  - Installs in Zotero 10.0.x (`strict_min_version` 10.0, `strict_max_version` 10.0.*).
-  - Adds **Tabellify…** to Zotero's Tools menu.
-  - **Tools → Tabellify…** opens a single **Tabellify Workspace** window with placeholder
-    content; choosing it again brings the open window to the front.
-  - Disabling and re-enabling Tabellify work without restarting Zotero; disabling removes
-    the menu item, closes the workspace window and removes the main-window string link.
-  - Does not read or change the Zotero library.
-- **Feature 002, workspace as a tab in the main Zotero window (version 0.1.0).**
-  - **Tools → Tabellify…** opens a **Tabellify** tab in the main Zotero window it was chosen
-    from, showing the placeholder workspace; it stays usable when Zotero is maximized or in
-    full screen.
-  - Choosing **Tools → Tabellify…** again selects the existing Tabellify tab.
-  - The tab is closed automatically when Tabellify is disabled or removed, when its main
-    window closes, and when Zotero quits (before Zotero saves its open tabs), so it is never
-    restored after a restart and cannot block restoring other tabs.
-  - Uses Zotero's internal tab manager (`Zotero_Tabs`, ADR-0009); reads no library data.
+- **Workspace tab.** **Tools → Tabellify…** opens a **Tabellify** tab in the main Zotero
+  window (also in full screen); see [Workspace](Workspace).
+- **Tag counts.** Choose a collection; papers in it and its subcollections are counted. A
+  summary line "Tags used N/M · Papers P", a **k/M** column per paper, **Refresh**, and the
+  **Also count tags on the paper itself** switch. Only manual tags count; by default only
+  tags on highlights. See [Tag Monitor](Tag-Monitor).
+- **Codebook in one line** with optional groups, quoted names, moves, and clear error
+  messages; group pills; **Edit groups and tags**. See [Codebooks](Codebooks).
+- **Suggestions while typing** from your library's tags and group names, and **Create tag**
+  (codebook only).
+- **Table**: tag columns under group names (or **Ungrouped**), ✓ cells, sorting, manual paper
+  order, column moves, **Reset columns**, all kept between sessions. See
+  [Table Builder](Table-Builder).
+- **Regroup by dragging** with edge-based drops and Option+arrow keys; an emptied group
+  becomes a tag again.
+- **Tabellify tags** section beside the reader and in the library's item pane: "k / M" and a
+  ✓ / ☐ checklist.
+- **View table** with Name and Description; **saved tables** with snapshot and live view. See
+  [Saved Tables](Saved-Tables).
+- **CSV export** of the table as shown: two header rows, `1` for ✓, k and M columns, UTF-8
+  with BOM, formula guard. See [Export](Export).
+- Tabellify colours in light and dark mode.
 
-### Changed
-- The workspace is no longer a separate window by default (ADR-0004 superseded by
-  ADR-0009). The F001 window opens only as an automatic fallback if Zotero's tab system is
-  not available.
+### Security
+Hardening done before the first release (all fixed): no file paths or error messages in
+Tabellify's Debug Output lines; data files size-checked before reading; stricter automated
+checks against markup injection and private log content; CI actions pinned to exact
+versions; the `.xpi` built only from tracked files.
 
 ### Known issues
-- If Zotero crashes (or is forced to quit) while the Tabellify tab is open, the next start
-  may not restore the PDF and note tabs after it, and Zotero logs
-  `Cannot destructure property 'itemID'`. Library data is not affected. Accepted risk, to be
-  revisited before public release. See
+- If Zotero crashes while the Tabellify tab is open, Zotero may not reopen your other tabs at
+  the next start. No data is lost; reopen them by hand. See
   [Troubleshooting](Troubleshooting#pdf-or-note-tabs-not-restored-after-a-restart).
 - Removing and reinstalling Tabellify in the same Zotero session can start a second copy
   (a Zotero 10 bug). Restart Zotero between Remove and Install. See
   [Troubleshooting](Troubleshooting#two-copies-after-remove-and-reinstall).
-- Zotero's update check for Tabellify gets an HTTP 404 because `updates.json` does not exist
-  yet. Harmless.
+- Uninstalling keeps Tabellify's folder and setting; see
+  [Data Safety and Privacy](Data-Safety-and-Privacy#removing-tabellifys-files-and-setting).

@@ -3,37 +3,48 @@
 Tabellify is a Zotero plugin that turns curated tags into structured literature tables
 (synthesis matrices), so you can organize, compare and export research findings.
 
-> **Status: early development.** Version 0.1.0 (Features 001 and 002) installs in Zotero
-> 10.0.x and opens a placeholder workspace as a **Tabellify** tab in the main Zotero window
-> from **Tools → Tabellify…**. It does not read your library or build tables yet. Pages
-> marked **Planned** describe features that are not available.
+You plan a list of tags (a codebook), tag the highlights in your papers with them in Zotero's
+reader, and Tabellify shows a table: one row per paper, one column per codebook tag, a ✓ where
+the paper uses the tag. You can save the table and export it as CSV. Tabellify never changes
+your Zotero library.
 
-## What is available today
+Version **0.1.0** works with **Zotero 10.0.x**. Pages marked **Planned** describe features
+that are not available yet.
+
+## What is available
 
 | Feature | Status |
 |---|---|
-| F001 Plugin shell: install, Tools → Tabellify…, placeholder workspace | Implemented (unreleased; no GitHub Release yet) |
-| F002 Workspace as a tab in the main Zotero window (separate window only as automatic fallback) | Implemented (unreleased; no GitHub Release yet) |
-| F003 Read-only data access (collections, items, tags) | **Planned** |
-| F004 Codebook (curated tag list with super-tag groups) | **Planned** |
-| F005 Tag monitor | **Planned** |
-| F006 Table builder | **Planned** |
-| F007 Saved tables | **Planned** |
-| F008 CSV export | **Planned** |
-| F009 Column customization | **Planned** |
+| F001–F002 Install, **Tools → Tabellify…**, workspace as a tab in the main Zotero window | Available in 0.1.0 |
+| F003 Read-only access to My Library collections, papers and tags | Available in 0.1.0 |
+| F004, 006a Codebook with optional groups, typed in one line | Available in 0.1.0 |
+| 006b Tag suggestions while typing, codebook-only **Create tag** | Available in 0.1.0 |
+| F005, 005b Tag monitor: counts in the workspace, **Tabellify tags** section beside the reader | Available in 0.1.0 |
+| 005c, 006c Per-paper table: sorting, manual order, column moves, regroup by dragging | Available in 0.1.0 |
+| 005d Tabellify look, light and dark | Available in 0.1.0 |
+| 007a **View table** with Name and Description | Available in 0.1.0 |
+| 007b Saved tables with snapshot and live view | Available in 0.1.0 |
+| F008 CSV export | Available in 0.1.0 |
+| 006d Highlight text in table cells, per-table "Cell content" | **Planned** |
+| F009 Column customization (own columns, column types, per-column options) | **Planned** |
+| F008 (later step) Excel (XLSX) export | **Planned** |
 | F010+ AI-assisted extraction and classification | **Planned** (future) |
 
 Feature numbers follow the roadmap in
 [docs/product-requirements.md](https://github.com/asmithlabs/tabellify/blob/main/docs/product-requirements.md)
-(see [Decision Log](Decision-Log) for the renumbering when Feature 002 was added).
+(see the [Decision Log](Decision-Log) for how the numbers were split and renumbered).
 
 ## For researchers
 
-- [Getting Started](Getting-Started): install Tabellify and open the workspace
-- [Workspace](Workspace): what the workspace shows today
-- [Codebooks](Codebooks), [Tag Monitor](Tag-Monitor), [Table Builder](Table-Builder),
-  [Saved Tables](Saved-Tables), [Export](Export): planned features
-- [Data Safety and Privacy](Data-Safety-and-Privacy): what Tabellify reads and never changes
+- [Getting Started](Getting-Started): install Tabellify and build your first table
+- [Workspace](Workspace): the Tabellify tab, top to bottom
+- [Codebooks](Codebooks): typing tags and groups, suggestions, editing
+- [Tag Monitor](Tag-Monitor): counts and the **Tabellify tags** section beside the reader
+- [Table Builder](Table-Builder): columns, sorting, manual order, dragging and regrouping
+- [Saved Tables](Saved-Tables): View table, save, snapshot and live
+- [Export](Export): the CSV file
+- [Data Safety and Privacy](Data-Safety-and-Privacy): what Tabellify reads, the files it
+  keeps, and how to remove them
 - [Troubleshooting](Troubleshooting) and [FAQ](FAQ)
 
 ## For developers
