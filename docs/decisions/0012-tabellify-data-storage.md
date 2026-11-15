@@ -179,3 +179,16 @@ Alternative: delete `<data dir>/tabellify/` only when `reason === ADDON_UNINSTAL
 1. **Uninstall:** keep `<data dir>/tabellify/` (recommended) or delete it when the user removes
    Tabellify?
 2. **Location:** data directory (recommended) or profile folder (A2)?
+
+## Amendment 2026-11-14: size and entry limits (pre-release security fix SEC-014)
+Owner-approved hardening before the first public release. Each store checks the file size
+with `IOUtils.stat` before parsing; a file over its limit is treated as invalid on load and is
+never overwritten (a save reports a conflict).
+- File size: `codebooks.json` 10 MiB; `layout.json` 20 MiB; `tables.json` 60,000,000 bytes
+  (3 × the ADR-0018 save limit, so every file Tabellify can write still loads).
+- Codebooks: at most 100 codebooks; per codebook at most 1,000 groups and 10,000 tags.
+- Layout: top-level order at most 20,000 entries; tag orders at most 2,000 groups × 20,000 tags;
+  manual orders at most 10,000 collections × 200,000 papers.
+- `revision` and `nextId` must stay below `Number.MAX_SAFE_INTEGER`.
+- The reader item-pane section re-renders once, 500 ms after the last Notifier event.
+An edit that would exceed a limit is refused by the store's validation ("could not save").

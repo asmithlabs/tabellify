@@ -159,7 +159,18 @@ function setup(o = {}) {
   let seq = 0;
 
   const writeTrap = (name) => () => { calls.push(`IOUtils.${name}`); throw new Error(`write attempted: ${name}`); };
+  // Fake timers (the plugin scope's setTimeout/clearTimeout): nothing runs until the test
+  // calls flushTimers(), so debouncing can be checked without waiting.
+  const timers = new Map();
+  let timerSeq = 0;
+  const flushTimers = () => {
+    const due = [...timers.entries()];
+    timers.clear();
+    for (const [, { fn }] of due) fn();
+  };
   const sandbox = {
+    setTimeout: (fn, ms) => { timers.set(++timerSeq, { fn, ms }); return timerSeq; },
+    clearTimeout: (id) => { timers.delete(id); },
     Zotero: {
       debug: (m) => debug.push(String(m)),
       logError: (e) => errors.push(e),
@@ -208,6 +219,11 @@ function setup(o = {}) {
       },
     },
     IOUtils: {
+      stat: async (path) => {
+        calls.push(`IOUtils.stat(${path})`);
+        if (!files.has(path)) throw Object.assign(new Error("not found"), { name: "NotFoundError" });
+        return { size: o.fileSize ?? JSON.stringify(files.get(path)).length };
+      },
       readJSON: async (path) => {
         calls.push(`IOUtils.readJSON(${path})`);
         if (o.readError) throw o.readError;
@@ -224,7 +240,7 @@ function setup(o = {}) {
     const full = join(srcDir, file);
     vm.runInContext(readFileSync(full, "utf8"), context, { filename: full });
   }
-  return { R: sandbox.TabellifyReaderTags, calls, errors, debug, files, sections, observers, sandbox };
+  return { R: sandbox.TabellifyReaderTags, calls, errors, debug, files, sections, observers, sandbox, timers, flushTimers };
 }
 
 /** Run the section's render hooks for `item` the way Zotero does: onRender, then onAsyncRender. */
@@ -480,12 +496,12 @@ test("render: an error while reading the library shows the error message and is 
   assert.equal(s.errors.length, 1);
 });
 
-test("render: never writes (only IOUtils.readJSON; the store gets no write functions)", async () => {
+test("render: never writes (only IOUtils.stat and readJSON; the store gets no write functions)", async () => {
   const calls = [];
   const { paper, pdf } = smokePaper(calls);
   const s = setup({ items: [pdf], files: {} });
   await renderSection(s.R, paper);
-  assert.ok(!s.calls.some((c) => /IOUtils\.(?!readJSON)/.test(c)), s.calls.join("\n"));
+  assert.ok(!s.calls.some((c) => /IOUtils\.(?!readJSON|stat)/.test(c)), s.calls.join("\n"));
   assert.ok(!s.calls.some((c) => c.startsWith("Prefs.set")), "no pref is written");
   assert.equal(s.files.size, 0, "no codebook file was created");
 });
@@ -622,16 +638,19 @@ test("AC4 (data): a Notifier event refreshes every live section; onDestroy and u
   s.R.onInit({ body: bodyA, refresh: async () => { counts.a++; } });
   s.R.onInit({ body: bodyB, refresh: async () => { counts.b++; throw new Error("render failed"); } });
   ref.notify("add", "item-tag", ["10-5"], {});
+  s.flushTimers(); // SEC-014: refreshes run after the debounce delay
   await new Promise((r) => setImmediate(r));
   assert.deepEqual(counts, { a: 1, b: 1 });
   assert.equal(s.errors.length, 1, "a failing refresh is logged, not thrown");
 
   s.R.onDestroy({ body: bodyB });
   ref.notify("modify", "item", [10], {});
+  s.flushTimers();
   assert.deepEqual(counts, { a: 2, b: 1 });
 
   s.R.unregister();
   ref.notify("modify", "item", [10], {});
+  s.flushTimers();
   assert.deepEqual(counts, { a: 2, b: 1 }, "nothing refreshed after unregister");
 });
 
@@ -685,4 +704,45 @@ test("F006a AC15: ungrouped tags are listed first without a heading, as plain te
   assert.equal(label.textContent, "<b>age</b>");
   assert.deepEqual(s.errors, []);
   assert.ok(!s.calls.some((c) => c.startsWith("IOUtils.write")), "nothing written");
+});
+
+// SEC-013: Fluent arguments are numbers only; anything else is dropped before it can reach
+// data-l10n-args or formatValue.
+test("SEC-013: numericArgs keeps finite numbers and drops text and other values", () => {
+  const { R } = setup();
+  assert.deepEqual(plain(R.numericArgs({ used: 2, total: 3 })), { used: 2, total: 3 });
+  assert.deepEqual(
+    plain(R.numericArgs({ a: "<img src=x>", b: "5", c: NaN, d: Infinity, e: null, f: { x: 1 }, g: 0 })),
+    { g: 0 },
+  );
+  assert.deepEqual(plain(R.numericArgs(undefined)), {});
+  const doc = makeDoc();
+  const p = R.para(doc, "tabellify-reader-used", { used: 1, total: "Secret title" });
+  assert.equal(p.getAttribute("data-l10n-args"), JSON.stringify({ used: 1 }));
+});
+
+// SEC-014: a burst of Notifier events re-renders each section ONCE, after REFRESH_DELAY_MS.
+test("SEC-014: Notifier events are debounced (~500 ms); unregister clears a pending timer", async () => {
+  const s = setup();
+  s.R.register({ pluginID: "p", log: () => {} });
+  const [{ ref }] = s.observers.values();
+  let count = 0;
+  s.R.onInit({ body: {}, refresh: async () => { count++; } });
+  for (let i = 0; i < 50; i++) ref.notify("add", "item-tag", [`10-${i}`], {});
+  assert.equal(count, 0, "nothing re-renders immediately");
+  assert.equal(s.timers.size, 1, "one pending timer, restarted on every event");
+  assert.equal([...s.timers.values()][0].ms, 500);
+  assert.equal(s.R.REFRESH_DELAY_MS, 500);
+  s.flushTimers();
+  assert.equal(count, 1, "one re-render for the whole burst");
+  assert.equal(s.R.refreshTimer, null);
+
+  // A pending timer is cleared by unregister (shutdown) and never fires afterwards.
+  ref.notify("modify", "item", [10], {});
+  assert.equal(s.timers.size, 1);
+  s.R.unregister();
+  assert.equal(s.timers.size, 0, "unregister cleared the timer");
+  assert.equal(s.R.refreshTimer, null);
+  s.flushTimers();
+  assert.equal(count, 1);
 });

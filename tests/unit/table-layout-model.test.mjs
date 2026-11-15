@@ -511,3 +511,41 @@ test("AC28: layoutData prunes unknown collections and empty orders, cleans the c
   assert.equal(orders.size, 3);
   assert.deepEqual(orders.get("1/AAAA1111"), ["K1", "K2", "K1"]);
 });
+
+// SEC-015: revision must stay below Number.MAX_SAFE_INTEGER, so the store's `+ 1` is exact.
+test("SEC-015: layout revision at or above MAX_SAFE_INTEGER is rejected", () => {
+  const MAX = Number.MAX_SAFE_INTEGER;
+  assert.deepEqual(plain(L.validateLayout(layout({ revision: MAX - 1 }))), { ok: true });
+  for (const value of [MAX, 2 ** 60]) {
+    const r = L.validateLayout(layout({ revision: value }));
+    assert.equal(r.ok, false, `revision = ${value} must be rejected`);
+    assert.match(r.reason, /revision/);
+  }
+});
+
+// SEC-014: limits on layout.json entries (a file over a limit is invalid: default layout,
+// never overwritten).
+test("SEC-014: layout limits on top-level order, tag orders and manual orders", () => {
+  const Lim = L.LAYOUT_LIMITS;
+  assert.deepEqual(plain(Lim), { order: 20000, tagOrderGroups: 2000, tagOrderTags: 20000, manualOrders: 10000, manualOrderKeys: 200000 });
+  const list = (n, p = "x") => Array.from({ length: n }, (_, i) => `${p}${i}`);
+  const obj = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, ["A"]]));
+  const withTable = (over) => ({ ...layout(), perPaperTable: { ...layout().perPaperTable, ...over } });
+  // At the limits: valid.
+  assert.equal(L.validateLayout(withTable({ topOrder: list(Lim.order).map((t) => ({ tag: t })) })).ok, true);
+  assert.equal(L.validateLayout(withTable({ manualOrders: { "1/AAAA": list(Lim.manualOrderKeys) } })).ok, true);
+  // Over the limits: invalid.
+  const cases = {
+    order: withTable({ topOrder: list(Lim.order + 1).map((t) => ({ tag: t })) }),
+    tagOrderGroups: withTable({ tagOrder: obj(Lim.tagOrderGroups + 1) }),
+    tagOrderTags: withTable({ tagOrder: { g2: list(Lim.tagOrderTags + 1) } }),
+    manualOrders: withTable({ manualOrders: obj(Lim.manualOrders + 1) }),
+    manualOrderKeys: withTable({ manualOrders: { "1/AAAA": list(Lim.manualOrderKeys + 1) } }),
+    v1order: { schemaVersion: 1, revision: 1, perPaperTable: { columnOrder: list(Lim.order + 1), manualOrders: {} } },
+  };
+  for (const [name, data] of Object.entries(cases)) {
+    const r = L.validateLayout(data);
+    assert.equal(r.ok, false, name);
+    assert.match(r.reason, /more than/, name);
+  }
+});

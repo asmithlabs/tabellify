@@ -534,3 +534,19 @@ test("AC14/AC17: the model holds no clock, Zotero, page or file access", () => {
   assert.doesNotMatch(code, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
   assert.doesNotMatch(code, /Date\.now|new Date\(/);
 });
+
+// SEC-015: revision and nextId must stay below Number.MAX_SAFE_INTEGER, so `+ 1` is exact.
+test("SEC-015: revision and nextId at or above MAX_SAFE_INTEGER are rejected", () => {
+  const MAX = Number.MAX_SAFE_INTEGER;
+  const ok = validFile();
+  ok.revision = MAX - 1;
+  ok.nextId = MAX - 1;
+  assert.deepEqual(plain(S.validate(ok)), { ok: true }, "MAX - 1 is still allowed");
+  for (const [field, value] of [["revision", MAX], ["revision", 2 ** 60], ["nextId", MAX], ["nextId", 2 ** 60]]) {
+    const f = validFile();
+    f[field] = value;
+    const r = S.validate(f);
+    assert.equal(r.ok, false, `${field} = ${value} must be rejected`);
+    assert.match(r.reason, new RegExp(field));
+  }
+});

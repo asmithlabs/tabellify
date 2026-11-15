@@ -41,6 +41,14 @@ var TabellifyCodebook = {
   SCHEMA_VERSION: 2,
 
   /**
+   * SEC-014: the most a valid file may hold. Far above real use (ADR-0012: "tens to a few
+   * hundred" tags); they only stop a damaged or planted file from making Zotero do huge
+   * amounts of work. A file over a limit is "invalid": shown as an error, never overwritten.
+   * An edit that would go over a limit is refused by the store's check before any write.
+   */
+  LIMITS: { codebooks: 100, groups: 1000, tags: 10000 },
+
+  /**
    * Reserved VIEW id of the "Ungrouped" block in the table, the pills and layout.json
    * (ADR-0016 §5–§6). Never stored in codebooks.json: stored group ids look like "g2", so
    * this can never clash with one.
@@ -84,7 +92,11 @@ var TabellifyCodebook = {
   validate(data) {
     const fail = (reason) => ({ ok: false, reason });
     const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-    const isCount = (v, min) => Number.isInteger(v) && v >= min;
+    // SEC-015: counters must stay below Number.MAX_SAFE_INTEGER (2^53 - 1). Above it,
+    // JavaScript numbers can no longer represent every integer, so `revision + 1` or
+    // `nextId + 1` could give the same number again (ids would clash, the revision check
+    // would stop working). Strictly below, so the next +1 is still exact.
+    const isCount = (v, min) => Number.isInteger(v) && v >= min && v < Number.MAX_SAFE_INTEGER;
     const isTrimmedName = (v) => typeof v === "string" && v.trim() !== "" && v.trim() === v;
 
     if (!isObject(data)) return fail("top level is not an object");
@@ -98,6 +110,7 @@ var TabellifyCodebook = {
     if (!isCount(data.nextId, 1)) return fail("nextId is not a positive integer");
     if (!Array.isArray(data.codebooks)) return fail("codebooks is not an array");
     if (data.codebooks.length === 0) return fail("codebooks is empty");
+    if (data.codebooks.length > this.LIMITS.codebooks) return fail(`more than ${this.LIMITS.codebooks} codebooks`);
 
     // Ids look like "c1" / "g2"; the number must be below nextId so a new id never clashes.
     const ids = new Set();
@@ -117,6 +130,12 @@ var TabellifyCodebook = {
       if (idError) return fail(idError);
       if (typeof cb.name !== "string") return fail(`${where}.name is not a string`);
       if (!Array.isArray(cb.groups)) return fail(`${where}.groups is not an array`);
+      if (cb.groups.length > this.LIMITS.groups) return fail(`${where} has more than ${this.LIMITS.groups} groups`);
+      // Version 1 keeps tags inside groups, so tags are counted across all of them.
+      const tagCount = v1
+        ? cb.groups.reduce((n, g) => n + (Array.isArray(g?.tags) ? g.tags.length : 0), 0)
+        : (Array.isArray(cb.tags) ? cb.tags.length : 0);
+      if (tagCount > this.LIMITS.tags) return fail(`${where} has more than ${this.LIMITS.tags} tags`);
 
       const groupNames = new Set();
       const groupIds = new Set();

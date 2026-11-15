@@ -685,6 +685,10 @@ function scriptSetup({ onDisk, codebook }) {
   const files = new Map([["/d/codebooks.json", JSON.stringify(onDisk)]]);
   const writes = [];
   W.codebookFs = {
+    stat: async (path) => {
+      if (!files.has(path)) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
+      return { size: files.get(path).length };
+    },
     readJSON: async (path) => {
       if (!files.has(path)) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
       return JSON.parse(files.get(path));
@@ -1092,6 +1096,10 @@ function regroupSetup({ onDiskRevision = 1, ungrouped = ["age", "sex"], groups =
   const files = new Map([["/d/codebooks.json", JSON.stringify({ ...data, revision: onDiskRevision })]]);
   const writes = [];
   W.codebookFs = {
+    stat: async (path) => {
+      if (!files.has(path)) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
+      return { size: files.get(path).length };
+    },
     readJSON: async (path) => {
       if (!files.has(path)) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
       return JSON.parse(files.get(path));
@@ -2346,6 +2354,10 @@ function savedFs(initial = {}, opts = {}) {
     files,
     calls,
     writes: () => calls.filter((c) => c[0] === "writeJSON"),
+    async stat(path) {
+      if (!files.has(path)) throw Object.assign(new Error(`Could not stat ${path}`), { name: "NotFoundError" });
+      return { size: files.get(path).length };
+    },
     async readJSON(path) {
       calls.push(["readJSON", path]);
       if (!files.has(path)) throw Object.assign(new Error(`Could not open ${path}`), { name: "NotFoundError" });

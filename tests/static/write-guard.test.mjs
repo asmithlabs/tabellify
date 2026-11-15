@@ -198,8 +198,9 @@ test("F007b AC22 / ADR-0018 §5: tables-store.js writes only tables.json, in one
   assert.match(code, /writeJSON\(path, clean, \{ tmpPath: path \+ "\.tmp", backupFile: path \+ "\.bak" \}\)/);
   assert.match(code, /const path = fs\.join\(dir, this\.FILE_NAME\);/);
   // The only IOUtils members are the read, the write and the folder creation of
-  // platformFs (as in layout-store.js); never remove, move or copy.
-  assert.deepEqual([...code.matchAll(/\bIOUtils\s*\.\s*(\w+)/g)].map((m) => m[1]), ["readJSON", "writeJSON", "makeDirectory"]);
+  // platformFs (as in layout-store.js), plus the read-only size check (SEC-014); never
+  // remove, move or copy.
+  assert.deepEqual([...code.matchAll(/\bIOUtils\s*\.\s*(\w+)/g)].map((m) => m[1]), ["readJSON", "stat", "writeJSON", "makeDirectory"]);
   assert.doesNotMatch(code, /\bIOUtils\.(?:remove|move|copy|setPermissions|write(?!JSON))\w*/);
   // No mode option (no create / append tricks) and the data directory is not read here.
   assert.doesNotMatch(code, /\bmode\s*:/);

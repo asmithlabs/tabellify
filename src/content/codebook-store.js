@@ -17,7 +17,7 @@
  * version 1 file converts it in memory only).
  *
  * TESTABLE WITHOUT ZOTERO: load() and saveData() take the file functions as a parameter
- * `fs` = { readJSON, writeJSON, makeDirectory, join }. In Zotero, platformFs() supplies
+ * `fs` = { readJSON, stat, writeJSON, makeDirectory, join }. In Zotero, platformFs() supplies
  * Firefox's IOUtils / PathUtils; tests/unit/codebook-store.test.mjs passes a fake that
  * keeps "files" in a Map. (Same idea as F002's fake Zotero_Tabs.)
  *
@@ -33,6 +33,12 @@ var TabellifyCodebookStore = {
 
   /** The one-time copy of a version 1 file (ADR-0016 §3, spec F006a Q10). */
   V1_COPY_NAME: "codebooks.v1.json",
+
+  /**
+   * SEC-014: the largest codebooks.json Tabellify reads (10 MiB). Far above any real codebook
+   * (the model's limits allow 10,000 tags; even at 255 characters each that is under 8 MB).
+   */
+  MAX_FILE_BYTES: 10 * 1024 * 1024,
 
   /**
    * The folder for Tabellify's own data: <Zotero data directory>/tabellify.
@@ -53,6 +59,8 @@ var TabellifyCodebookStore = {
   platformFs() {
     return {
       readJSON: (path) => IOUtils.readJSON(path),
+      // SEC-014: the file size, checked before readJSON parses the file. Read-only.
+      stat: (path) => IOUtils.stat(path),
       // tmpPath + backupFile: an atomic write that keeps the previous version (ADR-0012 §2).
       // { mode: "create" }: write only if the file does not exist yet (the v1 copy).
       writeJSON: (path, value, options) => IOUtils.writeJSON(path, value, options),
@@ -60,6 +68,23 @@ var TabellifyCodebookStore = {
       makeDirectory: (path) => IOUtils.makeDirectory(path),
       join: (...parts) => PathUtils.join(...parts),
     };
+  },
+
+  /**
+   * SEC-014: read and parse `path`, but refuse a file larger than MAX_FILE_BYTES BEFORE
+   * parsing it. Parsing a huge (damaged or planted) file would freeze Zotero and use a lot of
+   * memory; Tabellify never writes a file that big. `fs.stat` rejects with "NotFoundError"
+   * when there is no file, exactly like `readJSON`, so callers handle both the same way.
+   * Too large → throws an error named "FileTooLargeError" (only the name is ever logged).
+   * @param {{ stat: (path: string) => Promise<{ size: number }>, readJSON: (path: string) => Promise<any> }} fs
+   * @param {string} path
+   */
+  async readJSONCapped(fs, path) {
+    const info = await fs.stat(path);
+    if (!(typeof info?.size === "number" && info.size <= this.MAX_FILE_BYTES)) {
+      throw Object.assign(new Error("file too large"), { name: "FileTooLargeError" });
+    }
+    return fs.readJSON(path);
   },
 
   /**
@@ -81,14 +106,16 @@ var TabellifyCodebookStore = {
     const path = fs.join(dir, this.FILE_NAME);
     let raw;
     try {
-      raw = await fs.readJSON(path);
+      raw = await this.readJSONCapped(fs, path);
     } catch (e) {
       // IOUtils reports a missing file with an error named "NotFoundError".
       if (e?.name === "NotFoundError") {
         return { status: "ok", data: TabellifyCodebook.emptyData(), path, existed: false, fromVersion: null };
       }
       // Bad JSON, no permission, disk error…: treat as "could not load".
-      return { status: "invalid", path, reason: `could not read: ${e?.name ?? ""} ${e?.message ?? e}` };
+      // SEC-011: only the error's name goes into `reason` (it is logged). The message can
+      // contain the full path, and with it the user's account name.
+      return { status: "invalid", path, reason: `could not read: ${e?.name ?? "error"}` };
     }
     const check = TabellifyCodebook.validate(raw);
     if (!check.ok) {
@@ -135,14 +162,14 @@ var TabellifyCodebookStore = {
     let diskRevision;
     let onDiskV1 = null;
     try {
-      const onDisk = await fs.readJSON(path);
+      const onDisk = await this.readJSONCapped(fs, path);
       const check = TabellifyCodebook.validate(onDisk);
       if (!check.ok) return { status: "conflict", path, reason: `file on disk is not valid: ${check.reason}` };
       diskRevision = onDisk.revision;
       if (onDisk.schemaVersion === 1) onDiskV1 = onDisk;
     } catch (e) {
       if (e?.name !== "NotFoundError") {
-        return { status: "conflict", path, reason: `could not re-read: ${e?.name ?? ""} ${e?.message ?? e}` };
+        return { status: "conflict", path, reason: `could not re-read: ${e?.name ?? "error"}` }; // SEC-011: name only
       }
       diskRevision = 0;
     }
@@ -194,6 +221,7 @@ var TabellifyCodebookStore = {
 /**
  * @typedef {{
  *   readJSON: (path: string) => Promise<any>,
+ *   stat: (path: string) => Promise<{ size: number }>,
  *   writeJSON: (path: string, value: any,
  *     options: { tmpPath: string, backupFile: string } | { mode: "create" }) => Promise<any>,
  *   makeDirectory: (path: string) => Promise<any>,

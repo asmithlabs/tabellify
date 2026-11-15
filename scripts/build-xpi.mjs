@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build the installable plugin: zip the CONTENTS of `src/` into
+// Build the installable plugin: zip the git-tracked CONTENTS of `src/` into
 // `build/tabellify-<version>.xpi`, with the version read from `src/manifest.json`.
 //
 // An .xpi is just a ZIP file. Zotero expects `manifest.json` and `bootstrap.js` at the
@@ -17,44 +17,56 @@
 //
 // Usage: npm run build
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
-import { join, dirname, relative, sep } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join, dirname, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { deflateRawSync, crc32 } from "node:zlib";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = join(repoRoot, "src");
 const buildDir = join(repoRoot, "build");
 
-// OS clutter that must never ship in the .xpi.
-const IGNORED_NAMES = new Set([".DS_Store", "Thumbs.db"]);
-
+// Only these file types may ship in the .xpi (FU-SEC-008). Anything else under src/ (a
+// stray .zip, a backup, a binary) makes the build fail instead of being shipped silently.
+// tests/static/xpi.test.mjs checks the same list against the built archive.
+const ALLOWED_EXTENSIONS = new Set([".js", ".mjs", ".css", ".svg", ".xhtml", ".ftl", ".json"]);
 // Fixed DOS timestamp for every entry (2026-01-01 00:00:00) so builds are reproducible.
 // DOS date: bits 15-9 year-1980, 8-5 month, 4-0 day. DOS time: 0 = midnight.
 const DOS_DATE = ((2026 - 1980) << 9) | (1 << 5) | 1;
 const DOS_TIME = 0;
 
 /**
- * List every file and directory under `dir`, as archive paths relative to `srcDir`
- * using "/" separators (ZIP always uses forward slashes). Directories end with "/".
- * @param {string} dir
+ * List the files git tracks under src/ (FU-SEC-008), as archive paths relative to `srcDir`,
+ * plus one entry per parent directory (ending with "/"), exactly like a folder walk would.
+ *
+ * Why git and not a folder walk: whatever happens to be lying in the working folder
+ * (an untracked scratch file, an editor backup, a file a tool dropped there) must not end up
+ * in the plugin users install. Only files that went through a commit, and so through review,
+ * are shipped. File contents still come from the working folder, as before.
+ *
+ * `git ls-files -z` prints NUL-separated repository-relative paths with "/" separators on
+ * every OS, and never quotes unusual characters when -z is used.
  * @returns {string[]}
  */
-function listEntries(dir) {
-  /** @type {string[]} */
-  const out = [];
-  for (const dirent of readdirSync(dir, { withFileTypes: true })) {
-    if (IGNORED_NAMES.has(dirent.name)) continue;
-    const full = join(dir, dirent.name);
-    const archivePath = relative(srcDir, full).split(sep).join("/");
-    if (dirent.isDirectory()) {
-      out.push(archivePath + "/", ...listEntries(full));
+function listEntries() {
+  const out = execFileSync("git", ["ls-files", "-z", "--", "src"], { cwd: repoRoot, encoding: "utf8" });
+  const files = out.split("\0").filter((p) => p !== "").map((p) => {
+    if (!p.startsWith("src/")) throw new Error(`git listed a path outside src/: ${p}`);
+    return p.slice("src/".length);
+  });
+  /** @type {Set<string>} */
+  const dirs = new Set();
+  for (const file of files) {
+    const ext = extname(file).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      throw new Error(`src/${file}: file type "${ext}" is not on the XPI allow-list`);
     }
-    else if (dirent.isFile()) {
-      out.push(archivePath);
-    }
+    // Add every parent folder ("content/", "content/icons/"), as the ZIP had before.
+    const parts = file.split("/");
+    for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/") + "/");
   }
-  return out;
+  return [...dirs, ...files];
 }
 
 /**
@@ -141,7 +153,7 @@ if (typeof version !== "string" || version === "") {
   throw new Error("src/manifest.json has no \"version\" string");
 }
 
-const entries = listEntries(srcDir).sort();
+const entries = listEntries().sort();
 if (entries.length > 0xffff) {
   throw new Error("Too many files for a non-ZIP64 archive");
 }

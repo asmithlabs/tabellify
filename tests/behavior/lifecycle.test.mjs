@@ -487,18 +487,27 @@ test("F005b AC4/AC11: a tag change refreshes open sections; a closed one and a d
   h.fireNotifier("add", "item-tag", ["10-5"]);
   h.fireNotifier("modify", "item", [10]);
   h.fireNotifier("add", "collection-item", ["1-10"]); // not a type we listen to
-  assert.deepEqual([a.refreshCalls, b.refreshCalls], [2, 2]);
+  // SEC-014: the two events are debounced into ONE refresh, after the delay.
+  assert.deepEqual([a.refreshCalls, b.refreshCalls], [0, 0]);
+  h.runScopeTimers();
+  assert.deepEqual([a.refreshCalls, b.refreshCalls], [1, 1]);
 
   h.unmountSection(b); // e.g. its reader tab was closed
   h.fireNotifier("remove", "item-tag", ["10-5"]);
-  assert.deepEqual([a.refreshCalls, b.refreshCalls], [3, 2]);
+  h.runScopeTimers();
+  assert.deepEqual([a.refreshCalls, b.refreshCalls], [2, 1]);
   assert.equal(h.evaluate("TabellifyReaderTags.refreshers.size"), 1);
 
+  // A refresh still pending at shutdown is cancelled (no timer left behind).
+  h.fireNotifier("modify", "item", [10]);
+  assert.equal(h.pendingScopeTimers, 1);
   // Keep a handle on the observer to prove it does nothing after shutdown.
   const [{ ref }] = h.notifierObservers.values();
   h.shutdown();
+  assert.equal(h.pendingScopeTimers, 0, "shutdown cleared the pending refresh timer");
   ref.notify("add", "item-tag", ["10-5"], {});
-  assert.equal(a.refreshCalls, 3);
+  h.runScopeTimers();
+  assert.equal(a.refreshCalls, 2);
   assert.deepEqual(h.errors, []);
 });
 

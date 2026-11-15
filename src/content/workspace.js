@@ -199,7 +199,13 @@ var TabellifyWorkspace = {
   /** Localized "(untitled)", read once in init(). */
   untitledText: "",
 
-  /** @param {string} message */
+  /**
+   * One line of Debug Output. SEC-011: users paste Debug Output into public issues, so a
+   * message names files ("codebooks.json") and error names ("NotAllowedError") only: never
+   * a full path (it contains the account name) or an error's `message`.
+   * tests/static/no-private-logs.test.mjs checks this.
+   * @param {string} message
+   */
   log(message) {
     Zotero.debug(`Tabellify: workspace: ${message}`);
   },
@@ -266,21 +272,33 @@ var TabellifyWorkspace = {
     countBox.checked = this.countItemTags;
     countBox.addEventListener("change", this.onCountItemTagsChange);
     try {
+      // SEC-012: every `await` below is a pause during which the user can close the tab.
+      // onUnload then runs (and sets `unloaded`) while this function is still waiting. So
+      // after each `await` we check `unloaded` and stop: otherwise the code after it would
+      // register a Notifier observer for a page that is already gone, and nothing would
+      // ever unregister it (a leak, and callbacks into a dead document).
+
       // Normally already resolved (the workspace opens from a menu, after Zotero started),
       // so this returns at once. It guarantees all collections are loaded.
       await Zotero.initializationPromise;
+      if (this.unloaded) return;
 
       // "(untitled)" is needed as plain text in table cells, so ask Fluent for the string.
       this.untitledText = (await document.l10n?.formatValue("tabellify-untitled")) ?? "";
+      if (this.unloaded) return;
       // F005: the tag monitor's texts, formatted once (see MONITOR_STRINGS).
       await this.formatStrings(this.MONITOR_STRINGS);
+      if (this.unloaded) return;
       // F008: the export's texts (dialog, status line, CSV headers), formatted once.
       await this.formatStrings(this.EXPORT_STRINGS);
+      if (this.unloaded) return;
       // F007a: the modal table's k/M header texts, formatted once.
       await this.formatStrings(this.VIEW_STRINGS);
+      if (this.unloaded) return;
       // F005c: the saved layout (and its strings) must be ready before the first table is
       // shown. initLayout never throws (it has its own try/catch).
       await this.layoutLoading;
+      if (this.unloaded) return;
       this.monitorReady = true;
       this.renderMonitor();
 
@@ -307,7 +325,7 @@ var TabellifyWorkspace = {
       // F005: from now on, library changes re-count the chosen collection (live updates).
       this.registerMonitorObserver();
     } catch (e) {
-      this.showStatus("tabellify-load-error");
+      if (!this.unloaded) this.showStatus("tabellify-load-error");
       Zotero.logError(e);
     }
   },
@@ -1914,17 +1932,17 @@ var TabellifyWorkspace = {
             ? `, migrated in memory from schemaVersion ${result.fromVersion}: group order turned into the top-level order`
             : "";
         this.log(
-          `layout: loaded ${result.path} (revision ${this.layoutRevision}, ${this.manualOrders.size} manual order(s), ` +
+          `layout: loaded ${TabellifyLayoutStore.FILE_NAME} (revision ${this.layoutRevision}, ${this.manualOrders.size} manual order(s), ` +
           `column order for ${this.columnLayout.topOrder.length} top-level item(s)${migrated})`,
         );
       } else {
-        this.log(`layout: no file yet at ${result.path}; using the default layout (nothing written)`);
+        this.log(`layout: no file yet (${TabellifyLayoutStore.FILE_NAME}); using the default layout (nothing written)`);
       }
       this.showLayoutStatus(null);
     } else {
       this.applyLayout(TabellifyTableLayout.emptyLayout());
       this.layoutEditable = false;
-      this.log(`layout: could not load ${result.path} (${result.status}): ${result.reason}; using the default layout, saving disabled`);
+      this.log(`layout: could not load ${TabellifyLayoutStore.FILE_NAME} (${result.status}): ${result.reason}; using the default layout, saving disabled`);
       const id = result.status === "newer" ? "tabellify-table-layout-newer" : "tabellify-table-layout-load-error";
       this.showLayoutStatus(id, result.path);
     }
@@ -1983,7 +2001,7 @@ var TabellifyWorkspace = {
       const result = await TabellifyLayoutStore.saveData(this.layoutFs, this.layoutDir, data, this.layoutRevision);
       if (result.status === "saved") {
         this.layoutRevision = result.data.revision;
-        this.log(`layout: saved revision ${this.layoutRevision} to ${result.path}`);
+        this.log(`layout: saved revision ${this.layoutRevision} to ${TabellifyLayoutStore.FILE_NAME}`);
         this.showLayoutStatus(null);
       } else if (result.status === "conflict") {
         // Another Tabellify tab saved first (or the file changed or broke on disk): do not
@@ -1994,7 +2012,7 @@ var TabellifyWorkspace = {
       } else {
         // Write failed: the file on disk is unchanged (atomic write). The layout stays on
         // screen; the next change tries again.
-        this.log(`layout: could not save ${result.path}`);
+        this.log(`layout: could not save ${TabellifyLayoutStore.FILE_NAME} (${result.error?.name ?? "Error"})`);
         Zotero.logError(result.error);
         this.showLayoutStatus("tabellify-table-layout-save-error");
       }
@@ -2063,6 +2081,9 @@ var TabellifyWorkspace = {
    * Paired with unregisterMonitorObserver() in onUnload (lifecycle symmetry).
    */
   registerMonitorObserver() {
+    // SEC-012: never register for a page that is closing or closed (onUnload already ran,
+    // so no later unregister would remove this observer).
+    if (this.unloaded) return;
     if (this.notifierKey !== null) return;
     this.notifierKey = Zotero.Notifier.registerObserver(
       { notify: this.onNotify },
@@ -2369,9 +2390,9 @@ var TabellifyWorkspace = {
         const migrated = result.fromVersion < TabellifyCodebook.SCHEMA_VERSION
           ? `, migrated in memory from schemaVersion ${result.fromVersion}; the file is rewritten only by the next edit`
           : "";
-        this.log(`codebook: loaded ${result.path} (revision ${this.codebookRevision}, ${groups} group(s), ${tags} tag(s)${migrated})`);
+        this.log(`codebook: loaded ${TabellifyCodebookStore.FILE_NAME} (revision ${this.codebookRevision}, ${groups} group(s), ${tags} tag(s)${migrated})`);
       } else {
-        this.log(`codebook: no file yet at ${result.path}; starting empty (nothing written)`);
+        this.log(`codebook: no file yet (${TabellifyCodebookStore.FILE_NAME}); starting empty (nothing written)`);
       }
       this.showCodebookStatus(null);
     } else {
@@ -2379,7 +2400,7 @@ var TabellifyWorkspace = {
       // can overwrite the file (ADR-0012 §3).
       this.codebook = null;
       this.codebookEditable = false;
-      this.log(`codebook: could not load ${result.path} (${result.status}): ${result.reason}; editing disabled`);
+      this.log(`codebook: could not load ${TabellifyCodebookStore.FILE_NAME} (${result.status}): ${result.reason}; editing disabled`);
       const id = result.status === "newer" ? "tabellify-codebook-newer" : "tabellify-codebook-load-error";
       this.showCodebookStatus(id, result.path, true);
     }
@@ -2409,16 +2430,16 @@ var TabellifyWorkspace = {
       if (result.v1Copy) {
         // ADR-0016 §3: the one-time copy of the version 1 file. A failure (e.g. the copy
         // already exists) does not stop the save; the .bak file holds the old data too.
-        if (result.v1Copy.ok) this.log(`codebook: kept the schemaVersion 1 data once in ${result.v1Copy.path}`);
+        if (result.v1Copy.ok) this.log(`codebook: kept the schemaVersion 1 data once in ${TabellifyCodebookStore.V1_COPY_NAME}`);
         else {
-          this.log(`codebook: could not write the one-time copy ${result.v1Copy.path}; continuing (codebooks.json.bak keeps the old data)`);
+          this.log(`codebook: could not write the one-time copy ${TabellifyCodebookStore.V1_COPY_NAME} (${result.v1Copy.error?.name ?? "Error"}); continuing (codebooks.json.bak keeps the old data)`);
           Zotero.logError(result.v1Copy.error);
         }
       }
       if (result.status === "saved") {
         this.codebook = result.data;
         this.codebookRevision = result.data.revision;
-        this.log(`codebook: saved revision ${this.codebookRevision} (schemaVersion ${result.data.schemaVersion}) to ${result.path}`);
+        this.log(`codebook: saved revision ${this.codebookRevision} (schemaVersion ${result.data.schemaVersion}) to ${TabellifyCodebookStore.FILE_NAME}`);
         this.showCodebookStatus("tabellify-codebook-saved", null, false, savedExtraId);
         return true;
       }
@@ -2433,7 +2454,7 @@ var TabellifyWorkspace = {
       // Write failed: the file on disk is unchanged (atomic write). Keep the edit on screen
       // with the OLD revision, so the next successful save includes it.
       this.codebook = edit.data;
-      this.log(`codebook: could not save ${result.path}`);
+      this.log(`codebook: could not save ${TabellifyCodebookStore.FILE_NAME} (${result.error?.name ?? "Error"})`);
       Zotero.logError(result.error);
       this.showCodebookStatus("tabellify-codebook-save-error", null, true);
       return true;

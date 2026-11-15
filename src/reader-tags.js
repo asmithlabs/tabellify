@@ -54,6 +54,11 @@ var TabellifyReaderTags = {
   NOTIFIER_TYPES: ["item", "item-tag"],
   /** Shown as the header summary when there is nothing to count. */
   NO_SUMMARY: "—",
+  /**
+   * SEC-014: wait this long after the LAST library change before re-rendering the sections.
+   * Each render re-reads codebooks.json; a sync or a batch edit fires many events in a row.
+   */
+  REFRESH_DELAY_MS: 500,
 
   /**
    * Id returned by `registerSection` (namespaced, NOT "reader-tags"), or null.
@@ -67,6 +72,12 @@ var TabellifyReaderTags = {
   observerID: null,
   /** True between `register` and `unregister`; async renders check it after each `await`. */
   active: false,
+  /**
+   * The pending refresh timer (from `setTimeout`), or null. Cleared in `unregister`: a timer
+   * left running after shutdown would call into unloaded plugin code.
+   * @type {any}
+   */
+  refreshTimer: null,
   /**
    * The `refresh` function of every live section, keyed by the section's `body` element.
    * A Map rather than a Set because Zotero passes `refresh` only to `onInit`; `onDestroy`
@@ -144,6 +155,11 @@ var TabellifyReaderTags = {
    */
   unregister() {
     this.active = false;
+    // SEC-014: stop a pending debounced refresh (lifecycle symmetry with onNotify).
+    if (this.refreshTimer !== null) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
     if (this.observerID) {
       try {
         Zotero.Notifier.unregisterObserver(this.observerID);
@@ -245,8 +261,24 @@ var TabellifyReaderTags = {
     }
   },
 
-  /** Notifier callback: ask every live section to render again. */
+  /**
+   * Notifier callback. SEC-014 "debouncing": instead of re-rendering at once, (re)start a
+   * short timer on every event and re-render once, REFRESH_DELAY_MS after the last one. So
+   * a burst of 100 tag changes reads codebooks.json once, not 100 times per section.
+   * `setTimeout` / `clearTimeout` are provided to the plugin scope by Zotero
+   * (docs/zotero-api-notes.md).
+   */
   onNotify() {
+    if (!this.active) return;
+    if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      this.refreshAll();
+    }, this.REFRESH_DELAY_MS);
+  },
+
+  /** Ask every live section to render again (after the debounce delay). */
+  refreshAll() {
     if (!this.active) return;
     for (const refresh of [...this.refreshers.values()]) {
       try {
@@ -321,13 +353,13 @@ var TabellifyReaderTags = {
   },
 
   /**
-   * Load codebooks.json. Only `readJSON` and `join` are passed on, so the store cannot
-   * write from here even by mistake (`load` needs nothing else).
+   * Load codebooks.json. Only `readJSON`, `stat` (the SEC-014 size check) and `join` are
+   * passed on, so the store cannot write from here even by mistake (`load` needs nothing else).
    * @returns {Promise<any>}  TabellifyCodebookStore's LoadResult
    */
   loadCodebook() {
-    const { readJSON, join } = TabellifyCodebookStore.platformFs();
-    return TabellifyCodebookStore.load({ readJSON, join }, TabellifyCodebookStore.dataDir());
+    const { readJSON, stat, join } = TabellifyCodebookStore.platformFs();
+    return TabellifyCodebookStore.load({ readJSON, stat, join }, TabellifyCodebookStore.dataDir());
   },
 
   // ---- Drawing (textContent and Fluent only) -------------------------------------------
@@ -338,7 +370,7 @@ var TabellifyReaderTags = {
    */
   async formatSummary(doc, used, total) {
     try {
-      const text = await doc.l10n.formatValue("tabellify-reader-summary", { used, total });
+      const text = await doc.l10n.formatValue("tabellify-reader-summary", this.numericArgs({ used, total }));
       if (text) return text;
     }
     catch (err) {
@@ -409,8 +441,26 @@ var TabellifyReaderTags = {
   l10nEl(doc, tag, l10nID, args) {
     const el = this.el(doc, tag);
     el.setAttribute("data-l10n-id", l10nID);
-    if (args) el.setAttribute("data-l10n-args", JSON.stringify(args));
+    if (args) el.setAttribute("data-l10n-args", JSON.stringify(this.numericArgs(args)));
     return el;
+  },
+
+  /**
+   * SEC-013: Fluent arguments are NUMBERS ONLY. A Fluent argument is inserted into the
+   * translated text; library text (a tag or title) passed this way would reach the page
+   * outside our textContent-only rule. This keeps only finite numbers and drops anything
+   * else, so even a later mistake cannot pass text. tests/static/no-html-sinks.test.mjs
+   * requires every Fluent argument object in src/ to go through this function.
+   * @param {Record<string, unknown>} args
+   * @returns {Record<string, number>}
+   */
+  numericArgs(args) {
+    /** @type {Record<string, number>} */
+    const out = {};
+    for (const [key, value] of Object.entries(args ?? {})) {
+      if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
+    }
+    return out;
   },
 
   /** An HTML element in `doc` (the main window is a XUL document, so the namespace matters). */
