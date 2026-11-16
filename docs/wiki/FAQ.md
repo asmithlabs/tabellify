@@ -1,5 +1,10 @@
 # FAQ
 
+Short answers to common questions about Tabellify, with links to the pages that explain
+more.
+
+## Questions and answers
+
 **What does Tabellify do?**
 You plan a list of tags (a [codebook](Codebooks)), tag highlights in your papers with them in
 Zotero's reader, and Tabellify shows a table: one row per paper, one column per codebook tag,
@@ -49,7 +54,7 @@ setting](Data-Safety-and-Privacy#removing-tabellifys-files-and-setting).
 
 **Does Tabellify send my data anywhere?**
 No. Tabellify's own code makes no network requests. Zotero itself checks GitHub for
-Tabellify updates. Planned AI features (F010+) will be documented before they ship.
+Tabellify updates. If AI features are added later, they will be explained before they ship.
 
 **Does the workspace work when Zotero is in full screen?**
 Yes. The workspace is a tab inside the main Zotero window. See [Workspace](Workspace).
@@ -68,16 +73,16 @@ your library today with the same settings. See [Saved Tables](Saved-Tables#snaps
 
 **Can I export to Excel?**
 Export CSV opens in Excel, with accents shown correctly. A native Excel (XLSX) export is
-**Planned** (optional later step of Feature F008). See [Export](Export).
+**Planned** for later. See [Export](Export).
 
 **Can a cell show the highlighted text instead of ✓?**
-Not yet: **Planned, Feature 006d**.
+Not yet. This is **Planned** for later.
 
 **Can I add my own columns, such as year or study design?**
-Not yet: **Planned, Feature F009** (column customization).
+Not yet. More column options are **Planned** for later.
 
 **Will Tabellify extract information from papers automatically?**
-**Planned, Feature F010+** (AI-assisted extraction and classification), not started.
+Not yet. AI-assisted filling of the table is **Planned** for later; work has not started.
 
 **Is Tabellify free and open source?**
 Yes, under the [AGPL-3.0-or-later](https://github.com/asmithlabs/tabellify/blob/main/LICENSE)

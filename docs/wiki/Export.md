@@ -90,17 +90,20 @@ Smith 2020,1,,1,2,3
 
 ## Messages
 
-| Message | What to do |
-|---|---|
-| CSV saved: *location* | Done |
-| The save dialog could not be opened. Nothing was saved. | Try again; if it keeps happening, [report a bug](Troubleshooting#reporting-a-bug) |
-| The CSV file could not be saved. Check that you can write to this folder, then try again: *location* | Pick another folder (for example Documents). The old file, if there was one, is unchanged |
+- "CSV saved:" followed by the file's location: the export worked.
+- "The save dialog could not be opened. Nothing was saved." Try again. If it keeps
+  happening, [report a bug](Troubleshooting#reporting-a-bug).
+- "The CSV file could not be saved. Check that you can write to this folder, then try
+  again:" followed by the location. Pick another folder (for example Documents). The old
+  file, if there was one, is unchanged.
 
 Only one export runs at a time; the **Export CSV** buttons are disabled until it finishes.
 
 ## Planned
 
-- **Excel (XLSX) export:** **Planned** (optional later step of Feature F008).
-- Copy the table to the clipboard, extra columns (authors, year, item key): **Planned** (no
-  feature number yet).
-- Highlight text in cells: **Planned, Feature 006d**.
+These are not available yet:
+
+- Excel (XLSX) export.
+- Copying the table to the clipboard.
+- Extra columns in the file, such as authors, year or item key.
+- Highlight text in cells, instead of `1`.

@@ -91,6 +91,3 @@ with the same content. You do not need to do anything. In that case choosing
 **Tools → Tabellify…** again brings the open window to the front, and the window closes by
 itself when you turn Tabellify off. Please [report it](Troubleshooting#reporting-a-bug) if
 you see this window, because it means Tabellify needs an update.
-
-Background: [ADR-0009](Decision-Log) and
-[Feature 002](https://github.com/asmithlabs/tabellify/blob/main/docs/features/002-workspace-tab.md).

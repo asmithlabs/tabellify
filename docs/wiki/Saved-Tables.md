@@ -70,15 +70,17 @@ for this collection." / "Choose a collection to see its saved tables."
 A saved table always opens as its **snapshot**: exactly what you saved. In the **Saved
 table** panel:
 
-| Button | What it does |
-|---|---|
-| **Show live** | Rebuilds the table from your library **now**, with the saved settings and the current codebook. The line under the heading reads "Live: built from your library now · *collection*". While it builds you see "Building the live table…" |
-| **Show snapshot** | Goes back to the saved snapshot |
-| **Update snapshot** (live only) | Replaces the saved snapshot with the live table. Message: "Snapshot updated." |
-| **Save as new table** (live only) | Keeps the old table and saves the live version as a new one. Message: "Saved as a new table." |
-| **Save changes** | Saves edits to Name and Description. Message: "Changes saved." |
-| **Export CSV** | Exports what is shown (snapshot or live) |
-| **Close** | Closes the panel |
+- **Show live** rebuilds the table from your library **now**, with the saved settings and the
+  current codebook. While it builds you see "Building the live table…". Then the line under
+  the heading reads "Live: built from your library now · *collection*".
+- **Show snapshot** goes back to the saved snapshot.
+- **Update snapshot** (only in the live view) replaces the saved snapshot with the live
+  table. You see "Snapshot updated."
+- **Save as new table** (only in the live view) keeps the old table and saves the live
+  version as a new one. You see "Saved as a new table."
+- **Save changes** saves your edits to Name and Description. You see "Changes saved."
+- **Export CSV** exports what is shown: the snapshot or the live table.
+- **Close** closes the panel.
 
 Notes on the live view:
 
@@ -119,7 +121,8 @@ change."
 
 ## Planned
 
-- Loading a saved table back into the workspace, version history, undo of a delete, sharing
-  or importing saved tables: **Planned** (no feature number yet; out of scope of Feature
-  007b).
-- Excel (XLSX) export: **Planned** (optional later step of Feature F008).
+These are not available yet:
+
+- Loading a saved table back into the workspace, version history, undoing a delete, and
+  sharing or importing saved tables.
+- Excel (XLSX) export.

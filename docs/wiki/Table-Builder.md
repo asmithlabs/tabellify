@@ -84,24 +84,23 @@ saved." with what happened. Your Zotero tags are not changed.
 quarter, and the middle split into an upper half and a lower half. While you drag, a line
 shows where the column will go, and the toolbar shows a **hint** with the result:
 
-| Hint | Meaning |
-|---|---|
-| Move column here | Only the order changes |
-| Move into group: *name* | The tag joins that group |
-| Move to Ungrouped | The tag leaves its group |
-| Turn into a group name: *name* | That tag becomes a group name (see below) |
+- **Move column here**: only the order changes.
+- **Move into group:** *name*: the tag joins that group.
+- **Move to Ungrouped**: the tag leaves its group.
+- **Turn into a group name:** *name*: that tag becomes a group name (see below).
 
-What each drop does (A = the column you drag):
+What each drop does, if A is the column you drag:
 
-| You drop A on… | Zone | Result |
-|---|---|---|
-| a tag **inside a group** | left or right | A joins that group, before or after that tag |
-| a **group name** | lower half | A joins that group, at its end |
-| a **group name** | left or right | A becomes an ungrouped tag beside the group |
-| an **ungrouped tag** B | left or right | A becomes an ungrouped tag beside B |
-| an **ungrouped tag** B (or the cells below it) | lower half | **B becomes a group name** and A goes under it |
-| an **ungrouped tag** B | upper half | **A becomes a group name** and B goes under it |
-| an **Ungrouped** header | left, right or lower half | A becomes ungrouped, at the start or end of that run |
+- **On a tag inside a group**, left or right part: A joins that group, before or after that
+  tag.
+- **On a group name**, lower half: A joins that group, at its end.
+- **On a group name**, left or right part: A becomes an ungrouped tag beside the group.
+- **On an ungrouped tag B**, left or right part: A becomes an ungrouped tag beside B.
+- **On an ungrouped tag B** (or the cells below it), lower half: **B becomes a group name**
+  and A goes under it.
+- **On an ungrouped tag B**, upper half: **A becomes a group name** and B goes under it.
+- **On an Ungrouped header**, left, right or lower part: A becomes ungrouped, at the start or
+  end of that run of ungrouped tags.
 
 Where a zone is not allowed (for example the upper half of a group name, or above or below a
 tag inside a group, because there is no third level), the drop acts like the nearer left or
@@ -120,13 +119,23 @@ group emptied in **Edit groups and tags** stays as an empty group.
 
 ### The same moves from the keyboard
 
-Click a tag column's grip, then:
+Click a tag column's grip, then use these keys. On macOS use **Option**; on Windows and Linux
+use **Alt** instead.
 
-| Key (Option on macOS, Alt on Windows and Linux) | Tag inside a group | Ungrouped tag |
-|---|---|---|
-| Option+← / Option+→ | Move one place within the group | Move one place among the top-level columns |
-| Option+↑ | Leave the group: becomes ungrouped right before or after it | If the column to the left is an ungrouped tag B: this tag becomes a group name, B goes under it |
-| Option+↓ | Nothing | If the column to the left is an ungrouped tag B: B becomes a group name and this tag goes under it. If it is a group: join that group at its end |
+For a **tag inside a group**:
+
+- **Option+← / Option+→**: move one place within the group.
+- **Option+↑**: leave the group; the tag becomes ungrouped, right before or after the group.
+- **Option+↓**: nothing happens.
+
+For an **ungrouped tag**:
+
+- **Option+← / Option+→**: move one place among the top-level columns.
+- **Option+↑**: if the column to the left is an ungrouped tag B, this tag becomes a group
+  name and B goes under it.
+- **Option+↓**: if the column to the left is an ungrouped tag B, B becomes a group name and
+  this tag goes under it. If the column to the left is a group, this tag joins that group at
+  its end.
 
 A screen reader announces the result, for example "Temperature moved to group Outcome" or
 "Heat index is now ungrouped".
@@ -140,9 +149,11 @@ layout, your changes are not saved and the file is left alone; see
 
 ## Planned
 
-- **Highlight text in cells** (the text of the highlights carrying a tag, instead of ✓) and a
-  per-table **Cell content** choice: **Planned, Feature 006d**.
-- **Column options** (your own columns, column types, hiding columns, column widths):
-  **Planned, Feature F009**.
-- One row per highlight instead of one per paper: open product question (Q5), not planned
-  yet.
+These are not available yet:
+
+- **Highlight text in cells:** the text of the highlights that carry a tag, instead of a ✓,
+  with a choice per table of what the cells show.
+- **More column options:** your own columns, column types, hiding columns and column widths.
+
+One row per highlight, instead of one row per paper, is an open question and not planned
+yet.

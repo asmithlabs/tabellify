@@ -38,16 +38,20 @@ All in the `tabellify` folder of your **Zotero data folder** (the folder that al
 `zotero.sqlite`; see [where it is](#where-is-my-zotero-data-folder)). They are created only
 when you first save something.
 
-| File | Created when | Contains |
-|---|---|---|
-| `codebooks.json` | You first add a tag or group | Your codebook: tag names and group names |
-| `codebooks.json.bak` | From the second save on | The previous version of `codebooks.json` |
-| `codebooks.v1.json` | Only if you used an early development build of Tabellify whose codebook had no optional groups | A one-time copy of that old codebook, never overwritten |
-| `layout.json` | You first move a column or a paper, or click **Reset columns** / **Clear manual order** | Column order (group IDs and tag names) and your manual paper order per collection (Zotero's internal collection and item keys, not titles) |
-| `layout.json.bak` | From the second save on | The previous version of `layout.json` |
-| `tables.json` | You first click **Save table** | Your saved tables: Name, Description, settings and a **snapshot that includes paper titles**, item keys, collection, group and tag names |
-| `tables.json.bak` | From the second save on | The previous version of `tables.json`, including a table you just deleted, until the next save |
-| `*.tmp` | Briefly, during a save | Gone after the save finishes |
+- **`codebooks.json`**: your codebook (tag names and group names). Created when you first
+  add a tag or group.
+- **`layout.json`**: the column order (group IDs and tag names) and your own paper order for
+  each collection (Zotero's internal collection and item keys, not titles). Created when you
+  first move a column or a paper, or click **Reset columns** or **Clear manual order**.
+- **`tables.json`**: your saved tables: Name, Description, settings and a **snapshot that
+  includes paper titles**, item keys, and collection, group and tag names. Created when you
+  first click **Save table**.
+- **`.bak` files** (`codebooks.json.bak`, `layout.json.bak`, `tables.json.bak`): the previous
+  version of each file, from the second save on. `tables.json.bak` can still contain a table
+  you just deleted, until the next save.
+- **`codebooks.v1.json`**: only if you used an early development build of Tabellify whose
+  codebook had no groups. A one-time copy of that old codebook, never overwritten.
+- **`.tmp` files**: exist only for a moment during a save.
 
 Notes:
 
@@ -127,11 +131,11 @@ or note tabs. No data is lost; reopen them by hand. See
 
 ## Planned
 
-- **AI-assisted extraction and classification** (**Planned, Feature F010+**) may send paper
-  content to an external service. Before any such feature ships, this page will explain
+- **AI-assisted filling of the table** is planned for later and may send paper content to an
+  external service. Before any such feature ships, this page will explain
   exactly what is sent, where, and how to turn it off.
 - Writing to the library (for example adding a tag from the **Tabellify tags** section) is not
-  planned for any approved feature. If a future feature ever needs it, it will be documented
+  planned. If a future version ever needs it, it will be documented
   here first.
 
 ## Reporting a security problem

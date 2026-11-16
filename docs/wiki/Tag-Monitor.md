@@ -39,12 +39,15 @@ The counts update by themselves shortly after a tag changes. **Refresh** recount
 
 Messages you may see:
 
-| Message | Meaning |
-|---|---|
-| Choose a collection to see which codebook tags its papers use. | No collection is chosen yet |
-| The codebook has no tags yet. Add tags to the codebook to see which ones are used. | Type tags into the **Tags and groups** box |
-| Tag counts are unavailable because the codebook could not be loaded. | See [Troubleshooting](Troubleshooting#the-codebook-could-not-be-loaded) |
-| Some highlights could not be read, so their tags are not counted. See Help → Debug Output Logging for details. | Some papers' highlights could not be read; the counts may be too low. See [Troubleshooting](Troubleshooting#some-highlights-could-not-be-read) |
+- "Choose a collection to see which codebook tags its papers use." No collection is chosen
+  yet.
+- "The codebook has no tags yet. Add tags to the codebook to see which ones are used." Type
+  tags into the **Tags and groups** box.
+- "Tag counts are unavailable because the codebook could not be loaded." See
+  [Troubleshooting](Troubleshooting#the-codebook-could-not-be-loaded).
+- "Some highlights could not be read, so their tags are not counted. See Help → Debug Output
+  Logging for details." The counts may be too low. See
+  [Troubleshooting](Troubleshooting#some-highlights-could-not-be-read).
 
 When there is no codebook or it has no tags, the k/M column shows "–".
 
@@ -68,11 +71,11 @@ time the section is drawn (for example when you switch to another paper or tab a
 
 Other things the section can show:
 
-| Text | Meaning |
-|---|---|
-| No codebook yet. Create one in Tools → Tabellify… | The codebook is missing or has no tags (header shows "—") |
-| Could not read the codebook. | The codebook file is damaged or from a newer Tabellify (header shows "—") |
-| Counting… | Tabellify is reading the paper's highlights |
+- "No codebook yet. Create one in Tools → Tabellify…" The codebook is missing or has no
+  tags. The header shows "—".
+- "Could not read the codebook." The codebook file is damaged or was made by a newer
+  Tabellify. The header shows "—".
+- "Counting…" Tabellify is reading the paper's highlights.
 
 The section is shown for papers and for stand-alone files (PDF, EPUB, snapshot) that can have
 highlights. It is hidden for notes. It never adds tags; tag highlights with Zotero's own
@@ -80,8 +83,8 @@ annotation tools.
 
 ## Planned
 
-- Clicking a tag in the **Tabellify tags** section to add it to the selected highlight:
-  **Planned** (no feature number yet; it would change the library, so it needs its own
-  approved spec).
-- Showing which highlight carries a tag, or the highlight text in the table: **Planned,
-  Feature 006d** (see [Table Builder](Table-Builder#planned)).
+Showing the highlight text that carries a tag in the table is not available yet; see
+[Table Builder](Table-Builder#planned).
+
+Clicking a tag in the **Tabellify tags** section to add it to the selected highlight is not
+planned. It would change your library, so it would be documented first.
