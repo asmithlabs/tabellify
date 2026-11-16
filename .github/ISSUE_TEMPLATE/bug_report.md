@@ -22,7 +22,7 @@ SECURITY.md: https://github.com/asmithlabs/tabellify/blob/main/SECURITY.md
 - Zotero version (macOS: Zotero → About Zotero; Windows/Linux: Help → About Zotero):
 - OS:
 
-**Debug output** (how to collect it: [Troubleshooting](https://github.com/asmithlabs/tabellify/wiki/Troubleshooting) and
+**Debug output** (how to collect it: [Troubleshooting](https://wiki.asmithlabs.com/tabellify/troubleshooting) and
 <https://www.zotero.org/support/debug_output>; in short: Help → Debug Output Logging → Enable,
 reproduce the problem, then View Output; paste the relevant lines)
 

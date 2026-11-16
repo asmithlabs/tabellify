@@ -57,7 +57,8 @@ Feature numbers follow the roadmap in
 
 ## About this wiki
 
-These pages are generated from
+This documentation is published on A Smith Labs Wiki at
+https://wiki.asmithlabs.com/tabellify. The pages are generated from
 [`docs/wiki/`](https://github.com/asmithlabs/tabellify/tree/main/docs/wiki) in the repository
 and reviewed in pull requests (ADR-0010). Please propose changes there, not by editing the
-wiki directly.
+wiki directly: the next publish replaces edits made in the wiki.
