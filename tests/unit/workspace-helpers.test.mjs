@@ -24,7 +24,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 
 test("workspace.js loads in Node without touching window/Zotero and defines the helpers", () => {
   assert.equal(typeof W, "object");
-  for (const fn of ["indentLabel", "collectionOptions", "joinTags", "compareText", "itemRows"]) {
+  for (const fn of ["indentLabel", "collectionOptions", "libraryOptionGroups", "libraryOfKey", "joinTags", "compareText", "itemRows"]) {
     assert.equal(typeof W[fn], "function", fn);
   }
 });
@@ -56,6 +56,48 @@ test("collectionOptions: keeps order, uses the id as value, falls back to level 
 test("collectionOptions: markup in a name stays literal text", () => {
   const evil = '<img src=x onerror="alert(1)">';
   assert.equal(W.collectionOptions([{ id: 1, name: evil, level: 0 }])[0].label, evil);
+});
+
+// Feature 003b AC5: the grouped collection dropdown.
+test("003b AC5: libraryOptionGroups puts My Library first, keeps group order, drops feeds", () => {
+  const libraries = [
+    { libraryID: 7, libraryType: "group", name: "Alpha Group" },
+    { libraryID: 3, libraryType: "feed", name: "News feed" },
+    { libraryID: 1, libraryType: "user", name: "My Library" },
+    { libraryID: 5, libraryType: "group", name: "Beta Group" },
+    { libraryID: 9, libraryType: "publications", name: "Odd" },
+  ];
+  const collections = new Map([
+    [1, [{ id: 10, name: "Climate", level: 0 }, { id: 11, name: "Heat", level: 1 }]],
+    [7, [{ id: 70, name: "Shared", level: 0 }]],
+    [3, [{ id: 30, name: "Should not show", level: 0 }]],
+  ]);
+  const out = W.libraryOptionGroups(libraries, collections, "(no collections)");
+  assert.deepEqual(plain(out), [
+    { libraryID: 1, label: "My Library", options: [{ value: "10", label: "Climate" }, { value: "11", label: NBSP3 + "Heat" }], empty: false },
+    { libraryID: 7, label: "Alpha Group", options: [{ value: "70", label: "Shared" }], empty: false },
+    { libraryID: 5, label: "Beta Group", options: [{ value: "", label: "(no collections)", disabled: true }], empty: true },
+  ]);
+  assert.deepEqual(plain(W.libraryOptionGroups([], new Map(), "x")), []);
+});
+
+test("003b AC5: library and collection names stay literal text", () => {
+  const evil = "<img src=x onerror=x>";
+  const out = W.libraryOptionGroups(
+    [{ libraryID: 2, libraryType: "group", name: evil }],
+    new Map([[2, [{ id: 1, name: evil, level: 0 }]]]),
+    "(no collections)",
+  );
+  assert.equal(out[0].label, evil);
+  assert.equal(out[0].options[0].label, evil);
+});
+
+test("003b: libraryOfKey reads the numeric library ID before the slash", () => {
+  assert.equal(W.libraryOfKey("1/AAAA1111"), 1);
+  assert.equal(W.libraryOfKey("42/BBBB2222"), 42);
+  for (const bad of ["AAAA1111", "/AAAA1111", "x/AAAA1111", "", null, undefined, 5]) {
+    assert.equal(W.libraryOfKey(bad), null, String(bad));
+  }
 });
 
 test("joinTags: sorted case-insensitively, de-duplicated, empty names dropped", () => {

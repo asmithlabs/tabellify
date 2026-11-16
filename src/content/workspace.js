@@ -142,6 +142,50 @@ var TabellifyWorkspace = {
   },
 
   /**
+   * Feature 003b: the collection dropdown grouped by library. One entry per library, My
+   * Library first, then the groups in the order given (Zotero.Groups.getAll() already sorts
+   * them by name). Anything that is not "user" or "group" (e.g. a feed) is left out. A
+   * library without collections gets one disabled placeholder line, so its heading is not
+   * shown empty. Names are untrusted text and are returned unchanged: the caller puts them
+   * on the page only as plain text (optgroup.label / new Option).
+   * @param {Array<{ libraryID: number, libraryType: string, name: string }>} libraries
+   * @param {Map<number, Array<{ id: number, name: string, level?: number }>>} collectionsByLibrary
+   * @param {string} noCollectionsText  Localized "(no collections)"
+   * @returns {Array<{ libraryID: number, label: string,
+   *   options: Array<{ value: string, label: string, disabled?: boolean }>, empty: boolean }>}
+   */
+  libraryOptionGroups(libraries, collectionsByLibrary, noCollectionsText) {
+    const kept = (libraries ?? []).filter((l) => l && (l.libraryType === "user" || l.libraryType === "group"));
+    // A stable sort that only moves "user" to the front keeps the groups' own order.
+    const ordered = [
+      ...kept.filter((l) => l.libraryType === "user"),
+      ...kept.filter((l) => l.libraryType === "group"),
+    ];
+    return ordered.map((library) => {
+      const collections = collectionsByLibrary?.get(library.libraryID) ?? [];
+      const options = TabellifyWorkspace.collectionOptions(collections);
+      const empty = options.length === 0;
+      return {
+        libraryID: library.libraryID,
+        label: String(library.name ?? ""),
+        options: empty ? [{ value: "", label: String(noCollectionsText ?? ""), disabled: true }] : options,
+        empty,
+      };
+    });
+  },
+
+  /**
+   * Feature 003b: the numeric library ID of a `"<libraryID>/<collectionKey>"` key (the form
+   * layout.json and tables.json use), or null when the key has no such prefix.
+   * @param {unknown} collectionKey
+   * @returns {number | null}
+   */
+  libraryOfKey(collectionKey) {
+    const match = /^(\d+)\//.exec(typeof collectionKey === "string" ? collectionKey : "");
+    return match ? Number(match[1]) : null;
+  },
+
+  /**
    * Comma-separated tag names, de-duplicated (a manual and an automatic tag can share a
    * name) and sorted alphabetically, ignoring case.
    * @param {Array<{ tag: string, type?: number }>} tags  Shape returned by item.getTags()
