@@ -33,7 +33,7 @@ function anything() {
  * (Zotero.initializationPromise).
  */
 function setup(gate) {
-  const calls = { register: 0, unregister: 0, collections: 0 };
+  const calls = { register: 0, unregister: 0, collections: 0, types: null };
   const elements = new Map();
   const document = {
     getElementById: (id) => {
@@ -41,6 +41,8 @@ function setup(gate) {
       return elements.get(id);
     },
     querySelectorAll: () => [],
+    // F003b: the dropdown's <optgroup> headings.
+    createElementNS: () => anything(),
     l10n: { formatValue: async () => "", formatValues: async (ids) => ids.map(() => "") },
     defaultView: {},
   };
@@ -49,10 +51,17 @@ function setup(gate) {
     debug: () => {},
     logError: () => {},
     Prefs: { get: () => false },
-    Libraries: { userLibraryID: 1 },
-    Collections: { getByLibrary: () => { calls.collections++; return [{ id: 1, key: "AAAA", libraryID: 1, name: "C", level: 0 }]; } },
+    // F003b: My Library and one group library (docs/zotero-api-notes.md, F003b rows).
+    Libraries: { userLibraryID: 1, get: (id) => (id === 1 ? { libraryID: 1, libraryType: "user", name: "My Library" } : false) },
+    Groups: { getAll: () => [{ libraryID: 5, libraryType: "group", name: "G" }] },
+    Collections: {
+      getByLibrary: (libraryID) => {
+        calls.collections++;
+        return [{ id: libraryID * 10, key: "AAAA", libraryID, name: "C", level: 0 }];
+      },
+    },
     Notifier: {
-      registerObserver: () => { calls.register++; return "key-1"; },
+      registerObserver: (_ref, types) => { calls.register++; calls.types = types; return "key-1"; },
       unregisterObserver: () => { calls.unregister++; },
     },
   };
@@ -115,6 +124,11 @@ test("SEC-012: control: without a close, init() registers the observer once", as
   assert.deepEqual(errors.map(String), [], "init ran without errors");
   assert.equal(calls.register, 1, "the fake is complete enough to reach registration");
   assert.equal(W.notifierKey, "key-1");
+  // F003b: the observer also listens for group libraries; both libraries were listed.
+  assert.deepEqual([...calls.types], ["item-tag", "collection-item", "item", "collection", "group"]);
+  assert.equal(calls.collections, 2);
+  assert.deepEqual([...W.collectionKeys.values()], ["1/AAAA", "5/AAAA"]);
+  assert.deepEqual([...W.listedLibraryIDs], [1, 5]);
   W.onUnload();
   assert.equal(calls.unregister, 1, "onUnload removes it (symmetry)");
 });

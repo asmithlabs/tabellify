@@ -9,6 +9,11 @@
  *
  * What it does:
  * - F003: fills a dropdown with every collection in My Library.
+ * - F003b: ... and in every group library: one heading per library (My Library first, then
+ *   the groups by name), each library's collections under it. The dropdown, the key and
+ *   name lookups and the library names are rebuilt on Refresh and when Zotero reports a
+ *   `group` or `collection` change (buildCollectionIndex / renderCollectionSelect).
+ *   Group names come from zotero.org (typed by other people): plain text only.
  * - F005: when the user picks a collection, reads its papers AND those of all its
  *   subcollections, with their manual tags and the tags on their highlights, and compares
  *   them with the codebook: one summary line "Tags used N/M · Papers n" and a per-paper
@@ -38,7 +43,8 @@
  *   deletes groups and removes tags. Tags without a group (ADR-0016) form one block in
  *   the table under a blank group header.
  * - F006b: while typing in the script box, a suggestion list under it offers the tag
- *   names of My Library (read once, re-read after Refresh or a Zotero tag change), the
+ *   names of My Library (F003b: of the chosen collection's library; read once, re-read
+ *   after Refresh, a Zotero tag change or a switch to another library), the
  *   codebook's group names and "Create tag" (codebook only). What the list contains is
  *   pure logic in script-suggest-model.js (TabellifyScriptSuggest).
  * - F006c: a tag column dragged into another group's span joins that group, dropped on
@@ -94,6 +100,8 @@
  * F007b adds click and keydown on the "Saved tables" section and change on its filter, all
  * removed in onUnload; no observer, timer or pref. A save that finishes after the tab
  * closed only logs (the `unloaded` check).
+ * F003b adds no listener, observer or timer: the same observer also gets the "group" type,
+ * and library-list rebuilds run on the same debounce timer (both ended in onUnload).
  * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
  * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
@@ -333,6 +341,9 @@ var TabellifyWorkspace = {
       // F005: the tag monitor's texts, formatted once (see MONITOR_STRINGS).
       await this.formatStrings(this.MONITOR_STRINGS);
       if (this.unloaded) return;
+      // F003b: the dropdown's own texts (needed before the dropdown is built below).
+      await this.formatStrings(this.COLLECTION_STRINGS);
+      if (this.unloaded) return;
       // F008: the export's texts (dialog, status line, CSV headers), formatted once.
       await this.formatStrings(this.EXPORT_STRINGS);
       if (this.unloaded) return;
@@ -346,27 +357,14 @@ var TabellifyWorkspace = {
       this.monitorReady = true;
       this.renderMonitor();
 
-      const libraryID = Zotero.Libraries.userLibraryID;
-      // Synchronous: collections are kept in memory from start-up. `true` = include
-      // subcollections, flattened depth-first, each with a `level` for indentation.
-      const collections = Zotero.Collections.getByLibrary(libraryID, true);
-      this.collectionKeys = this.collectionKeyMap(collections);
-      // F007b: current collection names by key, for the "Saved tables" list.
-      this.collectionNames = new Map(collections.map((c) => [`${c.libraryID}/${c.key}`, String(c.name ?? "")]));
+      // F003b: every library's collections (My Library and the groups), the lookups by key
+      // and name, and the dropdown with one heading per library.
+      this.buildCollectionIndex();
       this.renderSavedList();
-      this.log(`listing ${collections.length} collection(s) in My Library`);
-
-      if (collections.length === 0) {
-        this.showStatus("tabellify-no-collections");
-        return;
-      }
-      for (const { value, label } of this.collectionOptions(collections)) {
-        // `new Option(text, value)` sets the text as plain text: a collection named
-        // "<img onerror=…>" shows exactly those characters and is never run as markup.
-        select.append(new Option(label, value));
-      }
-      select.disabled = false;
+      this.renderCollectionSelect();
       // F005: from now on, library changes re-count the chosen collection (live updates).
+      // F003b: registered even when no library has a collection yet, so a group that
+      // arrives by sync while the tab is open still fills the dropdown.
       this.registerMonitorObserver();
     } catch (e) {
       if (!this.unloaded) this.showStatus("tabellify-load-error");
@@ -391,7 +389,10 @@ var TabellifyWorkspace = {
       W.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
       W.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
     }
+    W.collectionGone = false;
     W.showCollection(event.target.value, "collection chosen");
+    // F003b: the suggestions follow the chosen collection's library.
+    W.checkSuggestionLibrary();
   },
 
   /**
@@ -433,9 +434,16 @@ var TabellifyWorkspace = {
       const data = await this.gatherMonitorData(Number(value));
       if (request !== this.requestCounter) return; // a newer choice or recompute started
       this.monitorData = data;
-      this.collectionKeys = data.collectionKeys;
-      // F007b: names may have changed (renamed, deleted or restored collections).
-      this.collectionNames = new Map(data.collections.map((c) => [data.collectionKeys.get(c.id), String(c.name ?? "")]));
+      // F007b / F003b: names may have changed (renamed, deleted or restored collections).
+      // The lookups cover EVERY library (never just this collection's one): replacing them
+      // with one library's entries would make the layout save prune the other libraries'
+      // manual orders and the saved tables of other libraries look "not found".
+      try {
+        this.buildCollectionIndex();
+      } catch (e) {
+        this.log("library list: could not be re-read; the previous list is kept");
+        Zotero.logError(e);
+      }
       this.renderSavedList();
       const result = this.renderMonitor();
       this.log(
@@ -476,6 +484,17 @@ var TabellifyWorkspace = {
     "tabellify-monitor-tags-used",
     "tabellify-monitor-all-used",
     "tabellify-monitor-papers",
+  ],
+
+  /**
+   * F003b: Fluent IDs for the collection dropdown, formatted once in init() like
+   * MONITOR_STRINGS: the placeholder line of a library without collections, and the
+   * monitor line shown when the chosen collection disappeared (deleted, trashed, or its
+   * group library was removed). Plain values without Fluent variables.
+   */
+  COLLECTION_STRINGS: [
+    "tabellify-collection-none-in-library",
+    "tabellify-collection-gone",
   ],
 
   /** True once MONITOR_STRINGS are formatted; renderMonitor() waits for it. */
@@ -653,7 +672,7 @@ var TabellifyWorkspace = {
       message.textContent = id === null ? "" : this.text(id);
     };
     const data = this.monitorData;
-    if (this.currentCollection === "") setMessage("tabellify-monitor-choose");
+    if (this.currentCollection === "") setMessage(this.collectionGone ? "tabellify-collection-gone" : "tabellify-monitor-choose");
     else if (this.codebookLoadDone && !this.codebook) setMessage("tabellify-monitor-unavailable");
     else setMessage(null);
     if (!data) {
@@ -882,6 +901,198 @@ var TabellifyWorkspace = {
    * dragover fires many times a second; the DOM is only touched when this key changes.
    */
   dropKey: null,
+
+  // ---------------------------------------------------------------------------------------
+  // Feature 003b: the library list (My Library and the group libraries). Read-only.
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * How library headings are drawn in the collection dropdown:
+   * - "optgroup" (spec F003b, primary design): one <optgroup label="…"> per library; the
+   *   browser shows the label as a bold heading that cannot be chosen.
+   * - "option" (spec F003b fallback, if runtime check RT-G3 shows that <optgroup> does not
+   *   work in this chrome document): a disabled <option> with the library name before each
+   *   library's collections.
+   * Changing this one value switches between the two; nothing else depends on it.
+   */
+  COLLECTION_HEADINGS: "optgroup",
+
+  /** Library ID → library name (plain text; a group's name comes from zotero.org). */
+  libraryNames: new Map(),
+
+  /** IDs of the libraries listed in the dropdown now (My Library and the groups). */
+  listedLibraryIDs: new Set(),
+
+  /** The dropdown's groups, from libraryOptionGroups(), as last built. */
+  libraryGroups: [],
+
+  /** True after a `group` or `collection` change: the next timer run rebuilds the list. */
+  libraryListStale: false,
+
+  /** True when the chosen collection disappeared; the monitor line then says so. */
+  collectionGone: false,
+
+  /**
+   * Read the list of libraries and every library's collections (all synchronous, in
+   * memory) and fill the ALL-LIBRARY lookups: `collectionKeys` (collection ID → key),
+   * `collectionNames` (key → name), `libraryNames` and `listedLibraryIDs`. Library objects
+   * are never kept: a group removed later would throw "has been disabled" on most reads,
+   * so the list is read fresh every time. A library that cannot be read is left out (and
+   * its saved manual orders are then kept, see TabellifyTableLayout.cleanManualOrders).
+   * Throws only if the list itself cannot be read; the caller decides what to show.
+   * @returns {{ collections: number, libraries: number, groups: number }}
+   */
+  buildCollectionIndex() {
+    // My Library first, then the groups. Zotero.Groups.getAll() returns only group
+    // libraries (no feeds), already sorted by name (docs/zotero-api-notes.md, F003b rows).
+    const found = [Zotero.Libraries.get(Zotero.Libraries.userLibraryID), ...Zotero.Groups.getAll()];
+    const libraries = [];
+    const byLibrary = new Map();
+    const keys = new Map();
+    const names = new Map();
+    const libraryNames = new Map();
+    let collectionCount = 0;
+    for (const library of found) {
+      if (!library) continue;
+      try {
+        const entry = { libraryID: library.libraryID, libraryType: library.libraryType, name: String(library.name ?? "") };
+        if (entry.libraryType !== "user" && entry.libraryType !== "group") continue;
+        // Synchronous: collections of every non-feed library are kept in memory from
+        // start-up. `true` = include subcollections, flattened depth-first, each with a
+        // `level` for indentation.
+        const collections = Zotero.Collections.getByLibrary(entry.libraryID, true);
+        for (const [id, key] of this.collectionKeyMap(collections)) keys.set(id, key);
+        for (const c of collections) names.set(`${c.libraryID}/${c.key}`, String(c.name ?? ""));
+        byLibrary.set(entry.libraryID, collections);
+        libraryNames.set(entry.libraryID, entry.name);
+        libraries.push(entry);
+        collectionCount += collections.length;
+      } catch (e) {
+        // Numeric ID only (SEC-011: never a library name in Debug Output).
+        let id = "?";
+        try {
+          id = String(library.libraryID);
+        } catch (e2) {
+          // keep "?"
+        }
+        this.log(`library list: library ${id} could not be read and is left out`);
+        Zotero.logError(e);
+      }
+    }
+    this.collectionKeys = keys;
+    this.collectionNames = names;
+    this.libraryNames = libraryNames;
+    this.listedLibraryIDs = new Set(libraries.map((l) => l.libraryID));
+    this.libraryGroups = this.libraryOptionGroups(libraries, byLibrary, this.text("tabellify-collection-none-in-library"));
+    const groups = libraries.filter((l) => l.libraryType === "group").length;
+    // Counts only (SEC-011).
+    this.log(`listing ${collectionCount} collection(s) in ${libraries.length} librar(ies) (${groups} group(s))`);
+    return { collections: collectionCount, libraries: libraries.length, groups };
+  },
+
+  /**
+   * Rebuild the dropdown from `libraryGroups`: the placeholder stays first, then one
+   * heading per library with its collections. The chosen collection stays chosen if it
+   * still exists; otherwise the dropdown goes back to the placeholder, the table is
+   * cleared and the monitor line says why (tabellify-collection-gone).
+   */
+  renderCollectionSelect() {
+    const select = this.el("tabellify-collection-select");
+    // The first child is the placeholder from workspace.xhtml ("Choose a collection…").
+    const placeholder = select.firstElementChild;
+    const nodes = [];
+    for (const group of this.libraryGroups) {
+      // Every text below is set as plain text: `new Option(text, value)` and the
+      // `label` property are never parsed as markup, so a name like "<img onerror=…>"
+      // shows exactly those characters.
+      const options = group.options.map(({ value, label, disabled }) => {
+        const option = new Option(label, value);
+        if (disabled) option.disabled = true;
+        return option;
+      });
+      if (this.COLLECTION_HEADINGS === "optgroup") {
+        const heading = this.html("optgroup");
+        heading.label = group.label;
+        heading.append(...options);
+        nodes.push(heading);
+      } else {
+        const heading = new Option(group.label, "");
+        heading.disabled = true;
+        nodes.push(heading, ...options);
+      }
+    }
+    select.replaceChildren(...(placeholder ? [placeholder] : []), ...nodes);
+
+    const chosen = this.currentCollection;
+    if (chosen !== "" && this.collectionKeys.has(Number(chosen))) {
+      select.value = chosen;
+    } else {
+      select.value = "";
+      if (chosen !== "") {
+        // Numeric ID only in Debug Output (SEC-011).
+        this.log(`collection ${chosen} is no longer listed; table cleared`);
+        this.collectionGone = true;
+        // Clears the table and shows the monitor line "The chosen collection is no
+        // longer available…" (renderMonitor reads `collectionGone`).
+        this.showCollection("", "collection gone");
+        this.checkSuggestionLibrary();
+      }
+    }
+
+    const any = this.collectionKeys.size > 0;
+    select.disabled = !any;
+    if (!any) this.showStatus("tabellify-no-collections");
+    else this.el("tabellify-no-collections").hidden = true;
+  },
+
+  /**
+   * Re-read the library list and redraw the dropdown and the saved-tables list (Refresh,
+   * or a `group` / `collection` change). On failure the old list stays and the load error
+   * is shown.
+   * @param {string} reason  For Debug Output
+   */
+  refreshCollectionList(reason) {
+    try {
+      this.buildCollectionIndex();
+      this.renderCollectionSelect();
+      this.renderSavedList();
+      if (this.viewMode === "saved") {
+        this.renderViewMeta();
+        this.updateViewControls();
+      }
+    } catch (e) {
+      this.log(`library list: could not be re-read (${reason})`);
+      this.showStatus("tabellify-load-error");
+      Zotero.logError(e);
+    }
+  },
+
+  /**
+   * The library of the chosen collection, or My Library before any choice. The F006b
+   * suggestions read this library's tag names (spec F003b, Decision 3).
+   * @returns {number}
+   */
+  suggestLibraryID() {
+    return this.libraryOfKey(this.currentCollectionKey()) ?? Zotero.Libraries.userLibraryID;
+  },
+
+  /**
+   * After the chosen collection changed: if its library is not the one the suggestion
+   * list was read from, mark the list stale (re-read on the next focus of the script box,
+   * or at once if the box has the focus now).
+   */
+  checkSuggestionLibrary() {
+    if (this.suggestLibraryID() === this.libraryIndexID) return;
+    this.libraryTagsStale = true;
+    const input = this.el("tabellify-script-input");
+    let focused = false;
+    try {
+      focused = Boolean(input) && document.activeElement === input;
+    } catch (e) {
+      focused = false;
+    }
+    if (focused) this.onCodebookFocusin({ target: input });
+  },
 
   /**
    * Collection ID → "<libraryID>/<key>" (the shape of Zotero's own `libraryKey`). `key` and
@@ -2040,8 +2251,12 @@ var TabellifyWorkspace = {
     }
     this.layoutSaving = true;
     try {
+      // F003b (AC11): `known` holds the collections of EVERY listed library, and orders of a
+      // library that is not listed right now are kept, so a move in a group collection
+      // never deletes My Library's manual orders (or the other way round).
       const known = this.collectionKeys.size > 0 ? new Set(this.collectionKeys.values()) : null;
-      const data = TabellifyTableLayout.layoutData(this.columnLayout, this.manualOrders, known);
+      const listed = this.listedLibraryIDs.size > 0 ? this.listedLibraryIDs : null;
+      const data = TabellifyTableLayout.layoutData(this.columnLayout, this.manualOrders, known, listed);
       const result = await TabellifyLayoutStore.saveData(this.layoutFs, this.layoutDir, data, this.layoutRevision);
       if (result.status === "saved") {
         this.layoutRevision = result.data.revision;
@@ -2121,7 +2336,8 @@ var TabellifyWorkspace = {
    * Ask Zotero to tell us about library changes that can change the counts: tags added to /
    * removed from items or highlights ("item-tag"), papers added to / removed from
    * collections ("collection-item"), papers trashed ("item"), and subcollection changes
-   * ("collection"). An observer only listens; it cannot change the library.
+   * ("collection"). F003b: also group libraries added, renamed or removed ("group"), so
+   * the dropdown stays current. An observer only listens; it cannot change the library.
    * Paired with unregisterMonitorObserver() in onUnload (lifecycle symmetry).
    */
   registerMonitorObserver() {
@@ -2131,7 +2347,7 @@ var TabellifyWorkspace = {
     if (this.notifierKey !== null) return;
     this.notifierKey = Zotero.Notifier.registerObserver(
       { notify: this.onNotify },
-      ["item-tag", "collection-item", "item", "collection"],
+      ["item-tag", "collection-item", "item", "collection", "group"],
       "tabellify-tag-monitor", // only a label in Zotero's debug output
     );
     this.log("tag monitor: notifier observer registered");
@@ -2188,16 +2404,24 @@ var TabellifyWorkspace = {
     // the suggestion list is re-read the next time the script box gets focus. This comes
     // before the early return below, so it also works when no collection is chosen.
     if (type === "item-tag") W.libraryTagsStale = true;
-    if (W.currentCollection === "") return; // nothing to count yet
+    // F003b: a group arrived, was renamed or removed, or a collection changed: rebuild the
+    // library list on the next timer run, also when no collection is chosen.
+    if (type === "group" || type === "collection") W.libraryListStale = true;
+    if (W.currentCollection === "" && !W.libraryListStale) return; // nothing to count yet
     if (W.recomputeTimer !== null) window.clearTimeout(W.recomputeTimer);
     // A function (never a string) is passed to setTimeout.
     W.recomputeTimer = window.setTimeout(W.onRecomputeTimer, W.RECOMPUTE_DELAY_MS);
   },
 
-  /** The debounce timer fired: re-read the chosen collection. */
+  /** The debounce timer fired: rebuild a stale library list, then re-read the chosen collection. */
   onRecomputeTimer: () => {
     const W = TabellifyWorkspace;
     W.recomputeTimer = null;
+    if (W.libraryListStale) {
+      W.libraryListStale = false;
+      // May clear the choice when the chosen collection is gone (then nothing to re-read).
+      W.refreshCollectionList("library change");
+    }
     if (W.currentCollection === "") return;
     W.showCollection(W.currentCollection, "library change");
   },
@@ -2208,6 +2432,9 @@ var TabellifyWorkspace = {
     // F006b: Refresh also re-reads the tag list for the suggestions (not awaited: it
     // never rejects, and the table does not depend on it).
     W.loadLibraryTags();
+    // F003b: Refresh also re-reads the list of libraries and collections.
+    W.libraryListStale = false;
+    W.refreshCollectionList("refresh");
     if (W.currentCollection === "") return;
     // A pending live update would only repeat this read.
     if (W.recomputeTimer !== null) {
@@ -2308,10 +2535,14 @@ var TabellifyWorkspace = {
   renamingGroupId: null,
 
   /**
-   * F006b: the tag names of My Library, prepared for the suggestion list
+   * F006b: the tag names of one library, prepared for the suggestion list
    * (TabellifyScriptSuggest.prepare), or null before the first successful read.
+   * F003b: the library of the chosen collection (My Library before any choice).
    */
   libraryIndex: null,
+
+  /** F003b: the library ID `libraryIndex` was read from, or null before the first read. */
+  libraryIndexID: null,
 
   /**
    * F006b "stale flag": true after Zotero reported a tag change. Instead of re-reading the
@@ -2387,9 +2618,10 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * Read the tag names of My Library for the F006b suggestion list. Read-only: a SELECT
-   * query in Zotero (docs/zotero-api-notes.md); it includes highlight tags (RT-S1). On
-   * failure the previous list is kept (empty at first) and the rest of the codebook works.
+   * Read the tag names of the chosen collection's library (F003b; My Library before any
+   * choice) for the F006b suggestion list. Read-only: a SELECT query in Zotero
+   * (docs/zotero-api-notes.md); it includes highlight tags (RT-S1). On failure the
+   * previous list is kept (empty at first) and the rest of the codebook works.
    *
    * While a read is running, a second call gets the same Promise instead of starting
    * another read. The stale flag is cleared when a read STARTS, so a tag change reported
@@ -2399,17 +2631,22 @@ var TabellifyWorkspace = {
   loadLibraryTags() {
     if (this.libraryTagsLoading) return this.libraryTagsLoading;
     this.libraryTagsStale = false;
+    const libraryID = this.suggestLibraryID();
     this.libraryTagsLoading = (async () => {
       try {
-        const tags = await Zotero.Tags.getAll(Zotero.Libraries.userLibraryID);
+        const tags = await Zotero.Tags.getAll(libraryID);
         this.libraryIndex = TabellifyScriptSuggest.prepare(tags);
-        // Counts only, never tag names.
-        this.log(`codebook: ${this.libraryIndex.entries.length} tag name(s) in My Library for suggestions (${this.libraryIndex.skippedQuote} with a quotation mark left out)`);
+        this.libraryIndexID = libraryID;
+        // Counts and the numeric library ID only, never tag or library names.
+        this.log(`codebook: ${this.libraryIndex.entries.length} tag name(s) in library ${libraryID} for suggestions (${this.libraryIndex.skippedQuote} with a quotation mark left out)`);
       } catch (e) {
-        this.log("codebook: could not list the tags in My Library");
+        this.log(`codebook: could not list the tags in library ${libraryID}`);
         Zotero.logError(e);
       } finally {
         this.libraryTagsLoading = null;
+        // The user chose a collection of another library while this read ran: read again
+        // at the next focus.
+        if (this.suggestLibraryID() !== this.libraryIndexID) this.libraryTagsStale = true;
       }
     })();
     return this.libraryTagsLoading;
@@ -3420,7 +3657,10 @@ var TabellifyWorkspace = {
       return;
     }
     const key = table?.definition.collectionKey ?? null;
-    const collection = this.collectionLabel(key, this.viewSnapshot.collectionName);
+    // F003b: "<library> · <collection>"; the library part is left out when that library
+    // is no longer listed (e.g. a removed group).
+    const library = this.libraryLabel(key);
+    const collection = (library === null ? "" : `${library} · `) + this.collectionLabel(key, this.viewSnapshot.collectionName);
     meta.hidden = false;
     meta.textContent = this.viewShowingLive && this.viewLive
       ? `${this.text("tabellify-view-meta-live")} · ${collection}`
@@ -3465,8 +3705,8 @@ var TabellifyWorkspace = {
 
   /**
    * Why "Show live" cannot run for the open saved table, as a Fluent ID, or null:
-   * - its collection is not among My Library's collections (deleted, or in the trash:
-   *   getByLibrary leaves trashed collections out);
+   * - its collection is not among the listed libraries' collections (deleted, in the trash
+   *   (getByLibrary leaves trashed collections out), or its group library was removed);
    * - the codebook is not loaded, or does not have the saved codebook ID.
    * A table deleted elsewhere returns "" (no note; the gone message is shown instead).
    * @returns {string | null}
@@ -3480,7 +3720,11 @@ var TabellifyWorkspace = {
     return null;
   },
 
-  /** The numeric ID of the saved table's collection (by its key), or null when not found. */
+  /**
+   * The numeric ID of the saved table's collection (by its key), or null when not found.
+   * F003b: `collectionKeys` covers every listed library, so a group table is found while
+   * a My Library collection is chosen (and the other way round).
+   */
   liveCollectionId(table) {
     for (const [id, key] of this.collectionKeys) if (key === table.definition.collectionKey) return id;
     return null;
@@ -3881,6 +4125,18 @@ var TabellifyWorkspace = {
     return `${savedName} ${this.text("tabellify-saved-collection-missing")}`;
   },
 
+  /**
+   * F003b: the current name of a saved key's library ("My Library" or the group's name),
+   * or null when that library is not listed (a removed group): the name is looked up live
+   * and never stored in tables.json.
+   * @param {string | null} key  "<libraryID>/<collectionKey>"
+   * @returns {string | null}
+   */
+  libraryLabel(key) {
+    const libraryID = this.libraryOfKey(key);
+    return libraryID !== null && this.libraryNames.has(libraryID) ? this.libraryNames.get(libraryID) : null;
+  },
+
   /** True when saving and deleting are allowed now. */
   canChangeSaved() {
     return this.savedState === "ok" && !this.savedBusy;
@@ -3935,7 +4191,8 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * One list entry: Name; a muted line "collection · n papers · m columns · Saved <date>";
+   * One list entry: Name; a muted line "library · collection · n papers · m columns · Saved
+   * <date>";
    * and Open / Export CSV / Delete, or (confirm state) the delete question with Delete and
    * Cancel. Each button's aria-label adds the table's Name, so a screen reader can tell
    * the entries apart.
@@ -3950,7 +4207,11 @@ var TabellifyWorkspace = {
     const name = this.html("span", "tabellify-saved-name");
     name.textContent = entry.name; // untrusted file text: plain text only
     const meta = this.html("span", "tabellify-saved-meta");
+    // F003b: the library name comes first ("Lab Group · Shared papers · …"); left out when
+    // the library is no longer listed.
+    const library = this.libraryLabel(entry.collectionKey);
     for (const part of [
+      ...(library === null ? [] : [library]),
       this.collectionLabel(entry.collectionKey, entry.collectionName),
       `${entry.papers} ${this.text("tabellify-saved-papers")}`,
       `${entry.columns} ${this.text("tabellify-saved-columns")}`,

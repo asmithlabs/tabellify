@@ -121,6 +121,8 @@ class FakeElement {
     const i = this.children.indexOf(ref);
     if (i < 0) this.children.push(node); else this.children.splice(i, 0, node);
   }
+  // F003b: the collection dropdown keeps its placeholder (its first element child).
+  get firstElementChild() { return this.children[0] ?? null; }
   replaceChildren(...nodes) {
     for (const c of this.children) c.parentNode = null;
     this.children = [];
@@ -1054,7 +1056,7 @@ test("F006b AC11: focus with a stale list reloads it once, then refreshes the su
   assert.equal(calls, 1);
   assert.equal(s.W.libraryTagsStale, false);
   assert.deepEqual(optionTexts(s), ["zz-tabellify-fresh", 'tabellify-script-create "zz-tab"tabellify-script-create-hint']);
-  assert.ok(s.debug.some((m) => m.includes("1 tag name(s) in My Library for suggestions")), s.debug.join("\n"));
+  assert.ok(s.debug.some((m) => m.includes("1 tag name(s) in library 1 for suggestions")), s.debug.join("\n"));
   // Refresh re-reads the tag list, also when no collection is chosen.
   s.W.currentCollection = "";
   s.W.onRefreshClick();
@@ -2947,4 +2949,240 @@ test("007b AC21: no Debug Output line in the live flows holds a name, title, tag
   const own = debug.filter((m) => /saved tables:|view:/.test(m));
   assert.ok(own.length >= 5);
   for (const line of own) for (const secret of secrets) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 003b: group libraries (AC10, AC14, the grouped dropdown, live list updates)
+// ---------------------------------------------------------------------------------------
+
+/**
+ * A fake library world: My Library (1) with two collections, the group "Lab <b>Group</b>"
+ * (5) with one, an empty group (7) and a feed (9, which Zotero.Groups.getAll never returns;
+ * it is in `Libraries.get` only). Models only the F003b APIs in docs/zotero-api-notes.md.
+ */
+function installLibraries(env, { groups = null } = {}) {
+  const { sandbox, Zotero } = env;
+  const libs = new Map([
+    [1, { libraryID: 1, libraryType: "user", name: "My Library" }],
+    [5, { libraryID: 5, libraryType: "group", name: "Lab <b>Group</b>" }],
+    [7, { libraryID: 7, libraryType: "group", name: "Empty Group" }],
+    [9, { libraryID: 9, libraryType: "feed", name: "A feed" }],
+  ]);
+  const collections = {
+    1: [{ id: 1, libraryID: 1, key: "COLL0001", name: "F005 test", level: 0 }, { id: 2, libraryID: 1, key: "COLL0002", name: "Second", level: 1 }],
+    5: [{ id: 50, libraryID: 5, key: "GRP00001", name: "Shared papers", level: 0 }],
+    7: [],
+  };
+  env.world = { libs, collections, groupIDs: groups ?? [5, 7] };
+  Zotero.Libraries = { userLibraryID: 1, get: (id) => libs.get(id) ?? false };
+  Zotero.Groups = { getAll: () => env.world.groupIDs.map((id) => libs.get(id)) };
+  Zotero.Collections = { getByLibrary: (id) => collections[id] ?? [] };
+  // `new Option(text, value)` as in a browser: text is plain text.
+  sandbox.Option = function Option(text, value) {
+    const option = new FakeElement("option");
+    option.textContent = text;
+    option.value = value;
+    option.disabled = false;
+    return option;
+  };
+  const select = env.document.getElementById("tabellify-collection-select");
+  const placeholder = new FakeElement("option");
+  placeholder.value = "";
+  select.replaceChildren(placeholder);
+  env.select = select;
+  env.W.strings["tabellify-collection-none-in-library"] = "(no collections)";
+  env.W.strings["tabellify-collection-gone"] = "The chosen collection is no longer available. Choose another collection.";
+  env.W.strings["tabellify-monitor-choose"] = "Choose a collection.";
+  return env;
+}
+
+/** The dropdown as text: "[heading]" lines and indented options ("-" = disabled). */
+function selectOutline(select) {
+  const out = [];
+  for (const node of select.children.slice(1)) {
+    if (node.localName === "optgroup") {
+      out.push(`[${node.label}]`);
+      for (const o of node.children) out.push(`${o.disabled ? "-" : " "}${o.value}:${o.textContent}`);
+    } else {
+      out.push(`${node.disabled ? "-" : " "}${node.value}:${node.textContent}`);
+    }
+  }
+  return out;
+}
+
+test("003b: buildCollectionIndex fills all-library lookups; the dropdown has one optgroup per library", () => {
+  const env = installLibraries(setup());
+  const { W, select, debug } = env;
+  const counts = W.buildCollectionIndex();
+  assert.deepEqual(plainJson(counts), { collections: 3, libraries: 3, groups: 2 });
+  assert.deepEqual(plainJson([...W.collectionKeys]), [[1, "1/COLL0001"], [2, "1/COLL0002"], [50, "5/GRP00001"]]);
+  assert.deepEqual(plainJson([...W.collectionNames]), [["1/COLL0001", "F005 test"], ["1/COLL0002", "Second"], ["5/GRP00001", "Shared papers"]]);
+  assert.deepEqual(plainJson([...W.libraryNames]), [[1, "My Library"], [5, "Lab <b>Group</b>"], [7, "Empty Group"]]);
+  assert.deepEqual(plainJson([...W.listedLibraryIDs]), [1, 5, 7]);
+  W.renderCollectionSelect();
+  assert.deepEqual(selectOutline(select), [
+    "[My Library]", " 1:F005 test", " 2:\u00a0\u00a0\u00a0Second",
+    "[Lab <b>Group</b>]", " 50:Shared papers",
+    "[Empty Group]", "-:(no collections)",
+  ]);
+  assert.equal(select.value, "1", "the chosen collection stays chosen");
+  assert.equal(select.disabled, false);
+  // Debug Output: counts only, never a library or collection name.
+  const line = debug.find((m) => m.includes("listing "));
+  assert.equal(line, "Tabellify: workspace: listing 3 collection(s) in 3 librar(ies) (2 group(s))");
+});
+
+test("003b: the fallback headings (disabled options) are one switch away", () => {
+  const { W, select } = installLibraries(setup());
+  W.COLLECTION_HEADINGS = "option";
+  W.buildCollectionIndex();
+  W.renderCollectionSelect();
+  assert.deepEqual(selectOutline(select), [
+    "-:My Library", " 1:F005 test", " 2:\u00a0\u00a0\u00a0Second",
+    "-:Lab <b>Group</b>", " 50:Shared papers",
+    "-:Empty Group", "-:(no collections)",
+  ]);
+});
+
+test("003b: a library that throws is left out; its ID only is logged", () => {
+  const env = installLibraries(setup());
+  const errors = [];
+  env.Zotero.logError = (e) => errors.push(e);
+  env.world.libs.set(5, { get libraryID() { return 5; }, get libraryType() { throw new Error("Library (5) has been disabled"); } });
+  env.W.buildCollectionIndex();
+  assert.deepEqual([...env.W.listedLibraryIDs], [1, 7]);
+  assert.equal(errors.length, 1);
+  assert.ok(env.debug.includes("Tabellify: workspace: library list: library 5 could not be read and is left out"), env.debug.join("\n"));
+});
+
+test("003b AC13 (data-loss fix): a re-read of one collection keeps every library's keys and names", async () => {
+  const { W } = installLibraries(setup());
+  W.buildCollectionIndex();
+  W.gatherMonitorData = async () => {
+    const data = monitorData();
+    data.rootId = 50;
+    data.collectionKeys = new Map([[50, "5/GRP00001"]]); // only the group's collections
+    return data;
+  };
+  await W.showCollection("50", "collection chosen");
+  assert.deepEqual([...W.collectionKeys.values()], ["1/COLL0001", "1/COLL0002", "5/GRP00001"]);
+  assert.equal(W.collectionNames.get("1/COLL0001"), "F005 test");
+  assert.deepEqual([...W.listedLibraryIDs], [1, 5, 7]);
+});
+
+test("003b: the chosen collection disappears (group removed): table cleared, message shown, list updated", async () => {
+  const env = installLibraries(setup());
+  const { W, select, document } = env;
+  W.buildCollectionIndex();
+  W.currentCollection = "50";
+  W.renderCollectionSelect();
+  assert.equal(select.value, "50");
+  // The group is removed from Zotero; a "group" event arrives.
+  env.world.groupIDs = [7];
+  W.notifierKey = "k";
+  let timer = null;
+  env.sandbox.window = { setTimeout: (fn) => { timer = fn; return 1; }, clearTimeout: () => {} };
+  W.onNotify("delete", "group", [123], {});
+  assert.equal(W.libraryListStale, true);
+  assert.equal(typeof timer, "function", "the existing debounce timer was started");
+  timer();
+  assert.equal(W.libraryListStale, false);
+  assert.equal(W.currentCollection, "");
+  assert.equal(select.value, "");
+  assert.equal(W.monitorData, null);
+  assert.equal(W.collectionGone, true);
+  const message = document.getElementById("tabellify-monitor-message");
+  assert.equal(message.textContent, "The chosen collection is no longer available. Choose another collection.");
+  assert.equal(message.hidden, false);
+  assert.deepEqual(selectOutline(select), ["[My Library]", " 1:F005 test", " 2:\u00a0\u00a0\u00a0Second", "[Empty Group]", "-:(no collections)"]);
+  assert.ok(env.debug.includes("Tabellify: workspace: collection 50 is no longer listed; table cleared"), env.debug.join("\n"));
+  // Choosing another collection clears the message.
+  W.gatherMonitorData = async () => monitorData();
+  W.onCollectionChange({ target: { value: "1" } });
+  assert.equal(W.collectionGone, false);
+});
+
+test("003b: a group or collection event with no collection chosen still rebuilds the list", () => {
+  const env = installLibraries(setup());
+  const { W, select } = env;
+  W.currentCollection = "";
+  W.notifierKey = "k";
+  let timer = null;
+  env.sandbox.window = { setTimeout: (fn) => { timer = fn; return 1; }, clearTimeout: () => {} };
+  W.onNotify("add", "item", [1], {});
+  assert.equal(timer, null, "other types still need a chosen collection");
+  W.onNotify("add", "group", [77], {});
+  assert.equal(typeof timer, "function");
+  timer();
+  assert.equal(selectOutline(select).length, 7);
+});
+
+test("003b AC10: suggestions read the chosen collection's library; My Library before any choice", async () => {
+  const s = installLibraries(suggestSetup());
+  const reads = [];
+  s.Zotero.Tags = { getAll: async (libraryID) => { reads.push(libraryID); return [{ tag: libraryID === 5 ? "group-only-tag" : "mine", type: 0 }]; } };
+  s.W.buildCollectionIndex();
+  s.W.currentCollection = "";
+  await s.W.loadLibraryTags();
+  assert.deepEqual(reads, [1]);
+  assert.equal(s.W.libraryIndexID, 1);
+  // A group collection is chosen from the dropdown, so the script box has no focus (the
+  // table read itself is not part of this test).
+  activeElement = null;
+  s.W.showCollection = () => {};
+  s.W.currentCollection = "50";
+  s.W.onCollectionChange({ target: { value: "50" } });
+  assert.equal(s.W.libraryTagsStale, true, "another library: the list is stale");
+  // Focus on the script box re-reads it for the group (library 5).
+  s.W.onCodebookFocusin({ target: s.input });
+  await tick();
+  assert.deepEqual(reads, [1, 5]);
+  assert.equal(s.W.libraryIndexID, 5);
+  assert.equal(s.W.libraryTagsStale, false);
+  // Another collection of the same library: no new read needed.
+  s.W.onCollectionChange({ target: { value: "50" } });
+  assert.equal(s.W.libraryTagsStale, false);
+  // Back to a My Library collection: stale again, re-read with 1 at the next focus.
+  s.W.currentCollection = "1";
+  s.W.onCollectionChange({ target: { value: "1" } });
+  assert.equal(s.W.libraryTagsStale, true);
+  s.W.onCodebookFocusin({ target: s.input });
+  await tick();
+  assert.deepEqual(reads, [1, 5, 1]);
+  // With the script box focused, a library change re-reads at once.
+  s.input.focus();
+  s.W.currentCollection = "50";
+  s.W.onCollectionChange({ target: { value: "50" } });
+  await tick();
+  assert.deepEqual(reads, [1, 5, 1, 5]);
+  assert.ok(s.debug.some((m) => m.includes("1 tag name(s) in library 5 for suggestions")), s.debug.join("\n"));
+  assert.ok(!s.debug.some((m) => m.includes("group-only-tag") || m.includes("Lab")), "no names in Debug Output");
+});
+
+test("003b AC14: a saved group table shows its library and current collection name and is found for Show live", async () => {
+  const env = await savedSetup({ entries: [
+    { name: "Mine", time: T1_TIME },
+    { name: "Group table", time: T2_TIME, collectionKey: "5/GRP00001", collectionName: "Old group name" },
+    { name: "Gone group", time: T2_TIME, collectionKey: "8/GONE0001", collectionName: "Left group coll" },
+  ] });
+  installLibraries(env);
+  const { W, d } = env;
+  W.buildCollectionIndex();
+  W.currentCollection = "1"; // a My Library collection is chosen
+  W.renderSavedList();
+  const metaOf = (id) => itemOf(d, id).querySelector(".tabellify-saved-meta").children.map((c) => c.textContent);
+  assert.deepEqual(metaOf("t2").slice(0, 2), ["Lab <b>Group</b>", "Shared papers"]);
+  assert.deepEqual(metaOf("t1").slice(0, 2), ["My Library", "F005 test"]);
+  assert.deepEqual(metaOf("t3").slice(0, 2), ["Left group coll (collection not found)", "2 papers"]);
+  const tableOf = (id) => W.savedTables.tables.find((t) => t.id === id);
+  assert.equal(W.liveCollectionId(tableOf("t2")), 50);
+  assert.equal(W.liveCollectionId(tableOf("t3")), null);
+  // The modal's info line has the library part too.
+  W.openSaved("t2");
+  assert.equal(d("tabellify-view-meta").textContent, `Snapshot from ${fmt(T2_TIME)} · Lab <b>Group</b> · Shared papers`);
+  W.closeView();
+  W.openSaved("t3");
+  assert.equal(d("tabellify-view-meta").textContent, `Snapshot from ${fmt(T2_TIME)} · Left group coll (collection not found)`);
+  assert.equal(W.liveBlocker(), "tabellify-view-live-no-collection");
+  W.closeView();
 });
