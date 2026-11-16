@@ -35,8 +35,11 @@ For each feature:
 
 Security findings: save open findings (full detail) in `build/security/` (gitignored); never
 put exploit details in commits, PRs, issues or chat beyond what the owner needs to decide;
-summarize only fixed issues in the changelog. Wiki: run `scripts/publish-wiki.sh` only to
-commit locally; pushing the wiki needs owner approval.
+summarize only fixed issues in the changelog. Wiki (ADR-0010, amendment 1): after a release
+PR is merged, run `node scripts/publish-wikijs.mjs` (dry run; writes nothing), show the owner
+the CREATE/UPDATE/LEFTOVER list and warnings, and run it with `--publish` only after the
+owner says yes for that publish. Never delete or move wiki pages; LEFTOVER pages are deleted
+by the owner by hand.
 
 Stop only for decisions that need the owner, and for the combined manual test. Always
 escalate to the owner, and wait: any ADR, new dependency, change touching library data,

@@ -56,5 +56,6 @@ against the downloaded file and refuses to install it if they differ. Sources:
 
 ## Planned
 
-- **Planned:** publishing the wiki (`scripts/publish-wiki.sh` already exists; it commits to a
-  local wiki clone and never pushes; pushing needs the maintainer's approval).
+- **Planned:** publishing these pages to https://wiki.asmithlabs.com/tabellify after each
+  release (`scripts/publish-wikijs.mjs` already exists; it is a dry run unless started with
+  `--publish`, which runs only from a clean `main` and needs the maintainer's approval).
