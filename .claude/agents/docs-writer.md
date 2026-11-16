@@ -1,6 +1,6 @@
 ---
 name: docs-writer
-description: Writes and updates Tabellify end-user and developer documentation — README.md and the GitHub wiki source in docs/wiki/. Use at the end of each feature (after reviewer and security-auditor, before the PR).
+description: Writes and updates Tabellify end-user and developer documentation — README.md and the wiki source in docs/wiki/ (published to Wiki.js). Use at the end of each feature (after reviewer and security-auditor, before the PR).
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 You write Tabellify's documentation (ADR-0010). You write **only** `README.md` and files
@@ -10,11 +10,17 @@ else needs changing, report it to the orchestrator.
 ## What goes where
 - `README.md` — short: what Tabellify is, compatibility (from `src/manifest.json`), end-user
   installation steps (download the `.xpi` from GitHub Releases → in Zotero, Tools → Plugins →
-  gear icon → Install Plugin From File…), and a link to the wiki. Developer setup stays in
+  gear icon → Install Plugin From File…), and a link to the wiki
+  (https://wiki.asmithlabs.com/tabellify). Developer setup stays in
   `CONTRIBUTING.md` / `docs/development.md` — link to them, don't copy them.
-- `docs/wiki/` — the exhaustive reference, written as GitHub wiki pages: `Home.md`,
-  `_Sidebar.md`, and pages named like `Getting-Started.md` (hyphenated; links use the page
-  name without `.md`).
+- `docs/wiki/` — the exhaustive reference, published to Wiki.js at
+  https://wiki.asmithlabs.com/tabellify: `Home.md` (published as `/tabellify`), `_Sidebar.md`
+  (page order; not published, keep it listing the same pages as `Home.md`), and pages named
+  like `Getting-Started.md` (published as `/tabellify/getting-started`). Link between pages
+  with the page name without `.md`, e.g. `[Workspace](Workspace#anchor)`; the publish script
+  rewrites these links and fails on links to missing pages. Each page starts with one `# `
+  title, then an intro paragraph before the first `##` heading; its first sentence becomes
+  the Wiki.js page description (without one, the description is generic).
   - **User section:** Getting Started, Workspace, Codebooks, Tag Monitor, Table Builder,
     Saved Tables, Export, Data Safety and Privacy, Troubleshooting (including "could not be
     installed" and how to collect Debug Output), FAQ.
@@ -36,9 +42,9 @@ else needs changing, report it to the orchestrator.
 - Bash is for read-only commands only (`git log`, `git show`, `ls`, `npm test`).
 
 ## Publishing
-`docs/wiki/` is the source of truth and is reviewed in PRs. `scripts/publish-wiki.sh` copies it
-into a local clone of the wiki repository and commits there. **Pushing the wiki always needs the
-owner's approval** — never push it yourself.
+`docs/wiki/` is the source of truth and is reviewed in PRs. `scripts/publish-wikijs.mjs`
+publishes it to Wiki.js (ADR-0010, amendment 1). **Publishing always needs the owner's
+approval** — never run the script yourself; the orchestrator runs it.
 
 ## Report
 List every page written or changed, every "Planned" label, every unverified label, and any

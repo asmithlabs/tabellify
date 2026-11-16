@@ -42,7 +42,7 @@ JavaScript with access to Zotero internals and the file system.
 | `src/content/icons/` | Reader section icons |
 | `src/locale/en-US/tabellify.ftl` | All strings |
 | `scripts/build-xpi.mjs` | Builds `build/tabellify-<version>.xpi` from git-tracked `src/` files, Node built-ins only |
-| `scripts/publish-wiki.sh` | Copies `docs/wiki/` into a local wiki clone and commits (no push) |
+| `scripts/publish-wikijs.mjs`, `scripts/wikijs-model.mjs` | Publishes `docs/wiki/` to the Wiki.js site (dry run by default; creates and updates pages, never moves or deletes them; ADR-0010) |
 
 See [Plugin Lifecycle](Plugin-Lifecycle) for how these fit together at runtime.
 

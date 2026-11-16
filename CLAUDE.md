@@ -79,9 +79,10 @@ mode ends with a full security audit (ADR-0011) and a docs pass (ADR-0010).
   every release. Open findings live only in `build/security/` (gitignored), never in commits,
   issues or PRs; only fixed issues are summarized in the changelog. Reporting: `SECURITY.md`.
 - **Documentation (ADR-0010):** docs-writer updates `README.md` (short, end-user) and
-  `docs/wiki/` (source of the GitHub wiki, reviewed in PRs). Document only behavior in code or
-  approved specs; label the rest "Planned"; never invent UI labels. `scripts/publish-wiki.sh`
-  commits to a local wiki clone; pushing the wiki needs owner approval.
+  `docs/wiki/` (source of the docs on Wiki.js at https://wiki.asmithlabs.com/tabellify,
+  reviewed in PRs). Document only behavior in code or approved specs; label the rest
+  "Planned"; never invent UI labels. `scripts/publish-wikijs.mjs` publishes `docs/wiki/` to
+  Wiki.js (dry run by default); running it with `--publish` needs owner approval.
 - Stop for the owner only for decisions that need the owner (see "Always escalate" in
   `.claude/agents/orchestrator.md`) and for the combined manual test. Review findings that
   stay within the approved spec are fixed (developer → tester → reviewer again) without

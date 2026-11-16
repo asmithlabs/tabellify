@@ -67,3 +67,42 @@ git switch -c feat/001-plugin-shell       # one branch per feature
 git add -p && git commit                  # small, reviewed commits
 git push -u origin feat/001-plugin-shell  # you push; agents ask first
 ```
+
+## Publishing the docs
+
+The pages in `docs/wiki/` are published to https://wiki.asmithlabs.com/tabellify by
+`scripts/publish-wikijs.mjs` (ADR-0010, amendment 1; API facts in
+[`docs/wikijs-api-notes.md`](wikijs-api-notes.md)). The script only creates and updates
+pages; it never moves, renames or deletes them.
+
+**Key file.** The Wiki.js API key lives in `~/.config/tabellify/wikijs.env`, outside the
+repository, with three lines: `WIKIJS_URL=https://wiki.asmithlabs.com`,
+`WIKIJS_TOKEN=<the API key>` and `WIKIJS_LOCALE=en`. Make it readable by you only:
+```bash
+chmod 600 ~/.config/tabellify/wikijs.env
+```
+The script refuses a key file that others can read, a key file inside the repository, and
+any `WIKIJS_URL` that is not `https://`. It never takes the key from the command line or the
+environment and never prints it. The key comes from a dedicated Wiki.js group with only
+`read:pages` and `write:pages` on paths starting with `tabellify` (not "Full Access"); setup
+steps are in `docs/wikijs-api-notes.md`, section 8. Use `--env <file>` for another key file.
+
+**Dry run (default, writes nothing).** From the repository folder:
+```bash
+node scripts/publish-wikijs.mjs
+```
+It prints one line per page: `CREATE` or `UPDATE`, the wiki path, the title and the size.
+It also prints `LEFTOVER (delete by hand)` for wiki pages under `/tabellify` that no longer
+exist in `docs/wiki/`, a warning `EDITED IN WIKI` when a page was changed in the Wiki.js
+editor after the last publish, a warning when `_Sidebar.md` and `Home.md` list different
+pages, and `git diff --stat` of `docs/wiki/` since the last publish. It stops with an error
+if a page links to a page that does not exist.
+
+**One page only.** Add `--only <wiki path>`, e.g.
+`node scripts/publish-wikijs.mjs --only tabellify/getting-started`.
+
+**Publishing.** `node scripts/publish-wikijs.mjs --publish` (optionally with `--only`)
+writes to the wiki. It runs only on branch `main` with a clean working tree and `HEAD` equal
+to `origin/main`, and only with the owner's OK for that publish. It stops at the first
+failed page. After a successful publish it records the commit and time in
+`build/wikijs-last-publish.json` (gitignored), which the next dry run compares against.
