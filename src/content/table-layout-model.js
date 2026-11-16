@@ -760,18 +760,39 @@ var TabellifyTableLayout = {
   },
 
   /**
+   * The numeric library ID before the "/" of a `"<libraryID>/<collectionKey>"` key, or null
+   * when the key has no such prefix (Feature 003b).
+   * @param {string} collectionKey
+   * @returns {number | null}
+   */
+  libraryIdOfKey(collectionKey) {
+    const match = /^(\d+)\//.exec(collectionKey);
+    return match ? Number(match[1]) : null;
+  },
+
+  /**
    * Manual orders as a plain object: collection key → cleaned item keys. Empty keys and
    * empty orders are dropped; with `knownCollectionKeys`, so are other collections.
    * Object.fromEntries keeps every key an ordinary own property ("__proto__"-safe).
+   *
+   * Feature 003b (group libraries, AC11): with `listedLibraryIDs` as well, an order is
+   * dropped only when its library IS listed and its collection is not known. Orders of a
+   * library that is not listed right now (e.g. a group that is briefly missing during a
+   * sync) are kept, so a move in one library can never delete another library's orders.
    * @param {Iterable<[unknown, unknown]>} entries
    * @param {Set<string> | null} [knownCollectionKeys]
+   * @param {Set<number> | null} [listedLibraryIDs]
    * @returns {Record<string, string[]>}
    */
-  cleanManualOrders(entries, knownCollectionKeys = null) {
+  cleanManualOrders(entries, knownCollectionKeys = null, listedLibraryIDs = null) {
     const out = [];
     for (const [collectionKey, order] of entries) {
       if (typeof collectionKey !== "string" || collectionKey === "") continue;
-      if (knownCollectionKeys && !knownCollectionKeys.has(collectionKey)) continue;
+      if (knownCollectionKeys && !knownCollectionKeys.has(collectionKey)) {
+        const libraryID = this.libraryIdOfKey(collectionKey);
+        const listed = !listedLibraryIDs || (libraryID !== null && listedLibraryIDs.has(libraryID));
+        if (listed) continue;
+      }
       const keys = this.cleanKeys(order);
       if (keys.length > 0) out.push([collectionKey, keys]);
     }
@@ -780,22 +801,24 @@ var TabellifyTableLayout = {
 
   /**
    * The `perPaperTable` object to save. Collections that no longer exist are pruned here:
-   * when `knownCollectionKeys` is given (a fresh snapshot of the library's collections),
-   * orders of other collections are left out. Empty orders are left out too. Entries of the
+   * when `knownCollectionKeys` is given (a fresh snapshot of every listed library's
+   * collections), orders of other collections are left out, except those of libraries not
+   * in `listedLibraryIDs` (when given; Feature 003b). Empty orders are left out too. Entries of the
    * column layout are only cleaned, not pruned: groups and tags the codebook no longer has
    * are ignored when shown (topItems) and drop out with the next move that rewrites
    * topOrder (ADR-0019 §3).
    * @param {{ topOrder?: unknown, tagOrder?: unknown } | null} columnLayout
    * @param {Iterable<[string, unknown]>} manualOrders  e.g. a Map of collection key → item keys
    * @param {Set<string> | null} [knownCollectionKeys]
+   * @param {Set<number> | null} [listedLibraryIDs]  Feature 003b: see cleanManualOrders
    * @returns {{ topOrder: Array<{ group: string } | { tag: string }>,
    *   tagOrder: Record<string, string[]>, manualOrders: Record<string, string[]> }}
    */
-  layoutData(columnLayout, manualOrders, knownCollectionKeys = null) {
+  layoutData(columnLayout, manualOrders, knownCollectionKeys = null, listedLibraryIDs = null) {
     return {
       topOrder: this.cleanTopOrder(columnLayout?.topOrder),
       tagOrder: this.copyTagOrder(columnLayout),
-      manualOrders: this.cleanManualOrders(manualOrders, knownCollectionKeys),
+      manualOrders: this.cleanManualOrders(manualOrders, knownCollectionKeys, listedLibraryIDs),
     };
   },
 };
