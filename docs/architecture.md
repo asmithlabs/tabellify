@@ -1,8 +1,7 @@
 # Tabellify — Architecture
 
 Status: v0.1.0 (updated 2026-11-15 to match the code in `src/` at release 0.1.0). Covers
-the Accepted ADRs through ADR-0019. ADR-0020 (release and update integrity) is Proposed
-and not reflected here. Updated by the architect when ADRs are accepted.
+the Accepted ADRs through ADR-0020 (release and update integrity: see `docs/release-checklist.md`). Updated by the architect when ADRs are accepted.
 
 ## 1. Platform
 

@@ -26,6 +26,7 @@ supersedes them, or a dated amendment or note is added (ADR-0001).
 | [0017](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0017-csv-export-file-writes.md) | CSV export: how and where Tabellify writes a file outside its own folder | Accepted |
 | [0018](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0018-saved-tables.md) | Saved tables: what a saved table is and how `tables.json` stores it | Accepted |
 | [0019](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0019-layout-mixed-top-level-order.md) | `layout.json` schema 3: one mixed top-level column order (groups and ungrouped tags) | Accepted |
+| [0020](https://github.com/asmithlabs/tabellify/blob/main/docs/decisions/0020-release-and-update-integrity.md) | Release and update integrity: `update_hash` always, versioned immutable release files, protected `v*` tags, manual reproducible builds | Accepted |
 
 ## Notes
 

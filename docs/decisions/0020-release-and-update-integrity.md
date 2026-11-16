@@ -1,6 +1,6 @@
 # ADR-0020: Release and update integrity (update_hash, immutable releases, manual reproducible build)
 
-- **Status:** Proposed
+- **Status:** Accepted (owner approved 2026-11-16, all recommendations)
 - **Date:** 2026-11-15
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 

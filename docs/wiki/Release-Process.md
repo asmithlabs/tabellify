@@ -1,7 +1,7 @@
 # Release Process
 
 > **No version of Tabellify has been released yet.** The release procedure below is
-> **Proposed** in ADR-0020 and is waiting for the maintainer's approval. The step-by-step
+> **Accepted** in ADR-0020 (2026-11-16). The step-by-step
 > list is [`docs/release-checklist.md`](https://github.com/asmithlabs/tabellify/blob/main/docs/release-checklist.md).
 
 ## What exists today
@@ -34,24 +34,24 @@ Zotero (through its Firefox platform) checks the `update_hash` written in `updat
 against the downloaded file and refuses to install it if they differ. Sources:
 `docs/zotero-api-notes.md` (release rows).
 
-## Proposed process (ADR-0020, not yet approved)
+## Release process (ADR-0020, accepted 2026-11-16)
 
-- **Proposed:** GitHub **immutable releases** turned on for the repository, so a published
+- GitHub **immutable releases** turned on for the repository, so a published
   release's files and tag can never be changed or deleted.
-- **Proposed:** a GitHub **tag ruleset** for `v*` tags: they cannot be moved, deleted or
+- a GitHub **tag ruleset** for `v*` tags: they cannot be moved, deleted or
   force-pushed.
-- **Proposed:** each release gets an annotated tag `vX.Y.Z` on a `main` commit that passed CI.
-- **Proposed:** the release `.xpi` is built by hand from a clean copy of the tag, and its
+- each release gets an annotated tag `vX.Y.Z` on a `main` commit that passed CI.
+- the release `.xpi` is built by hand from a clean copy of the tag, and its
   SHA-256 must match a second independent build (CI) before anything is published.
-- **Proposed:** the `.xpi` is attached to a draft GitHub release, checked, then published
+- the `.xpi` is attached to a draft GitHub release, checked, then published
   (published = locked).
-- **Proposed:** `updates.json` (repository root, on `main`, changed only through a pull request)
+- `updates.json` (repository root, on `main`, changed only through a pull request)
   lists each version with `update_link` pointing to the versioned release file
   (`https://github.com/asmithlabs/tabellify/releases/download/vX.Y.Z/tabellify-X.Y.Z.xpi`)
   and `update_hash` (`sha256:` + the file's hash).
-- **Proposed:** no release workflow in CI for now, so no CI job holds a token that can
+- no release workflow in CI for now, so no CI job holds a token that can
   publish.
-- **Proposed:** after each release, the maintainer installs the published file in the dev
+- after each release, the maintainer installs the published file in the dev
   profile and runs **Tools → Plugins → gear → Check for Updates**.
 
 ## Planned
