@@ -1,6 +1,6 @@
 # Feature 005: Tag monitor (used / remaining curated tags for a collection)
 
-- **Status:** Approved (owner, 2026-11-13)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-13)
 - **Branch:** `feat/005-tag-monitor`
 - **Related ADRs:** 0009 (workspace tab), 0012 (Proposed: data storage, read only here),
   0011 (security), 0003 (no bundler). **No new ADR** (reasoning in "Live updates → Does this

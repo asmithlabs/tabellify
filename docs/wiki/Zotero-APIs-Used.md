@@ -3,58 +3,86 @@
 Every Zotero, Mozilla or window API Tabellify uses must be verified against official docs or
 Zotero source and recorded, with links and Zotero versions, in
 [docs/zotero-api-notes.md](https://github.com/asmithlabs/tabellify/blob/main/docs/zotero-api-notes.md)
-(CLAUDE.md rule 1). That file is the source of truth; this page only lists what is in use.
+(CLAUDE.md rule 1). **That file is the source of truth**; this page is only a map of what is
+in use and where. Status words below are copied from api-notes in short form; check
+api-notes before relying on one, and for the runtime checks the owner ran.
 
-## Used in version 0.1.0 (F001)
+Status values in api-notes: **Verified (docs)**, **Verified (source)**, **Verified
+(runtime)** (only the owner assigns it), **UNVERIFIED**; **Internal** marks APIs not in any
+zotero.org developer guide.
+
+## Plugin shell (F001, F002)
 
 | API | Used for | File |
 |---|---|---|
-| `manifest.json` `applications.zotero.{id, strict_min_version, strict_max_version, update_url}` | Identity and compatibility. All four are required, or install fails with "could not be installed" | `src/manifest.json` |
-| Bootstrap hooks `install/startup/shutdown/uninstall`, `onMainWindowLoad/Unload` | Lifecycle | `src/bootstrap.js` |
-| `amIAddonManagerStartup.registerChrome(…)` → handle `.destruct()` | `chrome://tabellify/content/` URLs | `src/bootstrap.js` |
-| `Services.scriptloader.loadSubScript` | Load `tabellify.js` | `src/bootstrap.js` |
-| `Zotero.MenuManager.registerMenu` / `unregisterMenu` (target `main/menubar/tools`) | Tools → Tabellify… | `src/tabellify.js` |
-| `window.MozXULElement.insertFTLIfNeeded("tabellify.ftl")` | Menu label strings in the main window | `src/tabellify.js` |
-| Plugin `.ftl` auto-registration; `<html:link rel="localization">`; `data-l10n-id` | Strings in the workspace window | `src/locale/`, `src/content/workspace.xhtml` |
-| `<?xml-stylesheet href="chrome://global/skin/global.css"?>` | Opaque, native window background | `src/content/workspace.xhtml` |
-| `Zotero.getMainWindow().openDialog(…)` | Open the workspace window (since F002: fallback only) | `src/tabellify.js` |
-| `Services.wm.getMostRecentWindow` / `getEnumerator("tabellify:workspace")` | Single instance; close on shutdown | `src/tabellify.js` |
-| `Zotero.getMainWindow()` / `Zotero.getMainWindows()` | Reach main windows | `src/tabellify.js` |
-| `Zotero.debug`, `Zotero.logError` | Logging | both |
+| `manifest.json` `applications.zotero.{id, strict_min_version, strict_max_version, update_url}` | Identity and compatibility; all four required | `src/manifest.json` |
+| Bootstrap hooks, `onMainWindowLoad` / `onMainWindowUnload` | Lifecycle | `src/bootstrap.js` |
+| `amIAddonManagerStartup.registerChrome(…)` → `.destruct()` | `chrome://tabellify/` URLs | `src/bootstrap.js` |
+| `Services.scriptloader.loadSubScript` | Load `tabellify.js`, the reader section and its models into the bootstrap scope | `src/bootstrap.js`, `src/tabellify.js` |
+| `Zotero.MenuManager.registerMenu` / `unregisterMenu` (`main/menubar/tools`) | Tools → Tabellify… | `src/tabellify.js` |
+| `window.MozXULElement.insertFTLIfNeeded("tabellify.ftl")`, plugin `.ftl` auto-registration, `data-l10n-id`, `document.l10n.formatValue` | Strings | `src/tabellify.js`, `src/content/` |
+| `win.Zotero_Tabs` `add` / `select` / `close` / `getTabInfo` (**Internal**, ADR-0009; exactly these four, enforced by `tests/static/tabs-api.test.mjs`) | The workspace tab | `src/tabellify.js` |
+| HTML `<iframe>` with `chrome://tabellify/content/workspace.xhtml` | The workspace document inside the tab | `src/tabellify.js` |
+| `Services.obs.addObserver` / `removeObserver` (`quit-application-granted`) | Close tabs before Zotero saves its session (observer order: see api-notes) | `src/tabellify.js` |
+| `Zotero.getMainWindow().openDialog`, `Services.wm.getMostRecentWindow` / `getEnumerator` | Fallback workspace window | `src/tabellify.js` |
+| `event.target.ownerGlobal` in MenuManager `onCommand` | Pick the window whose menu was used (trusted only if it is a main window); **UNVERIFIED** in api-notes | `src/tabellify.js` |
+| `Zotero.getMainWindow()` / `getMainWindows()`, `Zotero.debug`, `Zotero.logError` | Windows, logging | all |
 
-## Added in F002 (workspace tab)
+## Reading the library (F003–F007b, all read-only)
 
-There is **no documented Zotero API for plugin tabs**. ADR-0009 allows exactly four methods
-of the internal `Zotero_Tabs` object, nothing else (no `_tabs`, no `tabHooks`, no
-`Zotero.Session`); `tests/static/tabs-api.test.mjs` enforces this allow-list. Status and
-version columns below summarize api-notes; check api-notes before relying on them.
+| API | Used for | File |
+|---|---|---|
+| `<script src="chrome://zotero/content/include.js">` | Gives the workspace document the `Zotero` global | `workspace.xhtml` |
+| `Zotero.initializationPromise`, `Zotero.Libraries.userLibraryID`, `Zotero.Libraries.get`, `library.waitForDataLoad("item")` | Wait for Zotero, My Library | `workspace.js` |
+| `Zotero.Collections.getByLibrary(libraryID, true)`; `collection.id`, `name`, `parentID`, `key`, `libraryID`, `getChildItems()` | Collection list, subcollection walk, keys for layout and saved tables | `workspace.js` |
+| `item.isRegularItem()`, `getDisplayTitle()`, `getTags()`, `getAttachments()`, `key`; `Zotero.Items.get(ids)`; `isFileAttachment()`, `isAttachment()`, `isNote()`, `isAnnotation()`, `parentItem`; `attachment.getAnnotations()`; `annotation.getTags()` | Papers, titles, item and highlight tags | `workspace.js`, `reader-tags.js` |
+| Tag `type` 0 = manual, 1 = automatic | Only manual tags count | `tag-monitor-model.js` |
+| Zotero tag identity: `trim().normalize()`, exact case-sensitive match | Matching codebook names to Zotero tags | models |
+| `Zotero.Tags.getAll(libraryID)` | Tag suggestions (includes highlight tags; owner runtime check RT-S1 passed) | `workspace.js` |
+| `Zotero.Notifier.registerObserver` / `unregisterObserver` | Live recount in the workspace; refresh of the item pane section | `workspace.js`, `reader-tags.js` |
+| `Zotero.ItemPaneManager.registerSection` / `unregisterSection` | "Tabellify tags" section (ADR-0013) | `reader-tags.js` |
+| `Zotero.Prefs.get` / `set` (global, `extensions.tabellify.countItemTags`) | The counting switch; `set` only in the workspace | `workspace.js`, `reader-tags.js` |
 
-| API | Used for | Status (api-notes) | File |
-|---|---|---|---|
-| `win.Zotero_Tabs` (per main window) | Reach the tab manager; feature-detected before use, fallback to the F001 window if missing | **Internal**; verified (runtime, owner RT1/RT2 on 10.0.9) | `src/tabellify.js` |
-| `Zotero_Tabs.add({ type: "tabellify", title, data: {}, select: true, onClose })` → `{ id, container }` | Create the tab. Type must have no hyphen; `data` must be an object | **Internal**; verified (runtime) | `src/tabellify.js` |
-| `Zotero_Tabs.select(id)` | Single instance: show the existing tab | **Internal**; verified (runtime) | `src/tabellify.js` |
-| `Zotero_Tabs.close(id)` | Close our tab (quit, unload, shutdown, incomplete add) | **Internal**; verified (runtime) | `src/tabellify.js` |
-| `Zotero_Tabs.getTabInfo(id)` | Confirm a stored id is still a `"tabellify"` tab (unknown id → `{}`) | **Internal**; verified (runtime) | `src/tabellify.js` |
-| `Services.obs.addObserver` / `removeObserver` (`"quit-application-granted"`) | Close tabs before Zotero saves its session at quit | API verified (source); **observer order UNVERIFIED (runtime)** until F002 AC6 | `src/tabellify.js` |
-| HTML `<iframe>` (`createElementNS`) with `src="chrome://tabellify/content/workspace.xhtml"` in the tab container | Our own privileged document inside the tab | Verified (runtime, RT2) | `src/tabellify.js` |
-| `win.document.l10n.formatValue("tabellify-tab-title")` | Localized tab title (fallback `"Tabellify"`) | Verified (runtime, RT2) | `src/tabellify.js` |
-| `event.target.ownerGlobal` in MenuManager `onCommand` | Open the tab in the window whose menu was used; trusted only if it is a main window, else `Zotero.getMainWindow()` | **UNVERIFIED** (runtime check RT4) | `src/tabellify.js` |
+The read-only guarantee for these calls is recorded in api-notes; the write guard
+(`tests/static/write-guard.test.mjs`) fails on any library-write API in `src/`.
 
-Not used, recorded in api-notes because they shaped the design: `Zotero_Tabs.getState` /
-`restoreState`, `Zotero.Session`, `ZoteroPane.openNote`.
+## Tabellify's own files (F004, F005c, F007b; ADR-0012)
 
-Before raising `strict_max_version`, compare `tabs.js` and `session.js` between Zotero tags
-and rerun the F002 manual checks (ADR-0009 §6).
+| API | Used for | File |
+|---|---|---|
+| `Zotero.DataDirectory.dir` (**Internal**) + `PathUtils.join` | `<data dir>/tabellify/` | the three stores |
+| `IOUtils.stat` | Size check before reading (SEC-014) | the three stores |
+| `IOUtils.readJSON`, `IOUtils.makeDirectory`, `IOUtils.writeJSON` with `tmpPath` and `backupFile`; `mode: "create"` for the one-time `codebooks.v1.json` copy | Load and atomic save | `codebook-store.js`, `layout-store.js`, `tables-store.js` |
+| `setTimeout` / `clearTimeout` in the bootstrap scope | Debounced refresh of the item pane section | `reader-tags.js` |
 
-Tabellify 0.1.0 uses **no** library-data APIs (no items, collections, tags, searches).
+## CSV export (F008, ADR-0017)
 
-## Planned
+| API | Used for | File |
+|---|---|---|
+| `ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs")` → `FilePicker` (`modeSave`, `appendFilter`, `defaultString`, `defaultExtension`, `show`) | The save dialog (runtime check RT-S2 recorded as passed in api-notes) | `csv-export.js` |
+| `IOUtils.writeUTF8(path, text, { tmpPath })` | The one write outside Tabellify's folder | `csv-export.js` |
 
-- **F003+ (Planned):** selection getters (`ZoteroPane.getSelectedCollections()` and related;
-  the singular getters throw in Zotero 10), search conditions, possibly
-  `Zotero.ItemPaneManager.registerSection` or `Zotero.PreferencePanes.register`. Recorded in
-  api-notes as verified but not used.
+## Workspace page (standard web platform)
+
+HTML `<details>`/`<summary>`, `<dialog>` with `showModal()` (View table; runtime checks RT-S3
+and RT-S3b recorded as passed in api-notes), HTML drag-and-drop (`draggable`, `DataTransfer`,
+`dragover`), `getBoundingClientRect` and `clientX`/`clientY` (drop edges), the WAI-ARIA
+combobox pattern (suggestions), `setSelectionRange` / `setRangeText`, `Intl.Collator`,
+`Intl.DateTimeFormat`, `String.prototype.normalize`, CSS custom properties and
+`prefers-color-scheme` (design tokens). Each has its own row in api-notes.
+
+## Recorded but not used
+
+`Zotero_Tabs.getState` / `restoreState`, `Zotero.Session`, `ZoteroPane.openNote`,
+`collection.getDescendents`, `Zotero.PreferencePanes.register`, `Zotero.Reader.registerEventListener`,
+`Zotero.File.putContentsAsync`, `ZoteroPane.getSelectedCollections()` and other selection
+getters, search conditions; and, **UNVERIFIED**, `Downloads.getPreferredDownloadsDirectory()`,
+`nsIFile.reveal()`, `Zotero.Utilities.Internal.copyTextToClipboard`.
+
+## Before raising `strict_max_version`
+
+Re-check the Internal APIs (`Zotero_Tabs`, `Zotero.DataDirectory.dir`) and diff `tabs.js` and
+`session.js` between Zotero tags, then rerun the manual checks (ADR-0009 §6, ADR-0012 §1).
 
 ## Adding a new API
 

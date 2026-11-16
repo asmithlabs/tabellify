@@ -1,6 +1,6 @@
 # Feature 004: Curated tag list (codebook) with super-tag groups
 
-- **Status:** Approved (owner, 2026-11-12)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-12)
 - **Branch:** `feat/004-codebook`
 - **Related ADRs:** 0012 (Proposed: data storage), 0009 (workspace tab), 0003 (no bundler),
   0011 (security). PRD §3 step 2, §7 Q2 and Q4.

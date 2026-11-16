@@ -1,42 +1,71 @@
 # Workspace
 
-The workspace is where Tabellify's tools (codebooks, tag monitor, table builder, saved
-tables) will live. In version 0.1.0 it is a placeholder.
+The workspace is the **Tabellify** tab in the main Zotero window. Everything you do in
+Tabellify, except the [Tabellify tags](Tag-Monitor#while-reading-the-tabellify-tags-section)
+section beside the reader, happens here.
 
-## Today (version 0.1.0, Features 001 and 002)
+## Open it
 
-From Feature 002 on, the workspace opens as a **tab in the main Zotero window**, next to your
-library tab and your PDF and note tabs. Because it is part of the main window, it stays
-reachable when Zotero is maximized or in full screen.
-
-> Feature 002 is implemented but not released yet (no GitHub Release). Earlier development
-> builds of 0.1.0 opened the workspace as a separate window instead.
-
-### Open it
-
-1. In the main Zotero window, choose **Tools → Tabellify…** in the menu bar.
+In the main Zotero window, choose **Tools → Tabellify…** in the menu bar.
 
 **What you should see:** a new tab titled **Tabellify** appears in the tab bar at the top of
-the main Zotero window and is selected. It shows the heading **Tabellify Workspace** and the
-sentence **Your literature tables will appear here.** Nothing else is in the tab yet. No
-separate window opens.
+the main Zotero window and is selected. Because it is part of the main window, it also works
+when Zotero is maximized or in full screen.
 
-This also works while the main Zotero window is in full screen: the Tabellify tab opens
-inside the full-screen window.
+- Choosing **Tools → Tabellify…** again while the tab is open switches to that tab; it does
+  not open a second one.
+- With several main Zotero windows, each can have its own Tabellify tab. The tab opens in the
+  window whose Tools menu you used.
 
-### Only one Tabellify tab
+## What is on the page, top to bottom
 
-If the Tabellify tab is already open and you are looking at another tab (for example your
-library or a PDF), choosing **Tools → Tabellify…** again switches to the existing Tabellify
-tab. It does not open a second one.
+1. **Heading: Tabellify Codebook.**
+2. **Collection row:** the **Collection** list ("Choose a collection"), the **Refresh**
+   button, the **Also count tags on the paper itself** checkbox, and, once a collection is
+   chosen and the codebook has tags, one summary line such as **Tags used 2/4 · Papers 3**.
+   When every codebook tag is used somewhere in the collection, it adds **All codebook tags
+   are used.** See [Tag Monitor](Tag-Monitor).
+3. **Saved tables** (closed by default; click it to open). Your saved tables with **Open**,
+   **Export CSV** and **Delete**. See [Saved Tables](Saved-Tables).
+4. **Tags and groups** box, with its help line and suggestion list. This is where you build
+   the codebook. Messages about the codebook ("Codebook saved.", errors) appear right under
+   it. See [Codebooks](Codebooks).
+5. **Group pills**, for example **Exposure · 2** and **Ungrouped · 1**: one per group with
+   the number of tags in it.
+6. **Edit groups and tags** (closed by default): rename or delete groups, remove tags.
+7. **Table toolbar:** **Reset columns**, and **Manual order** / **Clear manual order** once
+   you have put papers in your own order. While you drag a column, a hint here says what the
+   drop will do.
+8. **The table:** one row per paper; Title, one column per codebook tag, and **k/M**. See
+   [Table Builder](Table-Builder).
+9. **View table** and **Export CSV** buttons under the table, shown only when the table has
+   papers. See [Saved Tables](Saved-Tables) and [Export](Export).
 
-If you have more than one main Zotero window, each one can have its own Tabellify tab. The
-tab opens in the window whose Tools menu you used.
+## Which papers are shown
 
-### Close it
+- Only collections in **My Library** are listed. Group libraries are not supported yet.
+- Choosing a collection shows the papers in it **and in all its subcollections**. A paper
+  that sits in several of them is shown once.
+- Papers in the trash, and highlights in the trash, are left out.
+- If the collection has no papers you see "No papers in this collection."
 
-Click the **×** on the Tabellify tab, like any other tab. To get it back, choose
-**Tools → Tabellify…** again; a fresh tab opens.
+## Keeping it up to date
+
+The table and counts update by themselves shortly after you add or remove a tag, move a paper
+into or out of the collection, or move a paper to the trash. Click **Refresh** to recount
+straight away (for example after a sync). Refresh also reloads the tag suggestions for the
+**Tags and groups** box.
+
+## Light and dark mode
+
+The workspace follows Zotero's **Color Scheme** setting (Settings → General). The Tabellify
+tab uses Tabellify's own colours; the **Tabellify tags** section beside the reader uses
+Zotero's normal look.
+
+## Close it
+
+Click the **×** on the Tabellify tab, like any other tab. Your codebook, column order, paper
+order and saved tables are kept; choose **Tools → Tabellify…** to open a fresh tab.
 
 Tabellify also closes its tab by itself:
 
@@ -48,24 +77,20 @@ Tabellify also closes its tab by itself:
 - **When you close the main Zotero window** that contains it.
 
 Tabellify only ever closes its own tab. It never closes, moves or changes your other tabs.
+If Zotero crashes while the Tabellify tab is open, see
+[Troubleshooting](Troubleshooting#pdf-or-note-tabs-not-restored-after-a-restart).
 
-### Fallback: a separate window
+What is kept only while the tab is open: unsaved Name and Description text in
+**View table**, and the **Saved tables** filter choice.
+
+## Fallback: a separate window
 
 If a future Zotero update changes the internal tab system Tabellify relies on, Tabellify
-cannot open a tab. It then automatically opens the workspace as a separate window titled
-**Tabellify Workspace** instead, with the same content. You do not need to do anything. In
-that case choosing **Tools → Tabellify…** again brings the open window to the front, and the
-window closes by itself when you turn Tabellify off. Please
-[report it](Troubleshooting#reporting-a-bug) if you see this window, because it means
-Tabellify needs an update.
+cannot open a tab. It then automatically opens the workspace as a separate window instead,
+with the same content. You do not need to do anything. In that case choosing
+**Tools → Tabellify…** again brings the open window to the front, and the window closes by
+itself when you turn Tabellify off. Please [report it](Troubleshooting#reporting-a-bug) if
+you see this window, because it means Tabellify needs an update.
 
 Background: [ADR-0009](Decision-Log) and
 [Feature 002](https://github.com/asmithlabs/tabellify/blob/main/docs/features/002-workspace-tab.md).
-
-## Planned: workspace contents
-
-Choosing a collection (**Planned, F003**), the codebook (**Planned, F004**), tag monitor
-(**Planned, F005**), table builder (**Planned, F006**), saved tables (**Planned, F007**) and
-export (**Planned, F008**) are later features; see [Codebooks](Codebooks),
-[Tag Monitor](Tag-Monitor), [Table Builder](Table-Builder), [Saved Tables](Saved-Tables) and
-[Export](Export).

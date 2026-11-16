@@ -1,6 +1,6 @@
 # Feature 008: Export CSV
 
-- **Status:** Approved (owner, 2026-11-13, all recommendations Q1–Q13; RT-S2 passed)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-13, all recommendations Q1–Q13; RT-S2 passed)
 - **Branch:** `feat/008-export-csv` (from `main` after 006c, merged as `f60f283`)
 - **Related ADRs:** **0017 (Proposed: CSV export, save dialog, writer file, CSV dialect; this
   spec depends on it)**, 0012 (Accepted: write-guard allow-list rule), 0014 / 0019 (Accepted:

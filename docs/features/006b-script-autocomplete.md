@@ -1,6 +1,6 @@
 # Feature 006b: Tag script autocomplete and codebook-only "Create tag"
 
-- **Status:** Approved (owner, 2026-11-13, all recommendations Q1–Q9)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-13, all recommendations Q1–Q9)
 - **Branch:** `feat/006b-script-autocomplete` (start after 006a is merged; it is: `5e21535`)
 - **Related ADRs:** 0016 (codebook schema 2, Accepted), 0015 (design system, Accepted),
   0012 (data storage), 0011 (security), 0009 (workspace tab), 0003 (no bundler).

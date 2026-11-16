@@ -1,10 +1,125 @@
 # Saved Tables
 
-> **Planned (Feature F007).** Not available in Tabellify 0.1.0.
+**View table** shows the finished table on its own, with a Name and a Description. **Save
+table** keeps it, so you can look at your earlier work again later, even after you have
+tagged more papers or changed the codebook. Saving, opening and deleting tables never
+changes your Zotero library.
 
-Saved tables are planned to let you save a table configuration, see your saved tables in a
-list, and edit or delete them later. Table configurations are stored by Tabellify, separate
-from your Zotero items.
+## View table
 
-Details will be written here when the feature is specified. Roadmap:
-[product requirements](https://github.com/asmithlabs/tabellify/blob/main/docs/product-requirements.md).
+1. In the [Tabellify tab](Workspace), choose a collection.
+2. Under the table, click **View table**.
+
+**What you should see:** a panel over the Tabellify tab with the heading **View table**, the
+note "Not saved yet. Save table keeps this table with its name and description.", a **Name**
+field (filled in with the collection's name and selected, so you can type over it), a
+**Description** field, and a read-only copy of the table: the same columns, papers, order, ✓
+cells and k/M as in the workspace, without grips or sort buttons. A wide table scrolls
+inside the panel.
+
+- **Name** (up to 200 characters) is also used as the name of the exported CSV file.
+- **Description** (up to 2,000 characters) is for your own notes about the table. It is not
+  written into the CSV file.
+- Buttons: **Save table**, **Export CSV** (see [Export](Export)) and **Close**. **Esc** also
+  closes the panel. While it is open, Tab moves only between the panel's fields and buttons.
+- If you close the panel without saving, the Name and Description you typed are remembered
+  for that collection until you close the Tabellify tab.
+- If the library changes while the panel is open, the table in it is updated.
+
+## Save a table
+
+In **View table**, type a **Name** (required) and, if you like, a **Description**, then click
+**Save table**.
+
+**What you should see:** "Table saved." The heading changes to **Saved table**, and a line
+under it reads "Snapshot from *date* · *collection*". The table appears in the **Saved
+tables** list.
+
+Saving from **View table** always creates a **new** saved table; it never overwrites an older
+one. Two tables may have the same name.
+
+A saved table holds:
+
+- its **Name** and **Description**;
+- its **settings**: the collection, the column order, the paper order (sort or manual order)
+  and whether **Also count tags on the paper itself** was ticked;
+- a **snapshot**: the table exactly as it was when you saved it (titles, columns, ✓ cells,
+  k/M). Because of this, `tables.json` contains your paper titles; see
+  [Data Safety and Privacy](Data-Safety-and-Privacy).
+
+## The Saved tables list
+
+In the Tabellify tab, click **Saved tables** (under the collection row) to open the list. The
+heading shows how many tables are listed.
+
+- **Show:** **All collections** (default) or **This collection** (only tables of the chosen
+  collection).
+- Each entry shows the Name, then the collection, the number of papers and columns, and when
+  it was saved ("Saved 14 Nov 2026, 15:40"). If the collection no longer exists, its old
+  name is shown with "(collection not found)".
+- **Open** shows the table in the **Saved table** panel.
+- **Export CSV** exports the saved snapshot; see [Export](Export).
+- **Delete** asks "Delete this saved table? This cannot be undone." with **Delete** and
+  **Cancel**. After deleting you see "Saved table deleted."
+
+Messages: "No saved tables yet. Open "View table" and click "Save table"." / "No saved tables
+for this collection." / "Choose a collection to see its saved tables."
+
+## Snapshot or live
+
+A saved table always opens as its **snapshot**: exactly what you saved. In the **Saved
+table** panel:
+
+| Button | What it does |
+|---|---|
+| **Show live** | Rebuilds the table from your library **now**, with the saved settings and the current codebook. The line under the heading reads "Live: built from your library now · *collection*". While it builds you see "Building the live table…" |
+| **Show snapshot** | Goes back to the saved snapshot |
+| **Update snapshot** (live only) | Replaces the saved snapshot with the live table. Message: "Snapshot updated." |
+| **Save as new table** (live only) | Keeps the old table and saves the live version as a new one. Message: "Saved as a new table." |
+| **Save changes** | Saves edits to Name and Description. Message: "Changes saved." |
+| **Export CSV** | Exports what is shown (snapshot or live) |
+| **Close** | Closes the panel |
+
+Notes on the live view:
+
+- Columns come from the **current** codebook. Saved columns that are no longer in the
+  codebook are named in a note: "Saved columns that are no longer in the codebook: …".
+- It is built once per click; to follow later changes, click **Show snapshot**, then **Show
+  live** again.
+- **Show live** is not available when "This table's collection is no longer in My Library,
+  so only the saved snapshot can be shown." or "The codebook could not be loaded, so the live
+  table cannot be built." If reading fails you see "The live table could not be built. The
+  saved snapshot is still shown."
+
+Opening a saved table, or showing it live, never changes the workspace: not the chosen
+collection, not the column or paper order, not the **Also count tags on the paper itself**
+setting.
+
+Unsaved edits to a saved table's Name or Description are remembered until you close the
+Tabellify tab; they are written only when you click **Save changes**.
+
+## Limits
+
+Tabellify keeps at most **100** saved tables, each with at most **5,000** papers and **500**
+columns. You see a message if a save would go over a limit, for example "Tabellify keeps at
+most 100 saved tables. Delete one first."
+
+## Where saved tables are stored
+
+In `tables.json` in Tabellify's own folder, with the previous version as `tables.json.bak`.
+They are **not synced** by Zotero sync. See [Data Safety and Privacy](Data-Safety-and-Privacy).
+
+If the file cannot be read, the list shows "The saved tables file could not be read. Saving
+is turned off so the file is not overwritten." with the file's location; see
+[Troubleshooting](Troubleshooting#saved-tables-could-not-be-read).
+
+If you have Tabellify open in two Zotero windows and change saved tables in both, you may see
+"Saved tables were changed in another Tabellify tab and have been reloaded. Repeat your last
+change."
+
+## Planned
+
+- Loading a saved table back into the workspace, version history, undo of a delete, sharing
+  or importing saved tables: **Planned** (no feature number yet; out of scope of Feature
+  007b).
+- Excel (XLSX) export: **Planned** (optional later step of Feature F008).

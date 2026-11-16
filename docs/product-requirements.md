@@ -45,23 +45,24 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 | # | Capability | Milestone |
 |---|---|---|
 | F001 | Plugin shell: installs, opens a workspace window with placeholder (interim surface; proves install, startup, menu, cleanup) | Done (PR #1) |
-| F002 | Workspace as a main-window tab (replaces the F001 window; see requirement REQ-1 in §7) | **Now** |
-| F003 | Read-only data access: list collections, items, and tags of a chosen collection | |
-| F004 | Curated tag list (codebook) with super-tag groups, stored by Tabellify | |
-| F005 | Tag monitor: used / remaining curated tags for a collection | |
-| F006 | Table builder: rows = papers, columns = (super-)tags, preview grid | Preview grid (papers × codebook tags grouped by super-tag, ✓ cells) already exists in F005c's per-paper table (owner, 2026-11-13); F006 adds highlight text in cells |
-| F007 | Save / list / edit / delete table configurations (persistent) | |
-| F008 | CSV export (then optional XLSX) | |
-| F009 | Column customization: user-created columns, drag-and-drop reorder, column types | |
-| F010+ | AI-assisted extraction and classification | Future |
+| F002 | Workspace as a main-window tab (replaces the F001 window; see requirement REQ-1 in §7) | Done (v0.1.0) |
+| F003 | Read-only data access: list collections, items, and tags of a chosen collection | Done (v0.1.0) |
+| F004 | Curated tag list (codebook) with super-tag groups, stored by Tabellify | Done (v0.1.0) |
+| F005 | Tag monitor: used / remaining curated tags for a collection; 005b "Tabellify tags" item pane / reader section, 005c table layout, 005d design system | Done (v0.1.0) |
+| F006 | Table builder: rows = papers, columns = (super-)tags, preview grid; 006a workspace restructure, 006b tag autocomplete, 006c drag regrouping | Done (v0.1.0) for 006a–006c |
+| 006d | Highlight text in table cells (the original F006 addition) | Planned |
+| F007 | Save / list / edit / delete table configurations (persistent); 007a "View table" modal, 007b saved tables | Done (v0.1.0) |
+| F008 | CSV export (then optional XLSX) | Done (v0.1.0) for CSV; XLSX Planned |
+| F009 | Column customization: user-created columns, drag-and-drop reorder, column types | Planned |
+| F010+ | AI-assisted extraction and classification. Owner's v2 idea: the user picks Claude or ChatGPT and enters their own API key, and the AI fills highlights from the table (exact behaviour to be specified; any library write needs a spec) | Planned (v2) |
 
 **Proposed split (2026-11-13, approved by the owner).** The owner's workspace
 restructure request is planned as 006a (layout, tag script box, optional groups; ADR-0016),
 006b (library tag autocomplete, codebook-only "Create tag"), 006c (regroup by drag), F008
 (CSV export; ADR-0017), 007a ("View table" modal) and 007b (saved tables; ADR-0018). The
 original F006 addition (highlight text in cells) becomes 006d. Details:
-`docs/features/006a-workspace-restructure.md`, "Phases". The table above is updated once the
-owner approves.
+`docs/features/006a-workspace-restructure.md`, "Phases". The table above reflects this split
+(updated for v0.1.0, 2026-11-15).
 
 **Renumbering (2026-11-11).** The new F002 was inserted ahead of data access, so every later
 feature moved up by one. Accepted ADRs keep the old numbers as historical records; read them

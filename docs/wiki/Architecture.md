@@ -1,8 +1,10 @@
 # Architecture
 
-Source of truth:
-[docs/architecture.md](https://github.com/asmithlabs/tabellify/blob/main/docs/architecture.md)
-and the [Decision Log](Decision-Log). This page is an overview; follow the links for detail.
+Sources of truth:
+[docs/architecture.md](https://github.com/asmithlabs/tabellify/blob/main/docs/architecture.md),
+the [Decision Log](Decision-Log) (ADRs) and the feature specs in
+[docs/features/](https://github.com/asmithlabs/tabellify/tree/main/docs/features). This page
+is an overview of version 0.1.0; follow the links for detail.
 
 ## Platform
 
@@ -11,68 +13,85 @@ Mozilla's platform (Firefox 140 ESR for Zotero 8–10), so plugin code is privil
 JavaScript with access to Zotero internals and the file system.
 
 - Plain modern JavaScript (ES2022+, strict mode), JSDoc for types, **no bundler** (ADR-0003).
-- `src/` is the plugin root and is zipped as-is into the `.xpi`.
+- `src/` is the plugin root and is zipped into the `.xpi` (only git-tracked files with an
+  allowed extension).
 - Plugin ID `tabellify@asmithlabs.com` (permanent, ADR-0002); preference prefix
   `extensions.tabellify.`.
 - All user-visible strings go through Fluent (`src/locale/en-US/tabellify.ftl`), IDs
   prefixed `tabellify-`.
 
-## Files (version 0.1.0)
+## Files
 
 | File | Role |
 |---|---|
 | `src/manifest.json` | Identity, version, Zotero range (10.0 – 10.0.*), `update_url` |
-| `src/bootstrap.js` | Lifecycle hooks Zotero calls; registers `chrome://tabellify/`, loads `tabellify.js`, forwards hooks |
-| `src/tabellify.js` | `Tabellify` object: menu registration, workspace tab (open/select/close per main window), `quit-application-granted` observer, F001 window as fallback, FTL link per main window, cleanup |
-| `src/content/workspace.xhtml`, `workspace.css` | Placeholder workspace page (no script): loaded in an `<iframe>` inside the tab, or as the fallback window |
-| `src/locale/en-US/tabellify.ftl` | Strings: menu label, tab title (`tabellify-tab-title`), window title, placeholder text |
-| `scripts/build-xpi.mjs` | Builds `build/tabellify-<version>.xpi` with Node built-ins only |
+| `src/bootstrap.js` | Lifecycle hooks; registers `chrome://tabellify/`, loads `tabellify.js`, forwards hooks |
+| `src/tabellify.js` | `Tabellify` object: Tools menu item, workspace tab per main window (window fallback), `quit-application-granted` observer, FTL link per main window, loads and registers the reader section, cleanup |
+| `src/reader-tags.js` | F005b: "Tabellify tags" item pane section and its Notifier observer (bootstrap scope, read-only; ADR-0013) |
+| `src/content/workspace.xhtml`, `workspace.js`, `workspace.css`, `tokens.css` | The workspace document (in an `<iframe>` in the tab, or the fallback window): collection row, saved tables, script box, pills, editor, table, View table modal. `tokens.css` holds the design tokens (ADR-0015) |
+| `src/content/codebook-model.js` | Pure: codebook schema 2, validation, migration, edits, `applyScript`, regroup helpers (ADR-0016) |
+| `src/content/tag-script-model.js` | Pure: tag script parser and `tokenAt` |
+| `src/content/script-suggest-model.js` | Pure: suggestion ranking and accept edits (F006b) |
+| `src/content/tag-monitor-model.js` | Pure: subcollection walk, counting rule, per-paper summary, sorting |
+| `src/content/table-layout-model.js` | Pure: column/row order, layout schema 3, drop edges (ADR-0014, ADR-0019) |
+| `src/content/regroup-model.js` | Pure: what a tag-column drop does (F006c) |
+| `src/content/csv-model.js` | Pure: CSV rows, quoting, BOM, formula guard, file name (F008) |
+| `src/content/saved-tables-model.js` | Pure: `tables.json` shape, snapshot, live view (ADR-0018) |
+| `src/content/codebook-store.js`, `layout-store.js`, `tables-store.js` | The only writers of `codebooks.json`, `layout.json`, `tables.json` (IOUtils, injectable `fs`) |
+| `src/content/csv-export.js` | Save dialog + the one write outside Tabellify's folder (ADR-0017) |
+| `src/content/icons/` | Reader section icons |
+| `src/locale/en-US/tabellify.ftl` | All strings |
+| `scripts/build-xpi.mjs` | Builds `build/tabellify-<version>.xpi` from git-tracked `src/` files, Node built-ins only |
 | `scripts/publish-wiki.sh` | Copies `docs/wiki/` into a local wiki clone and commits (no push) |
 
 See [Plugin Lifecycle](Plugin-Lifecycle) for how these fit together at runtime.
 
 ## Layering
 
-`src/modules/` (**Planned**, does not exist yet) will hold pure logic (table model, CSV,
-codebook) with no Zotero globals, so Node can test it. A thin **data-access layer**
-(**Planned, F003**) will be the only code that reads `Zotero.*` library data and will hand
-plain objects to `modules/`.
+Pure logic lives in `src/content/*-model.js`: classic scripts that each define one global
+(`TabellifyCodebook`, `TabellifyTagMonitor`, …) and use no Zotero, DOM, `IOUtils` or
+`PathUtils`, so Node tests load them in a `vm` sandbox. They sit in `src/content/` rather than
+a `src/modules/` folder because only `src/content/` has a `chrome://` URL that the workspace
+document can load (spec F004, "Where things go"). The stores take their file functions as a
+parameter (`fs`), so they are tested with a fake file system. `workspace.js` and
+`reader-tags.js` gather plain objects from read-only `Zotero.*` calls and hand them to the
+models.
 
 ## UI surfaces
 
-| Surface | Status |
-|---|---|
-| Tools menu item **Tabellify…** (`Zotero.MenuManager`) | Shipped in F001 |
-| Workspace as a main-window tab (ADR-0009): internal `Zotero_Tabs` (`add`/`select`/`close`/`getTabInfo` only) + `<iframe>` loading `workspace.xhtml` | Implemented in F002 (unreleased) |
-| Workspace as a separate chrome window (ADR-0004, superseded) | F001; kept only as automatic fallback if `Zotero_Tabs` is missing or `add` fails (F002 AC9) |
-| Tag monitor surface | **Planned (F005)**, not decided |
+| Surface | API basis | Feature |
+|---|---|---|
+| Tools menu item **Tabellify…** | `Zotero.MenuManager` | F001 |
+| Workspace tab in the main window | internal `Zotero_Tabs` (`add`/`select`/`close`/`getTabInfo` only) + `<iframe>` (ADR-0009) | F002 |
+| Workspace window (fallback only, if `Zotero_Tabs` is missing or `add` fails) | `openDialog` (ADR-0004, superseded) | F001 |
+| "Tabellify tags" item pane section (library and reader context pane) | `Zotero.ItemPaneManager.registerSection` (ADR-0013) | F005b |
+| View table modal (inside the workspace document) | HTML `<dialog>` + `showModal()` | F007a |
+| Save dialog for CSV | Zotero's `FilePicker` module (ADR-0017) | F008 |
 
-### Workspace tab in brief
+**Look (ADR-0015).** The workspace document uses the Tabellify palette through `tokens.css`,
+light and dark. The item pane section stays Zotero-native.
 
-- **Open:** `openWorkspace(win)` feature-detects `win.Zotero_Tabs`, selects the window's
-  existing Tabellify tab if `getTabInfo(id).type === "tabellify"`, otherwise calls `add` with
-  type `"tabellify"` (no hyphen), `data: {}`, `select: true` and an `onClose` callback, then
-  appends an `<iframe>` with `chrome://tabellify/content/workspace.xhtml` to the returned
-  container. Tab ids are kept in a `Map` per main window.
-- **Never persisted:** Zotero 8+ fails to restore any saved tab after one of an unknown type,
-  so the tab is closed at `quit-application-granted` (before Zotero saves its session), in
-  `onMainWindowUnload`, and in `shutdown()` before `chromeHandle.destruct()`. It is not
-  restored after a restart. See [Plugin Lifecycle](Plugin-Lifecycle).
-- **Risk:** `Zotero_Tabs` is undocumented; the internal-API allow-list is enforced by
-  `tests/static/tabs-api.test.mjs`. A crash with the tab open after Zotero's periodic session
-  save can still leave a Tabellify entry in `session.json` (accepted residual risk, F002 Q3).
+**Tab risk (ADR-0009).** Zotero 8+ stops restoring saved tabs after one of an unknown type, so
+the Tabellify tab is closed at `quit-application-granted`, in `onMainWindowUnload` and in
+`shutdown()`. A crash with the tab open can still leave it in Zotero's session file; the
+owner accepted this risk for the first release (ADR-0009 Notes, 2026-11-14).
 
 ## Data
 
-- **Reads:** no library data in F001/F002. F002 reads only Zotero's in-memory tab list for
-  its own tab (`getTabInfo`). Collections, items, tags and annotations, read-only, from
-  **F003 (Planned)**.
-- **Tabellify-owned data** (codebooks, table configurations): storage format is an open
-  decision for **F004 / F007 (Planned)**. Never stored in item fields.
-- **Exports:** **Planned (F008)**, written only to a user-chosen location.
+- **Reads (read-only):** My Library collections; the chosen collection's and its
+  descendants' regular items, file attachments, annotations and tags; `Zotero.Tags.getAll`
+  for suggestions; Notifier events. Details per call: [Zotero APIs Used](Zotero-APIs-Used).
+- **Tabellify-owned files** in `<Zotero data directory>/tabellify/` (ADR-0012): `codebooks.json`
+  (schema 2, ADR-0016), `layout.json` (schema 3, ADR-0019), `tables.json` (schema 1,
+  ADR-0018), each with `.bak`; atomic writes; a `revision` check against a second open tab;
+  size and entry limits (ADR-0012 amendment 2026-11-14). Never in the Zotero database.
+- **Pref:** `extensions.tabellify.countItemTags` (boolean), written only by the workspace.
+- **Exports:** CSV written only to the path the save dialog returns (ADR-0017).
+- **Write guard:** `tests/static/write-guard.test.mjs` forbids library-write APIs and allows
+  `IOUtils` writes only in the four files named above.
 
 ## Note on feature numbers
 
-This wiki and `docs/architecture.md` use the roadmap as renumbered when Feature 002 was
-inserted (F002 workspace tab, F003 data access, … F010+ AI). Accepted ADRs written before
-that keep the old numbers; see the mapping in the [Decision Log](Decision-Log).
+The roadmap was renumbered when Feature 002 was inserted, and Feature 006 was split into
+006a–006d (`docs/product-requirements.md` §5). Accepted ADRs written earlier keep the old
+numbers; see the mapping in the [Decision Log](Decision-Log).

@@ -68,3 +68,7 @@ jobs:
 
       - name: List XPI contents (for the log)
         run: unzip -l build/*.xpi
+
+      # ADR-0020: print the XPI's SHA-256 so a release build can be compared with CI.
+      - name: Print XPI SHA-256 (for release comparison)
+        run: sha256sum build/*.xpi

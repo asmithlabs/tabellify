@@ -1,6 +1,6 @@
 # Feature 006a: Workspace restructure, tag script box and optional groups
 
-- **Status:** Approved (owner, 2026-11-13, all recommendations Q1–Q14)
+- **Status:** Implemented (v0.1.0). Approved (owner, 2026-11-13, all recommendations Q1–Q14)
 - **Branch:** `feat/006a-workspace-restructure` (start **after F005d merges**; it rewrites
   the F005d monitor styles)
 - **Related ADRs:** **0016 (Proposed: codebook schema 2, optional groups; this spec depends
