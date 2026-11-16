@@ -1,6 +1,8 @@
-# Release checklist (v0.1.0)
+# Release checklist (v0.2.0)
 
-This is the step-by-step procedure for publishing Tabellify **v0.1.0**. It implements
+This is the step-by-step procedure for publishing Tabellify **v0.2.0**, the first public
+release (spec F003b: the tag `v0.1.0` exists but 0.1.0 was never published; its draft GitHub
+release is deleted, the tag stays). It implements
 ADR-0020 (**Proposed**; follow this checklist only after the owner accepts ADR-0020) and closes
 pre-release security finding SEC-001. Later releases use the same steps with the new version
 number (see "Later releases" at the end).
@@ -15,7 +17,7 @@ to an **immutable** GitHub release, so the file and its tag can never be swapped
 **Terms used below**
 - **SHA-256 hash**: a 64-character fingerprint of a file. Any change to the file gives a
   completely different hash.
-- **Annotated tag**: a named, permanent label on one commit (here `v0.1.0`), with a message
+- **Annotated tag**: a named, permanent label on one commit (here `v0.2.0`), with a message
   and the tagger's name.
 - **Immutable release**: a GitHub release whose files and tag cannot be changed or deleted
   once published.
@@ -40,8 +42,8 @@ Write the values you collect here as you go (in your own notes, not in a commit)
 - [ ] **0.1 [OWNER]** ADR-0020 is marked Accepted by the owner.
 - [ ] **0.2** The full pre-release security audit has no open critical or high finding other
   than SEC-001 (which this checklist closes). The owner's decision on SEC-003 is recorded.
-- [ ] **0.3** Version numbers agree: `src/manifest.json` `"version"` is `0.1.0`,
-  `package.json` `"version"` is `0.1.0`, and `CHANGELOG.md` has a `0.1.0` entry.
+- [ ] **0.3** Version numbers agree: `src/manifest.json` `"version"` is `0.2.0`,
+  `package.json` `"version"` is `0.2.0`, and `CHANGELOG.md` has a `0.2.0` entry.
   `src/manifest.json` has `"strict_max_version": "10.0.*"` and
   `"update_url": "https://raw.githubusercontent.com/asmithlabs/tabellify/main/updates.json"`.
 - [ ] **0.4 (recommended)** CI prints the XPI's SHA-256. This is a one-line developer change
@@ -76,7 +78,7 @@ These are done in a web browser, signed in to GitHub as the repository admin.
    - **Bypass list:** leave empty.
    - **Target tags:** **Add a target** → include by pattern → type `v*`.
    - **Rules:** tick **Restrict updates**, **Restrict deletions**, **Block force pushes**.
-     Leave **Restrict creations** unticked (with it on, nobody could create `v0.1.0`,
+     Leave **Restrict creations** unticked (with it on, nobody could create `v0.2.0`,
      because the bypass list is empty; see ADR-0020 alternatives).
    - Click **Create**.
    *What you should see:* `protect-release-tags` appears in the Rulesets list as Active.
@@ -114,27 +116,27 @@ All commands run in the Terminal window, starting in the tabellify project folde
 
 2. **Create the annotated tag (local only) [OWNER APPROVAL].**
    ```sh
-   git tag -a v0.1.0 -m "Tabellify 0.1.0"
-   git show --no-patch v0.1.0
+   git tag -a v0.2.0 -m "Tabellify 0.2.0"
+   git show --no-patch v0.2.0
    ```
-   *What you should see:* `tag v0.1.0`, your name as Tagger, the message, then the same
+   *What you should see:* `tag v0.2.0`, your name as Tagger, the message, then the same
    commit as in step B1. Nothing is on GitHub yet; a local tag can still be deleted with
-   `git tag -d v0.1.0`.
+   `git tag -d v0.2.0`.
 
 3. **Build from a clean copy of the tag.** A clean copy contains only committed files, so a
    stray file in your working folder cannot change the result.
    ```sh
    RELDIR="$(mktemp -d)/tabellify"
-   git clone --quiet --branch v0.1.0 . "$RELDIR"
+   git clone --quiet --branch v0.2.0 . "$RELDIR"
    cd "$RELDIR"
    node --version
    npm test
    npm run build
-   shasum -a 256 build/tabellify-0.1.0.xpi
+   shasum -a 256 build/tabellify-0.2.0.xpi
    ```
    *What you should see:* `node --version` prints `v22.` something (CI uses Node 22; a
    different major version may compress differently and give a different hash). `npm test`
-   reports `fail 0` in its summary at the end. The build prints `Built build/tabellify-0.1.0.xpi`. The last line is
+   reports `fail 0` in its summary at the end. The build prints `Built build/tabellify-0.2.0.xpi`. The last line is
    a 64-character hash followed by the file name: that hash is `H_LOCAL`. Note `NODE` too.
    Keep this Terminal window open: `$RELDIR` is used again in Part C.
 
@@ -148,7 +150,7 @@ All commands run in the Terminal window, starting in the tabellify project folde
    ```sh
    cd -
    npm run build
-   shasum -a 256 build/tabellify-0.1.0.xpi
+   shasum -a 256 build/tabellify-0.2.0.xpi
    ```
    *What you should see:* the same hash as `H_LOCAL`. (This is weaker than the CI comparison:
    both builds ran on your Mac.)
@@ -159,10 +161,10 @@ All commands run in the Terminal window, starting in the tabellify project folde
 
 6. **Push the tag [OWNER APPROVAL].**
    ```sh
-   git push origin v0.1.0
+   git push origin v0.2.0
    ```
-   *What you should see:* `* [new tag]         v0.1.0 -> v0.1.0`. From now on the tag ruleset
-   (Part A step 2) stops anyone from moving or deleting `v0.1.0`.
+   *What you should see:* `* [new tag]         v0.2.0 -> v0.2.0`. From now on the tag ruleset
+   (Part A step 2) stops anyone from moving or deleting `v0.2.0`.
 
 ## Part C: GitHub release (immutable)
 
@@ -170,18 +172,18 @@ All commands run in the Terminal window, starting in the tabellify project folde
    from step B3, run (replace `H_LOCAL` with the hash):
    ```sh
    cd "$RELDIR"
-   gh release create v0.1.0 build/tabellify-0.1.0.xpi --draft --verify-tag --title "Tabellify 0.1.0" --notes "First public release. Requires Zotero 10.0. Install: download tabellify-0.1.0.xpi, then in Zotero choose Tools → Plugins and drag the file onto the Plugins window. SHA-256 of tabellify-0.1.0.xpi: H_LOCAL. See CHANGELOG.md for details."
+   gh release create v0.2.0 build/tabellify-0.2.0.xpi --draft --verify-tag --title "Tabellify 0.2.0" --notes "First public release. Requires Zotero 10.0. Install: download tabellify-0.2.0.xpi, then in Zotero choose Tools → Plugins and drag the file onto the Plugins window. SHA-256 of tabellify-0.2.0.xpi: H_LOCAL. See CHANGELOG.md for details."
    ```
    `--draft` keeps the release private until you publish it; `--verify-tag` makes `gh` stop
-   if `v0.1.0` is not on GitHub (instead of creating a new tag from `main`).
+   if `v0.2.0` is not on GitHub (instead of creating a new tag from `main`).
    ([gh release create](https://cli.github.com/manual/gh_release_create))
    *What you should see:* a URL to the draft release.
    *Browser alternative:* repository → **Releases** → **Draft a new release** → **Choose a
-   tag** → `v0.1.0` → title and notes as above → attach `tabellify-0.1.0.xpi` from the
+   tag** → `v0.2.0` → title and notes as above → attach `tabellify-0.2.0.xpi` from the
    `$RELDIR/build` folder → **Save draft**.
 
 2. **Check the draft [OWNER].** In the browser, open the draft from step C1.
-   *What you should see:* tag `v0.1.0`, exactly one attached file `tabellify-0.1.0.xpi`, the
+   *What you should see:* tag `v0.2.0`, exactly one attached file `tabellify-0.2.0.xpi`, the
    hash in the notes equals `H_LOCAL`. Immutable releases lock the files at publish time, so
    anything wrong must be fixed **now** (edit the draft, or delete the draft and start C1
    again).
@@ -192,11 +194,11 @@ All commands run in the Terminal window, starting in the tabellify project folde
 
 4. **Verify the published file (read-only).** In the Terminal window, run:
    ```sh
-   gh release verify v0.1.0
-   gh release verify-asset v0.1.0 "$RELDIR/build/tabellify-0.1.0.xpi"
+   gh release verify v0.2.0
+   gh release verify-asset v0.2.0 "$RELDIR/build/tabellify-0.2.0.xpi"
    DL="$(mktemp -d)"
-   curl -fsSL -o "$DL/tabellify-0.1.0.xpi" https://github.com/asmithlabs/tabellify/releases/download/v0.1.0/tabellify-0.1.0.xpi
-   shasum -a 256 "$DL/tabellify-0.1.0.xpi"
+   curl -fsSL -o "$DL/tabellify-0.2.0.xpi" https://github.com/asmithlabs/tabellify/releases/download/v0.2.0/tabellify-0.2.0.xpi
+   shasum -a 256 "$DL/tabellify-0.2.0.xpi"
    echo "$DL"
    ```
    *What you should see:* both `gh release verify` commands report success; the downloaded
@@ -207,7 +209,7 @@ All commands run in the Terminal window, starting in the tabellify project folde
 ## Part D: `updates.json` via pull request
 
 1. **Write `updates.json`** (developer or orchestrator, on a new branch from `main`, e.g.
-   `release/updates-json-v0.1.0`). The file sits at the repository root. Replace `H_LOCAL`
+   `release/updates-json-v0.2.0`). The file sits at the repository root. Replace `H_LOCAL`
    with the hash (64 lower-case hex characters, no spaces):
    ```json
    {
@@ -215,8 +217,8 @@ All commands run in the Terminal window, starting in the tabellify project folde
        "tabellify@asmithlabs.com": {
          "updates": [
            {
-             "version": "0.1.0",
-             "update_link": "https://github.com/asmithlabs/tabellify/releases/download/v0.1.0/tabellify-0.1.0.xpi",
+             "version": "0.2.0",
+             "update_link": "https://github.com/asmithlabs/tabellify/releases/download/v0.2.0/tabellify-0.2.0.xpi",
              "update_hash": "sha256:H_LOCAL",
              "applications": {
                "zotero": {
@@ -265,13 +267,13 @@ Use the **dev profile only**, never your real Zotero profile.
 
 2. **Install the released file.** In the dev Zotero window choose **Tools → Plugins**. In
    the Plugins window click the gear button (tooltip "Tools for all plugins") → **Install
-   Plugin From File…** and pick `tabellify-0.1.0.xpi` in the folder printed in step C4 (the
+   Plugin From File…** and pick `tabellify-0.2.0.xpi` in the folder printed in step C4 (the
    file downloaded from GitHub, **not** `build/`).
-   *What you should see:* Tabellify 0.1.0 is listed and enabled; no error dialog.
+   *What you should see:* Tabellify 0.2.0 is listed and enabled; no error dialog.
 
 3. **Run the update check.** In the same Plugins window click the gear button → **Check for
    Updates**.
-   *What you should see:* the message **No updates found** (the manifest lists only 0.1.0,
+   *What you should see:* the message **No updates found** (the manifest lists only 0.2.0,
    which is installed). A different message or an error means the manifest could not be read
    or parsed: tell the orchestrator.
 
@@ -285,14 +287,14 @@ Use the **dev profile only**, never your real Zotero profile.
 
 - [ ] Orchestrator records SEC-001 as fixed in `build/security/` and summarizes the fix in
   `CHANGELOG.md` (ADR-0011).
-- [ ] The full end-to-end update test (an installed 0.1.0 actually updating, and a wrong hash
+- [ ] The full end-to-end update test (an installed 0.2.0 actually updating, and a wrong hash
   being refused) happens with the first later release; see below.
 
-## Later releases (0.1.1 and up)
+## Later releases (0.2.1 and up)
 
 Same Parts B–E with the new version, plus:
 - **Add** a new object to the `updates` array; keep the old entries (each with its own hash).
-- Before merging the new `updates.json`, keep Tabellify 0.1.0 installed in the dev profile.
+- Before merging the new `updates.json`, keep Tabellify 0.2.0 installed in the dev profile.
   After the merge, **Check for Updates** must offer the new version and install it; the
   Plugins window then shows the new version number.
 - Raising Zotero compatibility without a new release: change only
@@ -305,7 +307,7 @@ Same Parts B–E with the new version, plus:
 
 - **Wrong file published in an immutable release:** it cannot be replaced or deleted from
   the release. Do **not** merge an `updates.json` pointing to it. Fix the problem and release
-  a new version (for example 0.1.1). Deleting an immutable release frees nothing: its tag name
+  a new version (for example 0.2.1). Deleting an immutable release frees nothing: its tag name
   can never be reused.
 - **Wrong hash or version in `updates.json` on `main`:** Zotero refuses to install the update
   (the download fails safely). Fix `updates.json` through a new PR.
