@@ -1,5 +1,9 @@
 # Troubleshooting
 
+This page helps when something in Tabellify does not work as expected: installing, the
+table and counts, the codebook, saved tables and export. It also shows how to collect Zotero's
+Debug Output and report a bug.
+
 ## Installing and opening
 
 ### "Could not be installed"

@@ -21,14 +21,17 @@ pills update and the table gets the new columns.
 
 ### How to write a line
 
-| You type | Result |
-|---|---|
-| `age` | One tag, `age`, without a group (it appears under **Ungrouped**) |
-| `age, sex, region` | Three tags without a group |
-| `Exposure(Heat index, Temperature)` | A group **Exposure** with two tags |
-| `Exposure(Heat index), Outcome(Hospitalization), age` | Two groups and one ungrouped tag, in one line |
-| `Planned()` | An empty group **Planned** (pill "Planned · 0", no column until it has tags) |
-| `"Smith, J.", Methods("pre/post (adjusted)")` | Names that contain a comma or a bracket, written in double quotes |
+Examples of what you can type:
+
+- `age`: one tag, `age`, without a group (it appears under **Ungrouped**).
+- `age, sex, region`: three tags without a group.
+- `Exposure(Heat index, Temperature)`: a group **Exposure** with two tags.
+- `Exposure(Heat index), Outcome(Hospitalization), age`: two groups and one ungrouped tag,
+  in one line.
+- `Later()`: an empty group **Later** (pill "Later · 0"; it gets no column until it has
+  tags).
+- `"Smith, J.", Methods("pre/post (adjusted)")`: names that contain a comma or a bracket,
+  written in double quotes.
 
 Rules:
 
@@ -58,15 +61,15 @@ nothing is saved.
 Nothing is saved, the text stays in the box, the problem is highlighted in the box, and a
 message appears under it. The message goes away as soon as you edit the text.
 
-| Message | Example that causes it |
-|---|---|
-| Check the brackets: every "(" needs a matching ")". | `Exposure(Heat index` |
-| A tag name is missing. Remove the extra comma or type a name. | `a,,b` |
-| Type a group name before "(". | `(a, b)` |
-| A group cannot contain another group. | `A(B(c))` |
-| Separate the entries with a comma. | `A(b) c` |
-| A quotation mark (") is not closed. | `"Smith, J.` |
-| The same tag appears twice in this entry. | `x, x` |
+The messages, each with an example line that causes it:
+
+- "Check the brackets: every "(" needs a matching ")"." For example `Exposure(Heat index`.
+- "A tag name is missing. Remove the extra comma or type a name." For example `a,,b`.
+- "Type a group name before "("." For example `(a, b)`.
+- "A group cannot contain another group." For example `A(B(c))`.
+- "Separate the entries with a comma." For example `A(b) c`.
+- "A quotation mark (") is not closed." For example `"Smith, J.`.
+- "The same tag appears twice in this entry." For example `x, x`.
 
 ## Suggestions while you type
 
@@ -87,12 +90,11 @@ names that start with your text come first. At most 50 are shown.
 
 Keys:
 
-| Key | What it does |
-|---|---|
-| ↓ / ↑ | Move through the list |
-| Tab | Accept the highlighted suggestion (or the first one) |
-| Enter | Accept the highlighted suggestion; with nothing highlighted, save the whole line |
-| Esc | Close the list |
+- **↓ / ↑**: move through the list.
+- **Tab**: accept the highlighted suggestion (or the first one).
+- **Enter**: accept the highlighted suggestion; with nothing highlighted, save the whole
+  line.
+- **Esc**: close the list.
 
 You can also click a suggestion. The list of library tags is refreshed when you click
 **Refresh**, and after you change tags in Zotero (the next time you click in the box).
@@ -140,6 +142,7 @@ You can also change groups by dragging columns in the table; see
 
 ## Planned
 
-- Several codebooks, and importing or exporting a codebook: **Planned** (no feature number
-  yet; deferred in the Feature 004 spec).
-- Group libraries: **Planned** (no feature number yet).
+These are not available yet:
+
+- Several codebooks, and importing or exporting a codebook.
+- Group libraries.
