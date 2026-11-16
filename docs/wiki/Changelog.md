@@ -4,7 +4,7 @@ All notable changes to Tabellify, newest first. The repository's
 [CHANGELOG.md](https://github.com/asmithlabs/tabellify/blob/main/CHANGELOG.md) is the
 authoritative copy; this page follows it.
 
-## 0.1.0 (not released yet)
+## 0.1.0 (2026-11-16)
 
 First public release. Works with Zotero 10.0.x.
 

@@ -9,7 +9,7 @@ are never published.
 
 ## [Unreleased]
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-11-16
 
 First public release. Works with Zotero 10.0.x (`strict_min_version` 10.0,
 `strict_max_version` 10.0.*).
