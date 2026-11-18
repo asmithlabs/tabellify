@@ -11,7 +11,7 @@ symmetry, CLAUDE.md rule 9). Code: [`src/bootstrap.js`](https://github.com/asmit
 install ─▶ startup ─▶ onMainWindowLoad ─▶ … ─▶ onMainWindowUnload ─▶ shutdown ─▶ uninstall
 ```
 
-## What Tabellify does in each hook (0.1.0)
+## What Tabellify does in each hook (0.2.0)
 
 | Hook | Tabellify |
 |---|---|
@@ -27,8 +27,9 @@ install ─▶ startup ─▶ onMainWindowLoad ─▶ … ─▶ onMainWindowUnl
 The workspace (`workspace.js`) lives exactly as long as its document. On load it waits for
 `Zotero.initializationPromise`, then loads the codebook, the layout and the saved tables,
 reads the collections and the library tag names, and registers **one** Notifier observer
-(`item-tag`, `collection-item`, `item`, `collection`) that schedules a recompute 500 ms after
-the last event. On `unload` it unregisters the observer, clears its timers and removes its
+(`item-tag`, `collection-item`, `item`, `collection`, `group`) that schedules a recompute
+500 ms after the last event; a `group` or `collection` event also rebuilds the library and
+collection list (F003b), through the same timer. On `unload` it unregisters the observer, clears its timers and removes its
 DOM listeners. `init()` checks after every `await` whether the document has been unloaded
 and refuses to register the observer late (pre-release fix SEC-012), so closing the tab
 during start-up leaves nothing behind.
@@ -68,7 +69,7 @@ Reason codes (logged, never branched on): `APP_STARTUP 1`, `APP_SHUTDOWN 2`,
 ## Logging
 
 Every log line goes to Zotero's Debug Output with the prefix `Tabellify: ` (for example
-`Tabellify: startup (version 0.1.0, reason 1)`, `Tabellify: quit observer added`,
+`Tabellify: startup (version 0.2.0, reason 1)`, `Tabellify: quit observer added`,
 `Tabellify: workspace: tag monitor: notifier observer unregistered (…)`). Workspace lines carry
 counts, IDs, file names and error names only: never titles, tag, group or collection names,
 file paths or error messages. `tests/static/no-private-logs.test.mjs` enforces the paths and

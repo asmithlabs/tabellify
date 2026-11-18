@@ -4,7 +4,7 @@ Sources of truth:
 [docs/architecture.md](https://github.com/asmithlabs/tabellify/blob/main/docs/architecture.md),
 the [Decision Log](Decision-Log) (ADRs) and the feature specs in
 [docs/features/](https://github.com/asmithlabs/tabellify/tree/main/docs/features). This page
-is an overview of version 0.1.0; follow the links for detail.
+is an overview of version 0.2.0; follow the links for detail.
 
 ## Platform
 
@@ -78,9 +78,15 @@ owner accepted this risk for the first release (ADR-0009 Notes, 2026-11-14).
 
 ## Data
 
-- **Reads (read-only):** My Library collections; the chosen collection's and its
+- **Reads (read-only):** the library list (My Library plus `Zotero.Groups.getAll()`, never
+  feeds) and every listed library's collections; the chosen collection's and its
   descendants' regular items, file attachments, annotations and tags; `Zotero.Tags.getAll`
-  for suggestions; Notifier events. Details per call: [Zotero APIs Used](Zotero-APIs-Used).
+  of the chosen collection's library for suggestions; Notifier events. Group libraries are
+  read exactly like My Library (spec
+  [F003b](https://github.com/asmithlabs/tabellify/blob/main/docs/features/003b-group-libraries.md)).
+  `layout.json` and `tables.json` already key collections as `"<libraryID>/<collectionKey>"`,
+  so groups needed no schema change; manual orders of libraries that are not currently
+  listed are kept, not pruned. Library IDs are local to one Zotero installation. Details per call: [Zotero APIs Used](Zotero-APIs-Used).
 - **Tabellify-owned files** in `<Zotero data directory>/tabellify/` (ADR-0012): `codebooks.json`
   (schema 2, ADR-0016), `layout.json` (schema 3, ADR-0019), `tables.json` (schema 1,
   ADR-0018), each with `.bak`; atomic writes; a `revision` check against a second open tab;
