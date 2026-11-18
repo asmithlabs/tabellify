@@ -544,6 +544,38 @@ test("003b AC11: pruning keeps orders of libraries that are not listed", () => {
   assert.equal(orders.size, 4);
 });
 
+// SEC-018 (Feature 003b AC11): a collection in the Zotero trash keeps its manual order.
+test("003b AC11 / SEC-018: collectionKeySet; a trashed collection's order is kept, a gone one is pruned", () => {
+  // What getByLibrary(libraryID, true) returns (visible) and with includeTrashed = true.
+  const visible = [{ libraryID: 5, key: "BBBB2222" }];
+  const withTrashed = [
+    { libraryID: 5, key: "BBBB2222" },
+    { libraryID: 5, key: "TRSH0000", deleted: true },
+    { libraryID: 5, key: "" }, // skipped: no key
+    { libraryID: "5", key: "BADLIB00" }, // skipped: library ID is not a number
+    null,
+  ];
+  assert.deepEqual([...L.collectionKeySet(visible)], ["5/BBBB2222"]);
+  const retained = L.collectionKeySet(withTrashed);
+  assert.deepEqual([...retained], ["5/BBBB2222", "5/TRSH0000"]);
+  assert.deepEqual([...L.collectionKeySet(null)], []);
+
+  const orders = new Map([
+    ["5/BBBB2222", ["K1"]],
+    ["5/TRSH0000", ["K2"]], // in the trash: in the retained set, not in the visible one
+    ["5/GONE0000", ["K3"]], // trash emptied: in neither set, library listed → pruned
+  ]);
+  const listed = new Set([5]);
+  assert.deepEqual(plain(L.layoutData(null, orders, retained, listed).manualOrders), {
+    "5/BBBB2222": ["K1"],
+    "5/TRSH0000": ["K2"],
+  });
+  // The visible set alone (the old behaviour) would have pruned the trashed order.
+  assert.deepEqual(plain(L.layoutData(null, orders, L.collectionKeySet(visible), listed).manualOrders), {
+    "5/BBBB2222": ["K1"],
+  });
+});
+
 // SEC-015: revision must stay below Number.MAX_SAFE_INTEGER, so the store's `+ 1` is exact.
 test("SEC-015: layout revision at or above MAX_SAFE_INTEGER is rejected", () => {
   const MAX = Number.MAX_SAFE_INTEGER;

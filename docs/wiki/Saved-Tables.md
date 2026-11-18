@@ -32,7 +32,8 @@ In **View table**, type a **Name** (required) and, if you like, a **Description*
 **Save table**.
 
 **What you should see:** "Table saved." The heading changes to **Saved table**, and a line
-under it reads "Snapshot from *date* · *collection*". The table appears in the **Saved
+under it reads "Snapshot from *date* · *library* · *collection*", where *library* is
+**My Library** or the name of the group library. The table appears in the **Saved
 tables** list.
 
 Saving from **View table** always creates a **new** saved table; it never overwrites an older
@@ -54,9 +55,13 @@ heading shows how many tables are listed.
 
 - **Show:** **All collections** (default) or **This collection** (only tables of the chosen
   collection).
-- Each entry shows the Name, then the collection, the number of papers and columns, and when
-  it was saved ("Saved 14 Nov 2026, 15:40"). If the collection no longer exists, its old
-  name is shown with "(collection not found)".
+- Each entry shows the Name, then the library (**My Library** or the group library's name),
+  the collection, the number of papers and columns, and when it was saved, for example
+  "Lab Group · Shared papers · 12 papers · 5 columns · Saved 14 Nov 2026, 15:40". If the
+  collection no longer exists, its old name is shown with "(collection not found)". If its
+  group library was removed from your Zotero, the library name is left out as well.
+- Saved tables of every library are kept together in one list. **All collections** shows
+  them all, whichever library the chosen collection is in.
 - **Open** shows the table in the **Saved table** panel.
 - **Export CSV** exports the saved snapshot; see [Export](Export).
 - **Delete** asks "Delete this saved table? This cannot be undone." with **Delete** and
@@ -72,7 +77,7 @@ table** panel:
 
 - **Show live** rebuilds the table from your library **now**, with the saved settings and the
   current codebook. While it builds you see "Building the live table…". Then the line under
-  the heading reads "Live: built from your library now · *collection*".
+  the heading reads "Live: built from your library now · *library* · *collection*".
 - **Show snapshot** goes back to the saved snapshot.
 - **Update snapshot** (only in the live view) replaces the saved snapshot with the live
   table. You see "Snapshot updated."
@@ -88,8 +93,9 @@ Notes on the live view:
   codebook are named in a note: "Saved columns that are no longer in the codebook: …".
 - It is built once per click; to follow later changes, click **Show snapshot**, then **Show
   live** again.
-- **Show live** is not available when "This table's collection is no longer in My Library,
-  so only the saved snapshot can be shown." or "The codebook could not be loaded, so the live
+- **Show live** is not available when "This table's collection is no longer available (it
+  was deleted, is in the trash, or its group library was removed), so only the saved
+  snapshot can be shown." or "The codebook could not be loaded, so the live
   table cannot be built." If reading fails you see "The live table could not be built. The
   saved snapshot is still shown."
 

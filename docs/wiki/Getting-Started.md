@@ -8,8 +8,8 @@ This page shows how to install Tabellify, open its workspace and build your firs
   **Zotero → About Zotero** in the menu bar. Tabellify cannot be installed on Zotero 9 or
   earlier, or on Zotero 10.1 and later, until it has been tested there.
 - The Tabellify `.xpi` file. An `.xpi` is the file format Zotero uses for plugins.
-- A collection in **My Library** with a few papers that have PDFs. (Group libraries are not
-  supported yet.)
+- A collection with a few papers that have PDFs, in **My Library** or in one of your
+  **group libraries** (libraries shared with a group on zotero.org).
 
 ## 1. Download Tabellify
 
@@ -26,7 +26,7 @@ folder).
 4. Pick the Tabellify `.xpi` file you downloaded and confirm.
 
 **What you should see:** Tabellify appears in the Plugins window, enabled, with its version
-number (0.1.0). No error message appears.
+number (for example 0.2.0). No error message appears.
 
 If Zotero says the plugin "could not be installed. It may be incompatible with this version
 of Zotero.", see [Troubleshooting](Troubleshooting#could-not-be-installed).

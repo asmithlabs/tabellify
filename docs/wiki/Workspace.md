@@ -20,7 +20,8 @@ when Zotero is maximized or in full screen.
 ## What is on the page, top to bottom
 
 1. **Heading: Tabellify Codebook.**
-2. **Collection row:** the **Collection** list ("Choose a collection"), the **Refresh**
+2. **Collection row:** the **Collection** list ("Choose a collection"; collections of My
+   Library and of your group libraries, see below), the **Refresh**
    button, the **Also count tags on the paper itself** checkbox, and, once a collection is
    chosen and the codebook has tags, one summary line such as **Tags used 2/4 · Papers 3**.
    When every codebook tag is used somewhere in the collection, it adds **All codebook tags
@@ -43,9 +44,24 @@ when Zotero is maximized or in full screen.
 
 ## Which papers are shown
 
-- Only collections in **My Library** are listed. Group libraries are not supported yet.
+- The **Collection** list shows **My Library** and every **group library** you see in
+  Zotero's left pane under **Group Libraries**. (A group library is a library shared by the
+  members of a group on zotero.org; Zotero copies it to your computer when it syncs.)
+- Each library is a heading in the list, with its collections and subcollections indented
+  under it: first **My Library**, then the group libraries in alphabetical order. You cannot
+  choose a heading itself, only a collection under it.
+- A group library without collections shows one greyed line "(no collections)".
+- Feeds (RSS) are never listed. Read-only group libraries are listed and work the same way,
+  because Tabellify only reads.
 - Choosing a collection shows the papers in it **and in all its subcollections**. A paper
   that sits in several of them is shown once.
+- A collection shows only papers of its **own library**. If the same paper is in My Library
+  and in a group library, these are two separate copies in Zotero, each with its own tags
+  and highlights.
+- In a group library, highlights made by **any member** of the group count, just as Zotero
+  shows them.
+- Papers that are in no collection cannot be shown; Tabellify always works on a collection.
+- If no library has a collection yet, you see "Your libraries have no collections yet."
 - Papers in the trash, and highlights in the trash, are left out.
 - If the collection has no papers you see "No papers in this collection."
 
@@ -53,8 +69,14 @@ when Zotero is maximized or in full screen.
 
 The table and counts update by themselves shortly after you add or remove a tag, move a paper
 into or out of the collection, or move a paper to the trash. Click **Refresh** to recount
-straight away (for example after a sync). Refresh also reloads the tag suggestions for the
-**Tags and groups** box.
+straight away (for example after a sync). Refresh also reloads the **Collection** list and
+the tag suggestions for the **Tags and groups** box.
+
+The **Collection** list also updates by itself when a group library is added, renamed or
+removed, or a collection changes, while the Tabellify tab is open (for example after Zotero
+syncs). If the collection you had chosen is gone (deleted, or its group library was
+removed), the table is cleared and you see "The chosen collection is no longer available.
+Choose another collection."
 
 ## Light and dark mode
 

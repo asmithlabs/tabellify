@@ -760,6 +760,26 @@ var TabellifyTableLayout = {
   },
 
   /**
+   * The `"<libraryID>/<collectionKey>"` keys of some collections, as a Set (the format of
+   * the manual-order keys). Entries without a key or a numeric library ID are skipped.
+   *
+   * SEC-018 (Feature 003b, AC11): the workspace builds this set from the collections
+   * INCLUDING those in the Zotero trash and passes it to layoutData as the known keys, so
+   * a collection moved to the trash keeps its manual order (restoring it brings the order
+   * back). Only a collection that is really gone (trash emptied) is pruned.
+   * @param {Iterable<{ libraryID?: unknown, key?: unknown }>} collections
+   * @returns {Set<string>}
+   */
+  collectionKeySet(collections) {
+    const out = new Set();
+    for (const c of collections ?? []) {
+      if (!c || typeof c.key !== "string" || c.key === "" || !Number.isInteger(c.libraryID)) continue;
+      out.add(`${c.libraryID}/${c.key}`);
+    }
+    return out;
+  },
+
+  /**
    * The numeric library ID before the "/" of a `"<libraryID>/<collectionKey>"` key, or null
    * when the key has no such prefix (Feature 003b).
    * @param {string} collectionKey
@@ -802,7 +822,7 @@ var TabellifyTableLayout = {
   /**
    * The `perPaperTable` object to save. Collections that no longer exist are pruned here:
    * when `knownCollectionKeys` is given (a fresh snapshot of every listed library's
-   * collections), orders of other collections are left out, except those of libraries not
+   * collections, including those in the trash: SEC-018), orders of other collections are left out, except those of libraries not
    * in `listedLibraryIDs` (when given; Feature 003b). Empty orders are left out too. Entries of the
    * column layout are only cleaned, not pruned: groups and tags the codebook no longer has
    * are ignored when shown (topItems) and drop out with the next move that rewrites

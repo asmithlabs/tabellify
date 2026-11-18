@@ -6,8 +6,9 @@
 
 ## What exists today
 
-- **Version number** lives in `src/manifest.json` (`"version"`, currently `0.1.0`).
-  `package.json` also carries `0.1.0`.
+- **Version number** lives in `src/manifest.json` (`"version"`, currently `0.2.0`).
+  `package.json` also carries `0.2.0` (a static test checks that they agree). 0.2.0 is the
+  first public release; 0.1.0 was tagged but never published.
 - **Build:** `npm run build` (`scripts/build-xpi.mjs`) zips the git-tracked files in `src/`
   into `build/tabellify-<version>.xpi`, using only Node built-ins. The build is deterministic
   (sorted entries, fixed timestamps): the same commit built with the same Node version gives a

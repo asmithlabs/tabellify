@@ -4,9 +4,29 @@ All notable changes to Tabellify, newest first. The repository's
 [CHANGELOG.md](https://github.com/asmithlabs/tabellify/blob/main/CHANGELOG.md) is the
 authoritative copy; this page follows it.
 
+## 0.2.0 (not released yet)
+
+First public release. Works with Zotero 10.0.x. It includes everything listed under 0.1.0
+below.
+
+### Added
+- **Group libraries.** The **Collection** list shows My Library and every group library you
+  see in Zotero: one heading per library, with its collections and subcollections under it.
+  Tag counts, the table, your own paper order, **View table**, **Save table**, **Export CSV**
+  and the **Tabellify tags** section work the same for a group library's collection. Tag
+  suggestions come from the chosen collection's library. Nothing is written to any library;
+  one codebook is shared by all libraries. See [Workspace](Workspace#which-papers-are-shown).
+- The **Saved tables** list and a saved table's info line show the library name. The
+  **Collection** list updates when a group library is added, renamed or removed while the
+  tab is open; if the chosen collection disappears, the table is cleared with a message.
+
+### Fixed
+- Your own paper order in one library's collections is no longer at risk when you reorder
+  papers in another library.
+
 ## 0.1.0 (2026-11-16)
 
-First public release. Works with Zotero 10.0.x.
+Tagged but never published; its contents first ship in 0.2.0. Works with Zotero 10.0.x.
 
 ### Added
 - **Workspace tab.** **Tools → Tabellify…** opens a **Tabellify** tab in the main Zotero

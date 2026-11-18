@@ -13,7 +13,7 @@ version of Zotero."**
 
 Common causes and fixes:
 
-1. **Your Zotero version is not 10.0.x.** Tabellify 0.1.0 only installs on Zotero 10.0.x.
+1. **Your Zotero version is not 10.0.x.** Tabellify 0.2.0 only installs on Zotero 10.0.x.
    Check your version (macOS: **Zotero → About Zotero**).
    - On Zotero 9 or earlier: update Zotero to 10.0.x.
    - On Zotero 10.1 or later: Tabellify has not been tested there yet, so Zotero refuses it.
@@ -108,8 +108,34 @@ Check, in this order:
    avoids typos.
 3. **Is it an automatic tag?** Automatic tags (imported with metadata) never count.
 4. **Is the paper or highlight in the trash?** Trashed items and highlights are left out.
-5. **Is the paper in this collection** or one of its subcollections, and in My Library?
+5. **Is the paper in this collection** or one of its subcollections? And did you tag the
+   copy of the paper **in the same library** as the collection? If a paper is in My Library
+   and in a group library, Zotero keeps two separate copies with their own highlights and
+   tags. A tag on the My Library copy does not count in a group library's collection, and
+   the other way round.
 6. Click **Refresh** in the Tabellify tab.
+
+### A group library or collection is missing from the Collection list
+
+1. **Is the group library in Zotero?** In the main Zotero window, look in the left pane under
+   **Group Libraries**. Tabellify lists only libraries that Zotero shows there. If the group
+   is missing in Zotero too, sync Zotero (and check that you are a member of the group on
+   zotero.org).
+2. **Click Refresh** in the Tabellify tab. The list is also updated by itself shortly after
+   Zotero syncs, but Refresh reads it again at once.
+3. **Does the group library have collections?** A library without collections shows only
+   "(no collections)" under its name. Tabellify always works on a collection, so papers
+   that are in no collection cannot be shown. Put them into a collection in Zotero first.
+4. **Is it a feed?** Feeds (RSS) are never listed.
+
+### "The chosen collection is no longer available"
+
+The full message is "The chosen collection is no longer available. Choose another
+collection." The collection you had chosen was deleted or moved to the trash, or its group
+library was removed from your Zotero (for example after you left the group). The table is
+cleared. Choose another collection from the **Collection** list. Saved tables of that
+collection are kept; you can still open their snapshot and export them, see
+[Saved Tables](Saved-Tables#snapshot-or-live).
 
 ### "Some highlights could not be read"
 

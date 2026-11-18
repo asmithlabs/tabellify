@@ -550,3 +550,17 @@ test("SEC-015: revision and nextId at or above MAX_SAFE_INTEGER are rejected", (
     assert.match(r.reason, new RegExp(field));
   }
 });
+
+// F003b: Zotero can reuse a removed group's library ID, so the library name is shown only
+// while the collection key itself is known.
+test("F003b: libraryLabel shows the library name only for a known collection key", () => {
+  const libraries = new Map([[1, "My Library"], [7, "New Group"]]);
+  const collections = new Map([["1/ABCD2345", "Heat"], ["7/KNOWN234", "Shared papers"]]);
+  assert.equal(S.libraryLabel("1/ABCD2345", collections, libraries), "My Library");
+  assert.equal(S.libraryLabel("7/KNOWN234", collections, libraries), "New Group");
+  // Library 7 is listed, but this collection is not found: no library name.
+  assert.equal(S.libraryLabel("7/OLDKEY23", collections, libraries), null);
+  // Known collection in a library that is no longer listed: no library name.
+  assert.equal(S.libraryLabel("9/GONE2345", new Map([["9/GONE2345", "Old"]]), libraries), null);
+  assert.equal(S.libraryLabel(null, collections, libraries), null);
+});

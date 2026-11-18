@@ -28,18 +28,19 @@ zotero.org developer guide.
 | `event.target.ownerGlobal` in MenuManager `onCommand` | Pick the window whose menu was used (trusted only if it is a main window); **UNVERIFIED** in api-notes | `src/tabellify.js` |
 | `Zotero.getMainWindow()` / `getMainWindows()`, `Zotero.debug`, `Zotero.logError` | Windows, logging | all |
 
-## Reading the library (F003–F007b, all read-only)
+## Reading the library (F003–F007b, F003b, all read-only)
 
 | API | Used for | File |
 |---|---|---|
 | `<script src="chrome://zotero/content/include.js">` | Gives the workspace document the `Zotero` global | `workspace.xhtml` |
-| `Zotero.initializationPromise`, `Zotero.Libraries.userLibraryID`, `Zotero.Libraries.get`, `library.waitForDataLoad("item")` | Wait for Zotero, My Library | `workspace.js` |
+| `Zotero.initializationPromise`, `Zotero.Libraries.userLibraryID`, `Zotero.Libraries.get`, `library.waitForDataLoad("item")` | Wait for Zotero; My Library; load the items of the chosen collection's own library (also a group) | `workspace.js`, `reader-tags.js` |
+| `Zotero.Groups.getAll()`; `library.libraryID`, `libraryType`, `name` | F003b: the group libraries (no feeds) for the collection list; library names in the dropdown headings and the Saved tables list (group names are untrusted text, plain text only) | `workspace.js` |
 | `Zotero.Collections.getByLibrary(libraryID, true)`; `collection.id`, `name`, `parentID`, `key`, `libraryID`, `getChildItems()` | Collection list, subcollection walk, keys for layout and saved tables | `workspace.js` |
 | `item.isRegularItem()`, `getDisplayTitle()`, `getTags()`, `getAttachments()`, `key`; `Zotero.Items.get(ids)`; `isFileAttachment()`, `isAttachment()`, `isNote()`, `isAnnotation()`, `parentItem`; `attachment.getAnnotations()`; `annotation.getTags()` | Papers, titles, item and highlight tags | `workspace.js`, `reader-tags.js` |
 | Tag `type` 0 = manual, 1 = automatic | Only manual tags count | `tag-monitor-model.js` |
 | Zotero tag identity: `trim().normalize()`, exact case-sensitive match | Matching codebook names to Zotero tags | models |
-| `Zotero.Tags.getAll(libraryID)` | Tag suggestions (includes highlight tags; owner runtime check RT-S1 passed) | `workspace.js` |
-| `Zotero.Notifier.registerObserver` / `unregisterObserver` | Live recount in the workspace; refresh of the item pane section | `workspace.js`, `reader-tags.js` |
+| `Zotero.Tags.getAll(libraryID)` | Tag suggestions from the chosen collection's library, My Library before a choice (includes highlight tags; owner runtime checks RT-S1 and RT-G2 passed) | `workspace.js` |
+| `Zotero.Notifier.registerObserver` / `unregisterObserver` | Live recount in the workspace (types `item-tag`, `collection-item`, `item`, `collection`, `group`; `group` added in F003b to rebuild the library list); refresh of the item pane section | `workspace.js`, `reader-tags.js` |
 | `Zotero.ItemPaneManager.registerSection` / `unregisterSection` | "Tabellify tags" section (ADR-0013) | `reader-tags.js` |
 | `Zotero.Prefs.get` / `set` (global, `extensions.tabellify.countItemTags`) | The counting switch; `set` only in the workspace | `workspace.js`, `reader-tags.js` |
 
