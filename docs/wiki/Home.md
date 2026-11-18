@@ -1,5 +1,7 @@
 # Tabellify
 
+![Tabellify logo](https://raw.githubusercontent.com/asmithlabs/tabellify/main/docs/assets/tabellify-logo.svg =96x)
+
 Tabellify is a Zotero plugin that turns the tags on your highlights into a literature table
 (a synthesis matrix), so you can organize, compare and export research findings.
 
@@ -7,7 +9,7 @@ You plan a list of tags (a codebook) and tag the highlights in your papers with 
 Zotero's reader. Tabellify then shows a table: one row per paper, one column per tag, and a ✓
 where the paper uses the tag. Tabellify never changes your Zotero library.
 
-Version **0.2.0** works with **Zotero 10.0.x**.
+Version **0.2.1** works with **Zotero 10.0.x**.
 
 ## What Tabellify can do
 
