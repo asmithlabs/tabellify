@@ -377,7 +377,79 @@ test("sortPapers: tag sort uses summarize()'s counting rule (highlights only by 
 test("sortPapers: an unknown key falls back to the count order; 'In' column is gone", () => {
   assert.deepEqual(ids(T.sortPapers(rows(), "nope")), ids(T.sortPapers(rows(), "count")));
   assert.deepEqual(ids(T.sortPapers(rows(), "collections")), ids(T.sortPapers(rows(), "count")));
-  assert.deepEqual(plain(T.SORT_KEYS), ["title", "count"]);
+  // Feature 011 adds the Subcollection column's key.
+  assert.deepEqual(plain(T.SORT_KEYS), ["title", "count", "subcollection"]);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 AC13: a scope list, collectionIds / firstPlace, sort by Subcollection
+// ---------------------------------------------------------------------------------------
+
+test("F011 AC13: a scope list gives the same counts as the root number for the same scope", () => {
+  const byRoot = T.summarize(codebook(), collections(), 1, papers(), WITH_ITEM);
+  const byList = T.summarize(codebook(), collections(), [1, 2, 3], papers(), WITH_ITEM);
+  assert.deepEqual(plain(byList), plain(byRoot));
+  assert.equal(byList.paperCount, 3);
+  assert.equal(byList.used, byRoot.used);
+  assert.equal(byList.total, byRoot.total);
+  for (const id of [101, 102, 103]) {
+    assert.equal(paper(byList, id).count, paper(byRoot, id).count, `k of ${id}`);
+    assert.equal(paper(byList, id).total, paper(byRoot, id).total, `M of ${id}`);
+  }
+});
+
+test("F011 AC13: a paper in two collections of the scope is counted once", () => {
+  const r = T.summarize(codebook(), collections(), [2, 3], papers());
+  assert.equal(r.paperCount, 2, "Paper 2 (in A and B) once, Paper 3");
+  assert.deepEqual(plain(r.papers.map((p) => p.id).sort()), [102, 103]);
+  assert.deepEqual(plain(r.groups.find((g) => g.id === "g3").usedTags), [{ tag: "Hospitalization", papers: 1 }]);
+});
+
+test("F011 AC13: only the listed collections count (no descendants added)", () => {
+  const r = T.summarize(codebook(), collections(), [2], papers());
+  assert.deepEqual(plain(r.papers.map((p) => p.id)), [102]);
+  const none = T.summarize(codebook(), collections(), [], papers());
+  assert.equal(none.paperCount, 0);
+});
+
+test("F011 AC13: collectionIds in scope order and firstPlace as the scope index", () => {
+  const r = T.summarize(codebook(), collections(), [1, 2, 3], [...papers()].reverse());
+  assert.deepEqual(plain(paper(r, 101).collectionIds), [1]);
+  assert.equal(paper(r, 101).firstPlace, 0);
+  assert.deepEqual(plain(paper(r, 102).collectionIds), [2, 3]);
+  assert.equal(paper(r, 102).firstPlace, 1);
+  assert.equal(paper(r, 103).firstPlace, 2);
+  // The scope's order decides, not the tree: B before A.
+  const swapped = T.summarize(codebook(), collections(), [3, 2], papers());
+  assert.deepEqual(plain(paper(swapped, 102).collectionIds), [3, 2]);
+  assert.equal(paper(swapped, 102).firstPlace, 0);
+  assert.deepEqual(plain(paper(swapped, 102).collectionNames), ["Phenotype B", "Phenotype A"]);
+});
+
+/** Rows with places for the Subcollection sort. */
+function placeRows() {
+  return [
+    { id: 1, title: "Zeta", untitled: false, count: 0, firstPlace: 1 },
+    { id: 2, title: "alpha", untitled: false, count: 3, firstPlace: 2 },
+    { id: 3, title: "Beta", untitled: false, count: 1, firstPlace: 1 },
+    { id: 4, title: "", untitled: true, count: 0, firstPlace: 0 },
+    { id: 5, title: "Gamma", untitled: false, count: 2, firstPlace: 0 },
+    { id: 6, title: "No place", untitled: false, count: 0 },
+  ];
+}
+
+test("F011 AC13: sortPapers by subcollection: firstPlace, then title (A→Z, untitled last)", () => {
+  assert.deepEqual(ids(T.sortPapers(placeRows(), "subcollection", "asc")), [5, 4, 3, 1, 2, 6]);
+});
+
+test("F011 AC13: subcollection desc reverses the place order only (titles stay A→Z)", () => {
+  assert.deepEqual(ids(T.sortPapers(placeRows(), "subcollection", "desc")), [2, 3, 1, 5, 4, 6]);
+});
+
+test("F011 AC13: sorting by subcollection from summarize() output", () => {
+  const r = T.summarize(codebook(), collections(), [3, 2, 1], papers());
+  // Paper 3 (B, index 0), Paper 2 (B first, index 0), Paper 1 (F005 test, index 2).
+  assert.deepEqual(ids(T.sortPapers(r.papers, "subcollection")), [102, 103, 101]);
 });
 
 // ---------------------------------------------------------------------------------------

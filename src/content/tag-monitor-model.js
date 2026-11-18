@@ -42,7 +42,13 @@ var TabellifyTagMonitor = {
    * Fixed columns of the per-paper table that sortPapers() can sort by. Each codebook tag
    * column sorts too, with the key tagSortKey(tag) (owner decision 2026-11-13).
    */
-  SORT_KEYS: ["title", "count"],
+  SORT_KEYS: ["title", "count", "subcollection"],
+
+  /**
+   * Feature 011: sort key of the Subcollection column. Sorts by a paper's first place in the
+   * scope's tree order (`firstPlace` from summarize), then by title.
+   */
+  SUBCOLLECTION_SORT: "subcollection",
 
   /** Start of the sort key of a codebook tag column: "tag:" + the tag's name. */
   TAG_SORT_PREFIX: "tag:",
@@ -158,10 +164,13 @@ var TabellifyTagMonitor = {
 
   /**
    * Compare the codebook with the manual tags on the papers of a collection and its
-   * subcollections.
+   * subcollections, or (Feature 011) of any list of collections.
    * @param {object | null} codebookData
    * @param {Array<{ id: number, parentID?: number | null | false, name: string }>} collections
-   * @param {number} rootId  The chosen collection
+   * @param {number | number[]} rootOrScope  A number: the chosen collection and all its
+   *   descendants (as before F011). An array: exactly these collection IDs, in this order
+   *   (TabellifySelection.scope gives them in tree order). The order decides `collectionIds`
+   *   and `firstPlace` of each paper.
    * @param {Array<{ id: number, title: string, collectionId: number,
    *                 itemTags?: Array<{tag: string, type?: number}>,
    *                 annotationTags?: Array<{tag: string, type?: number}> }>} papers
@@ -170,13 +179,16 @@ var TabellifyTagMonitor = {
    *   groups: Array<{ id: string, name: string, total: number, used: number,
    *                   usedTags: Array<{ tag: string, papers: number }>, remainingTags: string[] }>,
    *   papers: Array<{ id: number, title: string, untitled: boolean, collectionNames: string[],
-   *                   count: number, total: number,
+   *                   collectionIds: number[], firstPlace: number, count: number, total: number,
    *                   groups: Array<{ id: string, name: string, present: string[], remaining: string[] }> }> }}
    */
-  summarize(codebookData, collections, rootId, papers, options = {}) {
+  summarize(codebookData, collections, rootOrScope, papers, options = {}) {
     const groups = this.codebookGroups(codebookData);
-    const scope = this.descendantIds(collections, rootId);
-    const order = new Map(scope.map((id, i) => [id, i]));
+    // Feature 011: a list is used as given; a number keeps the old meaning (old callers and
+    // tests are unchanged). A list may repeat an ID by mistake: its first position counts.
+    const scope = Array.isArray(rootOrScope) ? rootOrScope : this.descendantIds(collections, rootOrScope);
+    const order = new Map();
+    scope.forEach((id, i) => { if (!order.has(id)) order.set(id, i); });
     const names = new Map(collections.map((c) => [c.id, String(c.name ?? "")]));
 
     // 1. Merge the per-collection entries into one record per paper (by item ID).
@@ -227,6 +239,10 @@ var TabellifyTagMonitor = {
         title: record.title,
         untitled: record.title === "",
         collectionNames: collectionIds.map((id) => names.get(id) ?? ""),
+        // Feature 011: where the paper sits, in scope order, and the index (in the scope) of
+        // its first place: the Subcollection column's sort key and row group.
+        collectionIds,
+        firstPlace: order.get(collectionIds[0]),
         count: paperGroups.reduce((sum, g) => sum + g.present.length, 0),
         total,
         groups: paperGroups,
@@ -303,12 +319,15 @@ var TabellifyTagMonitor = {
    * Sort the per-paper rows by one column. Returns a new array.
    * - "count": codebook tags on the paper (k), then title.
    * - "title": title. Untitled papers always come last (in both directions).
+   * - "subcollection" (Feature 011): the paper's first place in the scope's tree order
+   *   (`firstPlace`), then title; "desc" reverses the place order only. A paper without
+   *   `firstPlace` comes last.
    * - tagSortKey(tag): papers that have that codebook tag (✓, under the counting rule
    *   summarize() applied) first; "desc" puts them last. Then title.
    * `direction` "desc" reverses the chosen column; the title tie-break stays A→Z, untitled
    * last, so equal rows keep a stable, readable order.
    * @template {{ id: number, title: string, untitled: boolean, count: number,
-   *   groups?: Array<{ present: string[] }> }} P
+   *   firstPlace?: number, groups?: Array<{ present: string[] }> }} P
    * @param {P[]} papers
    * @param {string} [key]        One of SORT_KEYS or a tag column's key (unknown keys sort by "count")
    * @param {string} [direction]  "asc" (default) or "desc"
@@ -319,7 +338,16 @@ var TabellifyTagMonitor = {
     const byTitle = (a, b) => (a.untitled - b.untitled) || this.compareText(a.title, b.title) || (a.id - b.id);
     const tag = this.sortKeyTag(key);
     let primary;
-    if (key === "title") {
+    if (key === this.SUBCOLLECTION_SORT) {
+      const place = (p) => (Number.isInteger(p.firstPlace) ? p.firstPlace : Number.MAX_SAFE_INTEGER);
+      primary = (a, b) => {
+        const pa = place(a);
+        const pb = place(b);
+        // Unknown places stay last in both directions (like untitled papers in a title sort).
+        if (pa === Number.MAX_SAFE_INTEGER || pb === Number.MAX_SAFE_INTEGER) return pa === pb ? 0 : pa < pb ? -1 : 1;
+        return sign * (pa - pb);
+      };
+    } else if (key === "title") {
       primary = (a, b) => (a.untitled - b.untitled) || sign * this.compareText(a.title, b.title);
     } else if (tag !== null) {
       // 1 when the paper has the tag (its ✓ cell), else 0. `present` comes from summarize().
