@@ -47,7 +47,7 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 | F001 | Plugin shell: installs, opens a workspace window with placeholder (interim surface; proves install, startup, menu, cleanup) | Done (PR #1) |
 | F002 | Workspace as a main-window tab (replaces the F001 window; see requirement REQ-1 in §7) | Done (v0.1.0) |
 | F003 | Read-only data access: list collections, items, and tags of a chosen collection | Done (v0.1.0) |
-| 003b | Group libraries: choose a collection in My Library or any group library (read-only); spec `docs/features/003b-group-libraries.md` | In progress (v0.2.0) |
+| 003b | Group libraries: choose a collection in My Library or any group library (read-only); spec `docs/features/003b-group-libraries.md` | Done (v0.2.0) |
 | F004 | Curated tag list (codebook) with super-tag groups, stored by Tabellify | Done (v0.1.0) |
 | F005 | Tag monitor: used / remaining curated tags for a collection; 005b "Tabellify tags" item pane / reader section, 005c table layout, 005d design system | Done (v0.1.0) |
 | F006 | Table builder: rows = papers, columns = (super-)tags, preview grid; 006a workspace restructure, 006b tag autocomplete, 006c drag regrouping | Done (v0.1.0) for 006a–006c |

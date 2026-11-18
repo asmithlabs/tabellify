@@ -3,7 +3,7 @@
 This is the step-by-step procedure for publishing Tabellify **v0.2.0**, the first public
 release (spec F003b: the tag `v0.1.0` exists but 0.1.0 was never published; its draft GitHub
 release is deleted, the tag stays). It implements
-ADR-0020 (**Proposed**; follow this checklist only after the owner accepts ADR-0020) and closes
+ADR-0020 (**Accepted**, 2026-11-16) and closes
 pre-release security finding SEC-001. Later releases use the same steps with the new version
 number (see "Later releases" at the end).
 

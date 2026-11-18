@@ -853,7 +853,7 @@ saved). Fail = no headings, or headings that can be chosen: the developer uses t
 (disabled heading options, spec F003b "UI").
 
 **RT-G1 result (owner, Zotero 10.0.9, 2026-11-18): PASS.** `user`: `{ id: 1, type: "user",
-name: "My Library" }`; one group `{ id: 2, groupID: 6769184, type: "group", editable: true,
+name: "My Library" }`; one group `{ id: 2, groupID: <groupID>, type: "group", editable: true,
 archived: false, collections: 2 }`; `allTypes: ["user", "group"]` (no feeds). Before the test
 group was synced, the same snippet returned `groups: []`, as expected.
 
