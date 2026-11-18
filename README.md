@@ -1,3 +1,5 @@
+<img src="docs/assets/tabellify-logo.svg" width="64" alt="Tabellify logo">
+
 # Tabellify
 
 **Turn curated Zotero tags into literature tables.**
