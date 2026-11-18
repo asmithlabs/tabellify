@@ -4,19 +4,21 @@ Your Zotero library is your research. Tabellify is built so that it never change
 
 ## In short
 
-- Tabellify **never writes to your Zotero library**. It does not create, change or delete
-  items, collections, tags, notes, highlights (annotations) or attachments, and it never
-  writes to Zotero's database.
+- Tabellify **never writes to your Zotero library**, nor to any group library. It does not
+  create, change or delete items, collections, tags, notes, highlights (annotations) or
+  attachments, and it never writes to Zotero's database.
 - It keeps **its own files** in a folder named **`tabellify`** inside your Zotero data
   folder, and writes CSV files only where you choose.
 - It **sends nothing over the internet**.
 
 ## What Tabellify reads
 
-- The collections in **My Library**.
+- The list of your libraries (**My Library** and every **group library** in your Zotero)
+  with their names, and the collections in each of them. Feeds are not read.
 - For the collection you choose (and its subcollections): the papers, their titles, their
   tags, their file attachments and the tags on their highlights.
-- The list of tag names in My Library (for suggestions in the **Tags and groups** box).
+- The list of tag names in the chosen collection's library, or in My Library before you
+  choose a collection (for suggestions in the **Tags and groups** box).
 - For the paper shown in Zotero's right-hand pane: its tags and its highlights' tags (for
   the **Tabellify tags** section).
 - Zotero's change notifications, to know when to recount. Listening cannot change anything.
@@ -24,6 +26,17 @@ Your Zotero library is your research. Tabellify is built so that it never change
 Reading is done with Zotero's read-only functions. An automated check (the "write guard")
 runs on every code change and fails if Tabellify's code contains calls that write to the
 library.
+
+### Group libraries
+
+- Tabellify **only reads** group libraries, in the same way as My Library. It never adds
+  tags or changes anything in a group, even when you are allowed to edit the group, so
+  nothing Tabellify does reaches the other members through sync.
+- Group names, collection names, paper titles and tags in a group library are written by
+  **other people**. Tabellify shows them only as plain text, so such a name cannot run code
+  or change the Tabellify page.
+- The library name in the **Saved tables** list is looked up each time; it is not stored
+  in Tabellify's files.
 
 ### What Tabellify changes outside its own files
 
@@ -75,6 +88,11 @@ Notes:
 "uninstall" step when it updates a plugin, so deleting there could erase your codebook on
 every update. If you reinstall Tabellify, your codebook and saved tables are still there.
 
+The same goes for a group library you leave or remove: `layout.json` may keep that group's
+saved paper order (Zotero's internal collection and item keys only, no titles) until you
+delete the file, and `tables.json` keeps any tables you saved from that group until you
+delete them.
+
 To remove everything by hand:
 
 1. Remove Tabellify: in the main Zotero window choose **Tools → Plugins**, click the ⋯ menu
@@ -105,8 +123,8 @@ Debug Output is Zotero's internal log (see
 
 - Tabellify's own lines start with `Tabellify:` and are written to contain only counts,
   internal IDs, file names (such as `codebooks.json`) and error types: no paper titles, tag
-  or group names, collection names, table names, or file paths. An automated check guards
-  against file paths and error messages in these lines.
+  or group names, library or collection names, table names, or file paths. An automated
+  check guards against file paths and error messages in these lines.
 - **Zotero's own lines, and Zotero's error reports, can contain file paths** (which often
   include your computer's user name), paper titles and other library details.
 - **GitHub issues are public.** Before pasting Debug Output into an issue, read it and remove

@@ -75,9 +75,10 @@ The messages, each with an example line that causes it:
 
 While you type a name, a list opens under the box with matching names:
 
-- **Tags from your library**: manual tags used anywhere in My Library, on papers or on
-  highlights. Tags that exist only as automatic tags are not suggested. Tags already in the
-  codebook are not suggested.
+- **Tags from your library**: manual tags used anywhere in the library of the collection
+  you chose (My Library, or that group library), on papers or on highlights. Before you
+  choose a collection, the tags of My Library. Tags that exist only as automatic tags are
+  not suggested. Tags already in the codebook are not suggested.
 - **Group names** of your codebook (marked "group"), when you are not inside brackets.
   Accepting one writes `Name(` so you can go on typing its tags.
 - **Create tag "…"** (marked "codebook only"), last in the list, when what you typed is not
@@ -97,7 +98,13 @@ Keys:
 - **Esc**: close the list.
 
 You can also click a suggestion. The list of library tags is refreshed when you click
-**Refresh**, and after you change tags in Zotero (the next time you click in the box).
+**Refresh**, after you change tags in Zotero, and after you choose a collection in another
+library (the next time you click in the box).
+
+There is **one codebook for all libraries**. A codebook tag matches a Zotero tag of the
+same name in any library, so the same codebook works for My Library and your group
+libraries. As everywhere, capitals matter: `Heat` in a group library and `heat` in My
+Library are two different tags.
 
 ## Group pills
 
@@ -145,4 +152,3 @@ You can also change groups by dragging columns in the table; see
 These are not available yet:
 
 - Several codebooks, and importing or exporting a codebook.
-- Group libraries.

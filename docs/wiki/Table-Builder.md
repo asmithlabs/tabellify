@@ -51,8 +51,9 @@ move it one place.
   **Manual order** to go back to it.
 - **Clear manual order** forgets the order for this collection and goes back to the default
   sort.
-- Each collection has its own manual order. Papers added to the collection later appear
-  after the papers you arranged.
+- Each collection has its own manual order, in My Library and in group libraries alike;
+  arranging papers in one library never changes the order in another. Papers added to the
+  collection later appear after the papers you arranged.
 - The order is kept after you close the tab or restart Zotero.
 
 ## Moving columns
@@ -71,7 +72,9 @@ Each tag header and each group header has a grip.
 - **Reset columns** puts the columns back in codebook order. It does **not** undo changes to
   groups (grouping lives in the codebook).
 
-The column order is kept after you close the tab or restart Zotero. It is separate from the
+The column order is one order for the whole Tabellify tab: it is the same for every
+collection, in every library. It is kept after you close the tab or restart Zotero. It is
+separate from the
 codebook: moving a column sideways never changes the codebook.
 
 ## Moving a tag between groups by dragging

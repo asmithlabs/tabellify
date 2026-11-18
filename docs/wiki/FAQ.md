@@ -38,10 +38,19 @@ No. Tags typed on their own (`age, sex`) have no group and appear under **Ungrou
 table. You can add groups at any time, for example `Exposure(Heat index, Temperature)`.
 
 **Is there one codebook per collection?**
-No. Tabellify has one codebook, used for every collection.
+No. Tabellify has one codebook, used for every collection in every library.
 
 **Can I use group libraries?**
-Not yet. Tabellify lists only collections in My Library.
+Yes. The **Collection** list in the Tabellify tab shows My Library and every group library
+you see in Zotero, each with its collections. Tag counts, the table, saving and export work
+the same way. See [Workspace](Workspace#which-papers-are-shown).
+
+**Do I need permission to edit a group library?**
+No. Tabellify only reads, so read-only group libraries work too. It never adds tags or
+changes anything in a group library, even when you are allowed to edit it.
+
+**Do highlights by other group members count?**
+Yes. In a group library, every member's tagged highlights count, just as Zotero shows them.
 
 **Where are my codebook and saved tables stored? Are they synced?**
 In the `tabellify` folder inside your Zotero data folder. Zotero sync does not copy them. See
