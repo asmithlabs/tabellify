@@ -1,4 +1,4 @@
-// Feature 007b AC14–AC17 (ADR-0018): unit tests for the pure saved-tables model
+// Feature 007b AC14–AC17 (ADR-0018) and Feature 011 AC18 (ADR-0027 §2): unit tests for the pure saved-tables model
 // (src/content/saved-tables-model.js).
 //
 // The model is a classic browser script (no import/export). Node runs it in an empty
@@ -15,7 +15,7 @@ import vm from "node:vm";
 
 const contentDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "content");
 const sandbox = vm.createContext({});
-for (const name of ["codebook-model.js", "tag-monitor-model.js", "table-layout-model.js", "csv-model.js", "saved-tables-model.js"]) {
+for (const name of ["codebook-model.js", "tag-monitor-model.js", "selection-model.js", "table-layout-model.js", "csv-model.js", "saved-tables-model.js"]) {
   const file = join(contentDir, name);
   vm.runInContext(readFileSync(file, "utf8"), sandbox, { filename: file });
 }
@@ -81,7 +81,7 @@ function workspaceView(codebook, data = monitorData(), layout = null, sort = { k
 }
 const keyOf = (data) => (p) => data.keys.get(p.id);
 
-/** A full valid file with two tables. */
+/** A full valid file with two tables, as 0.2.0 wrote it (schema 1). */
 function validFile() {
   return {
     schemaVersion: 1,
@@ -144,8 +144,9 @@ function broken(change) {
 // ---------------------------------------------------------------------------------------
 
 test("AC14: the model loads in an empty sandbox; emptyData is valid; a full file is valid", () => {
-  assert.equal(S.SCHEMA_VERSION, 1);
-  assert.deepEqual(plain(S.emptyData()), { schemaVersion: 1, revision: 0, nextId: 1, tables: [] });
+  // Feature 011: the model writes schema 2 and still reads a schema 1 file.
+  assert.equal(S.SCHEMA_VERSION, 2);
+  assert.deepEqual(plain(S.emptyData()), { schemaVersion: 2, revision: 0, nextId: 1, tables: [] });
   assert.deepEqual(plain(S.validate(S.emptyData())), { ok: true });
   assert.deepEqual(plain(S.validate(validFile())), { ok: true });
   assert.deepEqual(plain(S.LIMITS), { tables: 100, rows: 5000, columns: 500, name: 200, description: 2000, title: 2000, fileChars: 20000000 });
@@ -214,8 +215,9 @@ test("AC14: each validation rule rejects, with a reason that names no field valu
   }
 });
 
-test("AC14: schemaVersion 2 is newer; a __proto__ key in tagOrder stays an own key; migrate copies", () => {
-  const newer = S.validate({ schemaVersion: 2, revision: 0, anything: true });
+test("AC14: schemaVersion 3 is newer; a __proto__ key in tagOrder stays an own key; migrate copies", () => {
+  // Feature 011: schema 2 is now the current version, so 3 is "made by a newer Tabellify".
+  const newer = S.validate({ schemaVersion: 3, revision: 0, anything: true });
   assert.equal(newer.ok, false);
   assert.equal(newer.newer, true);
 
@@ -231,8 +233,8 @@ test("AC14: schemaVersion 2 is newer; a __proto__ key in tagOrder stays an own k
   assert.equal(Object.getPrototypeOf(tagOrder), Object.getPrototypeOf(vm.runInContext("({})", sandbox)));
   assert.equal(Array.isArray(Object.getPrototypeOf(tagOrder)), false);
 
-  // migrate: equal but separate.
-  const original = validFile();
+  // migrate (of a schema 2 file): equal but separate.
+  const original = S.migrate(validFile());
   const copy = S.migrate(original);
   assert.deepEqual(plain(copy), plain(original));
   assert.notEqual(copy, original);
@@ -265,7 +267,7 @@ test("AC15: buildSnapshot → snapshotView keeps columns, blocks, rows, ✓, k a
     const data = monitorData();
     const built = S.buildSnapshot(frozen(view), { keyOf: keyOf(data), collectionName: "F005 test", takenAt: NOW });
     assert.equal(built.ok, true, name);
-    assert.deepEqual(plain(S.validate({ schemaVersion: 1, revision: 0, nextId: 2, tables: [{
+    assert.deepEqual(plain(S.validate({ schemaVersion: 2, revision: 0, nextId: 2, tables: [{
       id: "t1", name: "x", description: "", createdAt: NOW, updatedAt: NOW,
       definition: S.buildDefinition({ collectionKey: "1/COLL0001", codebookId: "c1", columnLayout: null, sort: { key: "count", direction: "asc" }, manualOrder: null, countItemTags: false }),
       snapshot: built.snapshot,
@@ -294,9 +296,10 @@ test("AC15: blocks: group names, null for ungrouped runs, present as column inde
     { group: "Outcome", tags: ["Mortality"] },
   ]);
   const paper1 = snapshot.rows.find((r) => r.itemKey === "ITEM0101");
-  assert.deepEqual(plain(paper1), { itemKey: "ITEM0101", title: "Paper 1", untitled: false, present: [0, 4] });
+  assert.deepEqual(plain(paper1), { itemKey: "ITEM0101", title: "Paper 1", untitled: false, present: [0, 4], subcollections: [] });
   const untitled = snapshot.rows.find((r) => r.itemKey === "ITEM0103");
-  assert.deepEqual(plain(untitled), { itemKey: "ITEM0103", title: "", untitled: true, present: [3] });
+  assert.deepEqual(plain(untitled), { itemKey: "ITEM0103", title: "", untitled: true, present: [3], subcollections: [] });
+  assert.equal(snapshot.subcollectionColumn, false);
   assert.equal(snapshot.takenAt, NOW);
   assert.equal(snapshot.collectionName, "F005 test");
   // Two neighbouring runs in a view are merged into one block.
@@ -418,7 +421,7 @@ test("AC16: buildDefinition copies and cleans the layout; manual order only when
   const layout = { topOrder: [{ group: "g2" }, { group: "g2" }, { bad: 1 }, { tag: "age" }], tagOrder: { g2: ["b", "a", "a"], ungrouped: ["x"] } };
   const d = S.buildDefinition(frozen({ collectionKey: "1/COLL0001", codebookId: "c1", columnLayout: layout, sort: { key: "manual", direction: "asc" }, manualOrder: ["K1", "K1", "K2"], countItemTags: true }));
   assert.deepEqual(plain(d), {
-    collectionKey: "1/COLL0001", codebookId: "c1",
+    selection: { include: ["1/COLL0001"], exclude: [] }, codebookId: "c1",
     columnLayout: { topOrder: [{ group: "g2" }, { tag: "age" }], tagOrder: { g2: ["b", "a"] } },
     sort: { key: "manual", direction: "asc" }, manualOrder: ["K1", "K2"], countItemTags: true,
   });
@@ -506,7 +509,7 @@ test("AC17: deleteTable removes exactly one table and never reuses its id", () =
   assert.deepEqual(plain(S.deleteTable(data, "t9")), { ok: false, error: "tabellify-saved-gone" });
 });
 
-test("AC17: listTables filters by collection key (null = all), newest first, then by name", () => {
+test("AC17: listTables filters by selection key (null = all), newest first, then by name", () => {
   let data = S.emptyData();
   data = S.addTable(data, newTableInput("beta", "1/COLL0001"), "2026-11-14T10:00:00.000Z").data;
   data = S.addTable(data, newTableInput("Alpha", "1/COLL0001"), "2026-11-14T10:00:00.000Z").data;
@@ -514,7 +517,7 @@ test("AC17: listTables filters by collection key (null = all), newest first, the
   const all = S.listTables(frozen(data), null);
   assert.deepEqual(plain(all.map((e) => e.name)), ["Other", "Alpha", "beta"]);
   assert.deepEqual(plain(all[1]), {
-    id: "t2", name: "Alpha", collectionKey: "1/COLL0001", collectionName: "F005 test",
+    id: "t2", name: "Alpha", selection: { include: ["1/COLL0001"], exclude: [] }, selectionKey: "1/COLL0001", collectionName: "F005 test",
     papers: 4, columns: 3, updatedAt: "2026-11-14T10:00:00.000Z",
   });
   assert.deepEqual(plain(S.listTables(data, "1/COLL0001").map((e) => e.id)), ["t2", "t1"]);
@@ -563,4 +566,229 @@ test("F003b: libraryLabel shows the library name only for a known collection key
   // Known collection in a library that is no longer listed: no library name.
   assert.equal(S.libraryLabel("9/GONE2345", new Map([["9/GONE2345", "Old"]]), libraries), null);
   assert.equal(S.libraryLabel(null, collections, libraries), null);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 AC18 (ADR-0027 §2): schema 2, selections, the Subcollection column, migration
+// ---------------------------------------------------------------------------------------
+
+/** A valid schema 2 file: one table of three collections with the Subcollection column. */
+function validFileV2() {
+  return {
+    schemaVersion: 2,
+    revision: 5,
+    nextId: 2,
+    tables: [{
+      id: "t1",
+      name: "Three diseases",
+      description: "",
+      createdAt: NOW,
+      updatedAt: NOW,
+      definition: {
+        selection: { include: ["1/ASTH0001", "1/COPD0002", "1/DIAB0003"], exclude: [] },
+        codebookId: "c1",
+        columnLayout: { topOrder: [], tagOrder: {} },
+        sort: { key: "subcollection", direction: "asc" },
+        manualOrder: null,
+        countItemTags: false,
+      },
+      snapshot: {
+        takenAt: NOW,
+        collectionName: "Asthma, COPD, Diabetes",
+        subcollectionColumn: true,
+        blocks: [{ group: null, tags: ["age"] }],
+        rows: [
+          { itemKey: "EFGH6789", title: "Smith 2020", untitled: false, present: [0], subcollections: ["Asthma"] },
+          { itemKey: "JKLM2345", title: "Jones", untitled: false, present: [], subcollections: ["Asthma", "COPD"] },
+        ],
+      },
+    }],
+  };
+}
+function brokenV2(change) {
+  const file = validFileV2();
+  change(file);
+  return file;
+}
+
+test("F011 AC18: a schema 2 file with a selection and the Subcollection column is valid", () => {
+  assert.deepEqual(plain(S.validate(validFileV2())), { ok: true });
+  assert.deepEqual(plain(S.PLACE_LIMITS), { parts: 50, chars: 500 });
+  // Exclude rules and the "subcollection" sort key are fine.
+  const withExclude = brokenV2((f) => { f.tables[0].definition.selection = { include: ["1/PHEN0001"], exclude: ["1/ARCH0002"] }; });
+  assert.deepEqual(plain(S.validate(withExclude)), { ok: true });
+  // The column off, every row empty: valid.
+  const off = brokenV2((f) => {
+    f.tables[0].snapshot.subcollectionColumn = false;
+    for (const r of f.tables[0].snapshot.rows) r.subcollections = [];
+  });
+  assert.deepEqual(plain(S.validate(off)), { ok: true });
+  // At the limits.
+  const atLimit = brokenV2((f) => {
+    f.tables[0].definition.selection = { include: Array.from({ length: 1000 }, (_, i) => `1/K${i}`), exclude: [] };
+    f.tables[0].snapshot.rows[0].subcollections = Array.from({ length: 50 }, () => "x".repeat(500));
+  });
+  assert.deepEqual(plain(S.validate(atLimit)), { ok: true });
+});
+
+test("F011 AC18: schema 2 validation refuses bad selections and Subcollection data; reasons name no value", () => {
+  const SECRET = "SECRET99";
+  const cases = {
+    "collectionKey in schema 2": (f) => { f.tables[0].definition.collectionKey = "1/ABCD2345"; },
+    "selection missing": (f) => { delete f.tables[0].definition.selection; },
+    "selection not an object": (f) => { f.tables[0].definition.selection = `1/${SECRET}`; },
+    "empty include": (f) => { f.tables[0].definition.selection = { include: [], exclude: [] }; },
+    "bad pattern": (f) => { f.tables[0].definition.selection = { include: [`x/${SECRET}`], exclude: [] }; },
+    "two libraries": (f) => { f.tables[0].definition.selection = { include: [`1/${SECRET}`, `2/${SECRET}`], exclude: [] }; },
+    "repeat": (f) => { f.tables[0].definition.selection = { include: [`1/${SECRET}`, `1/${SECRET}`], exclude: [] }; },
+    "in both lists": (f) => { f.tables[0].definition.selection = { include: [`1/${SECRET}`], exclude: [`1/${SECRET}`] }; },
+    "1001 rules": (f) => { f.tables[0].definition.selection = { include: Array.from({ length: 1001 }, (_, i) => `1/K${i}`), exclude: [] }; },
+    "extra selection key": (f) => { f.tables[0].definition.selection.other = [SECRET]; },
+    "subcollectionColumn missing": (f) => { delete f.tables[0].snapshot.subcollectionColumn; },
+    "subcollectionColumn not boolean": (f) => { f.tables[0].snapshot.subcollectionColumn = "yes"; },
+    "row subcollections missing": (f) => { delete f.tables[0].snapshot.rows[0].subcollections; },
+    "row subcollections not an array": (f) => { f.tables[0].snapshot.rows[0].subcollections = SECRET; },
+    "51 parts": (f) => { f.tables[0].snapshot.rows[0].subcollections = Array.from({ length: 51 }, () => "x"); },
+    "501 characters": (f) => { f.tables[0].snapshot.rows[0].subcollections = [SECRET + "x".repeat(500)]; },
+    "non-text part": (f) => { f.tables[0].snapshot.rows[0].subcollections = [5]; },
+    "parts while the column is off": (f) => { f.tables[0].snapshot.subcollectionColumn = false; },
+  };
+  for (const [name, change] of Object.entries(cases)) {
+    const result = S.validate(brokenV2(change));
+    assert.equal(result.ok, false, `${name} should be invalid`);
+    assert.equal(result.newer, undefined, name);
+    assert.ok(!result.reason.includes(SECRET), `${name}: reason holds a value: ${result.reason}`);
+  }
+  // A schema 1 file must not use the schema 2 fields.
+  const v1WithSelection = broken((f) => { f.tables[0].definition.selection = { include: ["1/A"], exclude: [] }; });
+  assert.equal(S.validate(v1WithSelection).ok, false);
+  const v1WithColumn = broken((f) => { f.tables[0].snapshot.subcollectionColumn = false; });
+  assert.equal(S.validate(v1WithColumn).ok, false);
+});
+
+test("F011 AC18: migration 1 → 2: collectionKey becomes a selection; every row gets subcollections: []", () => {
+  const v1 = frozen(validFile());
+  const v2 = S.migrate(v1);
+  assert.equal(v2.schemaVersion, 2);
+  assert.equal(v2.revision, 4);
+  assert.equal(v2.nextId, 3);
+  assert.deepEqual(plain(v2.tables[0].definition.selection), { include: ["1/ABCD2345"], exclude: [] });
+  assert.equal(Object.hasOwn(v2.tables[0].definition, "collectionKey"), false);
+  assert.deepEqual(plain(v2.tables[1].definition.selection), { include: ["1/OTHER001"], exclude: [] });
+  for (const t of v2.tables) {
+    assert.equal(t.snapshot.subcollectionColumn, false);
+    for (const r of t.snapshot.rows) assert.deepEqual(plain(r.subcollections), []);
+  }
+  // Everything else is unchanged.
+  const before = plain(v1);
+  const after = plain(v2);
+  for (const [i, t] of after.tables.entries()) {
+    const old = before.tables[i];
+    assert.deepEqual({ ...t, definition: undefined, snapshot: undefined }, { ...old, definition: undefined, snapshot: undefined });
+    const { selection, ...restDef } = t.definition;
+    const { collectionKey, ...oldRestDef } = old.definition;
+    assert.deepEqual(restDef, oldRestDef);
+    assert.deepEqual(t.snapshot.blocks, old.snapshot.blocks);
+    assert.deepEqual(t.snapshot.rows.map(({ subcollections, ...r }) => r), old.snapshot.rows);
+  }
+  // The result is a valid schema 2 file, and the snapshot looks exactly as before.
+  assert.deepEqual(plain(S.validate(v2)), { ok: true });
+  const view = S.snapshotView(v2.tables[0].snapshot);
+  assert.equal(view.subcollectionColumn, false);
+  assert.equal(Csv.build(view, LABELS).text, Csv.build(S.snapshotView(S.copySnapshot(validFile().tables[0].snapshot)), LABELS).text);
+});
+
+test("F011 AC18: schema 3 is newer; migrate refuses an unknown version", () => {
+  const r = S.validate({ ...validFileV2(), schemaVersion: 3 });
+  assert.equal(r.ok, false);
+  assert.equal(r.newer, true);
+  assert.throws(() => S.migrate({ ...validFileV2(), schemaVersion: 3 }));
+});
+
+test("F011 AC18: buildSnapshot keeps the Subcollection column, cut to 50 parts of 500 characters", () => {
+  const long = "y".repeat(498) + "😀" + "z";
+  const view = frozen({
+    groups: [{ id: "g1", name: "G", tags: ["t"] }],
+    counting: true,
+    subcollectionColumn: true,
+    papers: [
+      { id: 1, title: "A", untitled: false, count: 1, total: 1, groups: [{ present: ["t"] }], subcollections: ["Asthma", "COPD"] },
+      { id: 2, title: "B", untitled: false, groups: [], subcollections: Array.from({ length: 60 }, (_, i) => `P${i}`) },
+      { id: 3, title: "C", untitled: false, groups: [], subcollections: [long] },
+      { id: 4, title: "D", untitled: false, groups: [] },
+    ],
+  });
+  const { snapshot } = S.buildSnapshot(view, { keyOf: (p) => `K${p.id}`, collectionName: "N".repeat(2500), takenAt: NOW });
+  assert.equal(snapshot.subcollectionColumn, true);
+  assert.deepEqual(plain(snapshot.rows[0].subcollections), ["Asthma", "COPD"]);
+  assert.equal(snapshot.rows[1].subcollections.length, 50);
+  assert.equal(snapshot.rows[2].subcollections[0], "y".repeat(498) + "…", "cut without splitting the emoji");
+  assert.deepEqual(plain(snapshot.rows[3].subcollections), []);
+  assert.equal(snapshot.collectionName.length, 2000);
+  assert.ok(snapshot.collectionName.endsWith("…"));
+  // Valid as part of a schema 2 file; round-trips through snapshotView into the same CSV.
+  const file = { schemaVersion: 2, revision: 0, nextId: 2, tables: [{
+    id: "t1", name: "x", description: "", createdAt: NOW, updatedAt: NOW,
+    definition: S.buildDefinition({ selection: { include: ["1/B", "1/A"], exclude: [] }, codebookId: "c1", columnLayout: null, sort: { key: "subcollection", direction: "asc" }, manualOrder: null, countItemTags: false }),
+    snapshot,
+  }] };
+  assert.deepEqual(plain(S.validate(file)), { ok: true });
+  assert.deepEqual(plain(file.tables[0].definition.selection), { include: ["1/A", "1/B"], exclude: [] }, "lists sorted");
+  const back = S.snapshotView(snapshot);
+  assert.equal(back.subcollectionColumn, true);
+  assert.deepEqual(plain(back.papers[0].subcollections), ["Asthma", "COPD"]);
+  const labels = { ...LABELS, subcollection: "Subcollection" };
+  const first = Csv.build({ ...view, papers: view.papers.slice(0, 1) }, labels).text;
+  assert.equal(Csv.build({ ...back, papers: back.papers.slice(0, 1) }, labels).text, first);
+  // The column off: rows keep empty lists even when papers carry places.
+  const off = S.buildSnapshot({ ...view, subcollectionColumn: false }, { keyOf: (p) => `K${p.id}`, collectionName: "", takenAt: NOW });
+  assert.ok(off.snapshot.rows.every((r) => r.subcollections.length === 0));
+  assert.equal(off.snapshot.subcollectionColumn, false);
+});
+
+test("F011 AC18: liveView uses the scope list and shows the Subcollection column with places", () => {
+  const collections = [
+    { id: 1, parentID: false, name: "Phenotypes", key: "1/PHEN" },
+    { id: 2, parentID: 1, name: "Asthma", key: "1/ASTH" },
+    { id: 3, parentID: 1, name: "COPD", key: "1/COPD" },
+  ];
+  const data = {
+    collections,
+    scopeIds: [2, 3],
+    papers: [
+      { id: 101, title: "B paper", collectionId: 3, itemTags: [], annotationTags: [] },
+      { id: 102, title: "A paper", collectionId: 2, itemTags: [], annotationTags: [] },
+      { id: 102, title: "A paper", collectionId: 3, itemTags: [], annotationTags: [] },
+      { id: 103, title: "Root only", collectionId: 1, itemTags: [], annotationTags: [] },
+    ],
+    keys: new Map([[101, "K101"], [102, "K102"], [103, "K103"]]),
+  };
+  const definition = S.buildDefinition({ selection: { include: ["1/ASTH", "1/COPD"], exclude: [] }, codebookId: "c1", columnLayout: null, sort: { key: "subcollection", direction: "asc" }, manualOrder: null, countItemTags: false });
+  const live = S.liveView(frozen({ codebook: codebookData(GROUPS), monitorData: data, definition }));
+  assert.equal(live.view.subcollectionColumn, true);
+  assert.deepEqual(plain(live.view.papers.map((p) => [p.id, p.subcollections])), [[102, ["Asthma", "COPD"]], [101, ["COPD"]]]);
+  // One collection in scope: no column.
+  const single = S.liveView({ codebook: null, monitorData: { ...data, scopeIds: [3] }, definition });
+  assert.equal(single.view.subcollectionColumn, false);
+  assert.ok(single.view.papers.every((p) => p.subcollections.length === 0));
+  // The old shape (rootId) still works.
+  const old = S.liveView({ codebook: null, monitorData: { ...data, scopeIds: undefined, rootId: 1 }, definition });
+  assert.equal(old.view.papers.length, 3);
+  assert.equal(old.view.subcollectionColumn, true);
+});
+
+test("F011 AC18: listTables matches by selection key: a single-collection table matches its plain key", () => {
+  let data = S.emptyData();
+  const add = (name, selection) => {
+    const input = newTableInput(name);
+    data = S.addTable(data, { ...input, definition: S.buildDefinition({ selection, codebookId: "c1", columnLayout: null, sort: { key: "count", direction: "asc" }, manualOrder: null, countItemTags: false }) }, NOW).data;
+  };
+  add("single", { include: ["1/ASTH"], exclude: [] });
+  add("three", { include: ["1/DIAB", "1/ASTH", "1/COPD"], exclude: [] });
+  add("excl", { include: ["1/PHEN"], exclude: ["1/ARCH"] });
+  assert.deepEqual(plain(S.listTables(data, "1/ASTH").map((e) => e.name)), ["single"]);
+  assert.deepEqual(plain(S.listTables(data, "sel:1/ASTH,1/COPD,1/DIAB").map((e) => e.name)), ["three"]);
+  assert.deepEqual(plain(S.listTables(data, "sel:1/PHEN|1/ARCH").map((e) => e.name)), ["excl"]);
+  assert.deepEqual(plain(S.listTables(data, "1/PHEN").map((e) => e.name)), []);
+  assert.equal(S.listTables(data, null).length, 3);
 });

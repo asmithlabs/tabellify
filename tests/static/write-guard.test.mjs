@@ -188,22 +188,32 @@ function sourceFiles(skip) {
     .map(([rel, f]) => [rel, readFileSync(f, "utf8")]);
 }
 
-test("F007b AC22 / ADR-0018 §5: tables-store.js writes only tables.json, in one narrow call", () => {
+test("F007b AC22 / ADR-0018 §5 / F011 AC19 (ADR-0027 §2): tables-store.js writes only tables.json and, once, tables.v1.json", () => {
   const raw = readFileSync(join(srcDir, "content/tables-store.js"), "utf8");
   const code = codeOnly(raw);
   const count = (re) => (code.match(re) ?? []).length;
   assert.match(code, /FILE_NAME:\s*"tables\.json"/);
-  // Exactly one write of the data, to the store's own path with .tmp and .bak next to it.
-  assert.equal(count(/\bfs\.writeJSON\(/g), 1, "exactly one fs.writeJSON( call");
+  assert.match(code, /V1_COPY_NAME:\s*"tables\.v1\.json"/);
+  // Exactly two writes (F011): the data, to the store's own path with .tmp and .bak next to
+  // it, and the one-time copy of a schema 1 file with mode "create" (never overwrites; the
+  // same pattern as codebook-store.js's codebooks.v1.json).
+  assert.equal(count(/\bfs\.writeJSON\(/g), 2, "exactly two fs.writeJSON( calls");
   assert.match(code, /writeJSON\(path, clean, \{ tmpPath: path \+ "\.tmp", backupFile: path \+ "\.bak" \}\)/);
   assert.match(code, /const path = fs\.join\(dir, this\.FILE_NAME\);/);
+  assert.match(code, /await fs\.writeJSON\(copyPath, onDiskV1, \{ mode: "create" \}\);/);
+  assert.match(code, /const copyPath = fs\.join\(dir, this\.V1_COPY_NAME\);/);
+  // The copy is the schema 1 data read from tables.json itself, and only that.
+  assert.match(code, /if \(onDisk\.schemaVersion === 1\) onDiskV1 = onDisk;/);
+  assert.equal(count(/\bonDiskV1 = (?!null;)/g), 1, "onDiskV1 is assigned once (besides its null start)");
+  assert.equal(count(/\blet onDiskV1 = null;/g), 1);
   // The only IOUtils members are the read, the write and the folder creation of
   // platformFs (as in layout-store.js), plus the read-only size check (SEC-014); never
   // remove, move or copy.
   assert.deepEqual([...code.matchAll(/\bIOUtils\s*\.\s*(\w+)/g)].map((m) => m[1]), ["readJSON", "stat", "writeJSON", "makeDirectory"]);
   assert.doesNotMatch(code, /\bIOUtils\.(?:remove|move|copy|setPermissions|write(?!JSON))\w*/);
-  // No mode option (no create / append tricks) and the data directory is not read here.
-  assert.doesNotMatch(code, /\bmode\s*:/);
+  // The only mode option is the copy's "create" (no "append" or other tricks), and the data
+  // directory is not read here.
+  assert.deepEqual([...code.matchAll(/\bmode\s*:\s*("?\w+"?)/g)].map((m) => m[1]), ['"create"']);
   assert.doesNotMatch(code, /\bZotero\b/);
   assert.doesNotMatch(raw.replace(/\/\*[\s\S]*?\*\//g, ""), /DataDirectory/);
   // No other file in src/ mentions tables.json except the store (and comments).
