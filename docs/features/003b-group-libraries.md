@@ -1,6 +1,6 @@
 # Feature 003b: Group libraries
 
-- **Status:** Approved (owner, 2026-11-16, all recommendations Q1–Q13) (drafted by the architect, 2026-11-16). Implemented and merged (PR #23, 2026-11-18; owner smoke test PASS). answers to
+- **Status:** Approved (owner, 2026-11-16, all recommendations Q1–Q13) (drafted by the architect, 2026-11-16). Implemented and merged (PR #23, 2026-11-18; owner smoke test PASS). Answers to
   the open questions.
 - **Branch:** `feat/003b-group-libraries` (from `main`)
 - **Related ADRs:** 0012 (Accepted: Tabellify's own files, write-guard allow-list), 0014 /
