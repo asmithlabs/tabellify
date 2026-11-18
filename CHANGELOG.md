@@ -9,7 +9,7 @@ are never published.
 
 ## [Unreleased]
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-11-18
 
 First public release. Works with Zotero 10.0.x (`strict_min_version` 10.0,
 `strict_max_version` 10.0.*). It includes everything listed under 0.1.0 below.
@@ -28,6 +28,16 @@ First public release. Works with Zotero 10.0.x (`strict_min_version` 10.0,
 ### Fixed
 - Manual paper orders of one library are no longer at risk when you reorder papers in
   another library.
+- A manual paper order is kept while its collection is in the Zotero trash, so restoring the
+  collection brings the order back. It is removed only when the collection is deleted for good.
+- A saved table whose collection no longer exists no longer shows another library's name.
+
+### Security
+- Release integrity: every release file is listed in `updates.json` with its SHA-256 hash,
+  which Zotero checks before installing an update. Releases are immutable and release tags
+  are protected (ADR-0020).
+- Another member of a shared group can no longer cause the loss of your saved paper order by
+  moving a collection to the trash.
 
 ## [0.1.0] - 2026-11-16
 
