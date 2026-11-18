@@ -116,7 +116,25 @@ with this mapping:
   cleanup; F002 delivers the tab. How (and which Zotero internals it relies on) is decided by
   an ADR superseding ADR-0004, approved by the owner before implementation.
 
-## 8. Open product questions
+## 8. v2 roadmap (Planned, 2026-11-18)
+
+Tabellify 0.2.0 is the first public release. The items below are **Planned**: nothing here is
+a commitment beyond what the owner asked for, and each item needs its own approved spec (and
+ADRs where CLAUDE.md rule 7 applies) before it is built. Order is not decided.
+
+| Item | What | Status | Spec / ADRs |
+|---|---|---|---|
+| **F010 AI fill** | The owner's v2 idea: the user picks Claude or ChatGPT with their own API key; the AI takes a collection, fills the table, and the table's cells become highlights in the PDFs ("build backwards") | Planned (spec Draft) | `docs/features/010-ai-fill.md`; ADR-0021 … ADR-0026 (Proposed) |
+| 010a AI settings | Provider, model, API key (stored encrypted), Test key, Forget key | Planned | F010 spec |
+| 010b AI suggestions | Read-only: per-run consent and cost estimate, suggestions checked against the paper text, review queue, "AI" marker in the table, optional in CSV. No library writes | Planned (proposed MVP) | F010 spec; ADR-0023, 0024, 0026 |
+| 010c Assisted highlighting | Open the PDF at an accepted suggestion; the user highlights and tags with Zotero's tools; Tabellify links it. No Tabellify library writes | Planned | F010 spec; ADR-0025 §1 |
+| 010d AI highlights | Tabellify creates tagged highlights for accepted suggestions, with a marker tag and per-run removal. **First library write**; only after a read-only spike and owner approval | Planned | F010 spec; ADR-0025 |
+| 010e AI-proposed columns | Idea only: the AI proposes codebook columns for a collection | Not planned (owner question F010 Q18) | — |
+| 006d | Highlight text in table cells (the original F006 addition) | Planned | — |
+| F008b | XLSX export (F008 delivered CSV) | Planned | — |
+| F009 | Column customization: user-created columns, drag-and-drop reorder, column types | Planned | — |
+
+## 9. Open product questions
 - **Q5 — Rows.** One row per paper (item) always, or optionally one row per annotation?
 - **Q6 — Collection names as columns.** Meaning: a column showing which (sub)collection
   each paper belongs to, or tables spanning several collections?
