@@ -153,6 +153,20 @@ Existing rows (`Libraries.get`, `waitForDataLoad`, `getByLibrary`, `Tags.getAll`
 already take any `libraryID`; 003b uses them with group library IDs. Runtime checks: RT-G1,
 RT-G2, RT-G3 (end of this file; all read-only).
 
+The Feature 010 rows (AI fill, spec `docs/features/010-ai-fill.md`, Draft; ADR-0021 … ADR-0026
+**Proposed**) were checked on 2026-11-18 against Zotero source at tag **`10.0.9`**
+(`xpcom/plugins.js`, `xpcom/sync/syncLocal.js`, `xpcom/osKeyStore.js`, `xpcom/annotations.js`,
+`xpcom/data/item.js`, `xpcom/data/dataObject.js`, `xpcom/data/dataObjectUtilities.js`,
+`xpcom/pdfWorker/manager.js`, `xpcom/reader.js`), the `document-worker` submodule commit pinned by
+10.0.9 ([`8fb70af`](https://github.com/zotero/document-worker/tree/8fb70af4000873561c82b2f4eb88be190efb9979),
+read via the GitHub contents API), Firefox **ESR 140** (`nsILoginManager.idl`,
+`OSKeyStore.sys.mjs`, `IOUtils.webidl`), the Z10 guide, the JSAPI page and MDN. **None of
+these APIs is used in `src/` yet.** Line numbers are approximate (counted by a fetch tool) or
+missing; search for the quoted identifier. Nothing here was run: runtime checks RT-AI1 … RT-AI4
+(end of this file) must pass before the matching phase is built; RT-AI6 (a write) is written
+only after ADR-0025 is accepted. External HTTP APIs (Anthropic, OpenAI) are cited in ADR-0021
+and ADR-0026, not here.
+
 Abbreviations used in the Source column:
 `Z7`/`Z8`/`Z10` = the dev guides above; `src:` = `https://github.com/zotero/zotero/blob/10.0.8/`;
 `src10:` = `https://github.com/zotero/zotero/blob/10.0.9/`;
@@ -309,6 +323,35 @@ Abbreviations used in the Source column:
 | Group libraries exist only through sync | F003b: why the owner's dev profile must sync with a zotero.org account to test | Verified (source) | 10.0.9 | `collectionTree.jsx` `notify`, `add` case: comment "Groups only come from sync, so they should never be auto-selected." | — |
 | Database identity: `libraries.libraryID INTEGER PRIMARY KEY` (no `AUTOINCREMENT`); `groups.groupID INTEGER PRIMARY KEY` + `libraryID INT NOT NULL UNIQUE`; `collections.collectionID INTEGER PRIMARY KEY` + `UNIQUE (libraryID, key)` | F003b: (1) dropdown option values (collection IDs) are unique across all libraries; (2) `"<libraryID>/<key>"` keys in `layout.json` / `tables.json` cannot collide between libraries; (3) library IDs are **local** to one database, and SQLite may reuse the highest ID after it is deleted | Verified (source) | 10.0.9 | [src10:`resource/schema/userdata.sql`](https://github.com/zotero/zotero/blob/10.0.9/resource/schema/userdata.sql) (`CREATE TABLE libraries` with `libraryID INTEGER PRIMARY KEY,`; `CREATE TABLE groups` with `groupID INTEGER PRIMARY KEY,` and `libraryID INT NOT NULL UNIQUE,`; `CREATE TABLE collections` with `collectionID INTEGER PRIMARY KEY,` and `UNIQUE (libraryID, key),`) | `groupID` is the zotero.org group number (global); `libraryID` is a local row number. ID reuse without `AUTOINCREMENT` is standard SQLite behaviour ([sqlite.org/autoinc.html](https://www.sqlite.org/autoinc.html)) |
 | HTML `<optgroup label="…">` (and `disabled`) inside `<select>`; created with `document.createElementNS(HTML_NS, "optgroup")` and `optgroup.label = text` | F003b: one heading per library in the collection dropdown | Verified (docs); **Verified (runtime) in our chrome XUL document: RT-G3 PASS (owner, 2026-11-18)** | Firefox ESR 140 (Zotero 10.0.9) | MDN [`<optgroup>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/optgroup) (`label`: "The name of the group of options, which the browser can use when labeling the options in the user interface. This attribute is mandatory if this element is used."), [`HTMLOptGroupElement`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLOptGroupElement) (`label` property reflects the attribute) | Standard HTML. `label` is a plain-text attribute (not parsed as markup). Fallback if RT-G3 fails: a disabled `<option>` with the library name as a heading line |
+| **Feature 010 rows (AI fill) start here.** | | | | | |
+| `fetch`, `XMLHttpRequest`, `crypto`, `TextEncoder`, `TextDecoder`, `atob`, `btoa`, `Blob`, `URL` in the **plugin bootstrap scope** | F010 (ADR-0021 §8): fallback place for the one network call if RT-AI1 fails in the workspace document | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/plugins.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/plugins.js) `_loadScope` (~L136 `new Cu.Sandbox(` with the system principal; ~L140 `wantGlobalProperties: [` listing `"atob", "btoa", "Blob", "crypto", "CSS", "ChromeUtils", "DOMParser", "fetch", "File", "FileReader", "TextDecoder", "TextEncoder", "URL", "URLSearchParams", "XMLHttpRequest"`) | Not used yet. Whether a system-principal sandbox's `fetch` is subject to CORS was not checked |
+| `window.fetch(url, { method, headers, body, signal, redirect })` and `AbortController` / `AbortSignal` in the **workspace document** | F010 (ADR-0021 §3, §7): the one network call, in `src/content/ai-client.js`; Cancel and `unload` abort it | Verified (docs) for the APIs; **UNVERIFIED (runtime)** that a request from our system-principal chrome document to `api.anthropic.com` / `api.openai.com` is not blocked by CORS: **RT-AI1** | Firefox ESR 140 | MDN [`Window.fetch()`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch), [`RequestInit.redirect`](https://developer.mozilla.org/en-US/docs/Web/API/RequestInit#redirect) (`"error"`), [`AbortController`](https://developer.mozilla.org/en-US/docs/Web/API/AbortController); Z10 guide ("`Zotero.HTTP.download()` was rewritten to stream via `fetch()`") | Zotero's own use of `fetch` shows it works in Zotero's privileged code, but not from a plugin's chrome `<iframe>` document to these hosts. Fallbacks: ADR-0021 §8 |
+| `Zotero.HTTP.request(method, url, options)` | F010: **not used** (ADR-0021 option C) | **UNVERIFIED** (only seen in the Z10 guide's cookie example: `await Zotero.HTTP.request('GET', url, { userContextId: cookieContext.id });`) | — | To verify: src10:`chrome/content/zotero/xpcom/http.js`, search `this.request = async function` | Denied outside `ai-client.js` by the planned network guard |
+| `Services` as a global inside the workspace document (chrome `<iframe>`) | F010: `ai-key-store.js` reads `Services.logins` from the workspace | **UNVERIFIED** (runtime: RT-AI1 returns `typeof win.Services`) | — | — | Fallback: `ChromeUtils.importESModule("resource://gre/modules/Services.sys.mjs")` (path **UNVERIFIED**), or move the key store into the bootstrap scope, where `Services` is verified (`plugins.js` `_loadScope` `Object.assign` list, row "IOUtils / PathUtils / Localization in the bootstrap scope") |
+| `Uint8Array.prototype.toBase64()` | F010 later (PDF-file mode, spec Q3): encode a PDF for a request body | Verified (docs): "Baseline 2025 Newly available"; presence in ESR 140 **UNVERIFIED (runtime)**: RT-AI1 | Firefox ESR 140 | MDN [`Uint8Array.prototype.toBase64()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array/toBase64) | Not needed in 010b (text only). Fallback: `btoa` over a binary string (verified as a bootstrap-scope global above; standard in windows) |
+| `IOUtils.read(path, { offset, maxBytes })` → `Promise<Uint8Array>` | F010 later (PDF-file mode): read the PDF bytes with a size cap | Verified (source) | ESR 140 | moz:[`dom/chrome-webidl/IOUtils.webidl`](https://searchfox.org/mozilla-esr140/source/dom/chrome-webidl/IOUtils.webidl) (`Promise<Uint8Array> read(DOMString path, optional ReadOptions opts = {});`; `dictionary ReadOptions : ReadUTF8Options { unsigned long long offset = 0; unsigned long? maxBytes = null; }`) | Read-only; not matched by the write guard |
+| `Services.logins.addLoginAsync(info)` → Promise; `findLogins(origin, actionOrigin, httpRealm)` → `nsILoginInfo[]` (sync); `modifyLogin(old, newInfo)`; `removeLogin(info)`; `removeAllLogins()` | F010 (ADR-0022): store the encrypted API key as a Login Manager entry (`chrome://tabellify`, realm `Tabellify AI: <provider>`, username `API Key`) | Verified (source) | ESR 140; Zotero 10.0.9 (same calls for its sync key) | moz:[`toolkit/components/passwordmgr/nsILoginManager.idl`](https://searchfox.org/mozilla-esr140/source/toolkit/components/passwordmgr/nsILoginManager.idl) (`Promise addLoginAsync(in nsILoginInfo aLogin);` ~L58; `void removeLogin(in nsILoginInfo aLogin);` ~L83; `void modifyLogin(in nsILoginInfo oldLogin, in nsISupports newLoginData);` ~L104; `Array<nsILoginInfo> findLogins(in AString aOrigin, in AString aActionOrigin, in AString aHttpRealm);` ~L217; `readonly attribute boolean isLoggedIn;` ~L318 "True when the primary password has already been entered"); Zotero's use: [src10:`chrome/content/zotero/xpcom/sync/syncLocal.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/sync/syncLocal.js) (`_getAPIKeyLoginInfo`: `Services.logins.findLogins(this._loginManagerHost, null, this._loginManagerRealm)`; `_writeAPIKey`: `await Services.logins.addLoginAsync(loginInfo);` or `Services.logins.modifyLogin(oldLoginInfo, loginInfo);`; `setAPIKey`: `Services.logins.removeLogin(oldLoginInfo);`; host `'chrome://zotero'`, realm `'Zotero Web API (encrypted)'`, username `'API Key'`) | **Writes to the profile's login store** (not the library). Planned write-guard pattern "Services.logins write", allowed only in `content/ai-key-store.js` (+ the uninstall cleanup); `removeAllLogins` denied everywhere (Zotero calls it only in `repairLoginManager`). If a Primary Password is set, reading may prompt for it (`isLoggedIn`). Runtime: RT-AI2 |
+| `nsILoginInfo` created with `new (Components.Constructor("@mozilla.org/login-manager/loginInfo;1", Components.interfaces.nsILoginInfo, "init"))(origin, formActionOrigin, httpRealm, username, password, usernameField, passwordField)` | F010 (ADR-0022 §1): build the Login Manager entry | Verified (source) | Zotero 10.0.9 | src10:`…/xpcom/sync/syncLocal.js` (`new Components.Constructor("@mozilla.org/login-manager/loginInfo;1", Components.interfaces.nsILoginInfo, "init")`; called with host, `null`, realm, `'API Key'`, the stored value, `''`, `''`) | Same 7-argument order as Zotero. Runtime: RT-AI2 |
+| Firefox `OSKeyStore` (`ChromeUtils.importESModule("resource://gre/modules/OSKeyStore.sys.mjs")`): `async encrypt(plainText)`, `async decrypt(cipherText, reauth = false)`, `async ensureLoggedIn(reauth = false, dialogCaption = "", parentWindow = null, generateKeyIfNotAvailable = true)` | F010 (ADR-0022 §1): encrypt the API key with a secret held in the OS key store (macOS Keychain) before it goes into the Login Manager | Verified (source). **Firefox-internal** (no add-on API docs) | ESR 140 | moz:[`toolkit/modules/OSKeyStore.sys.mjs`](https://searchfox.org/mozilla-esr140/source/toolkit/modules/OSKeyStore.sys.mjs) (`encrypt`: "Encrypts a string and returns cipher text containing algorithm information used for decryption."; `decrypt`: "Decrypts cipherText."; `ensureLoggedIn`: "It will display the OS login prompt or do nothing if it's logged in already."; `STORE_LABEL` = `AppConstants.MOZ_APP_BASENAME + " Encrypted Storage"`, shown in Keychain Access) | With the default `reauth = false` no OS re-authentication prompt is requested; whether macOS shows a Keychain access prompt the first time is **UNVERIFIED (runtime)**: RT-AI2. **Maintenance risk:** internal module; Zotero's own sync key depends on it too (next row), which lowers the risk. Re-check before each `strict_max_version` raise |
+| `Zotero.OSKeyStore` (`available`, `isEncrypted(value)`, `async encrypt(plaintext)` → `"oskv1:…"`, `async decrypt(value)`, `confirmUnencryptedFallback()`) | F010: **not used** (ADR-0022 option A2); evidence that Zotero 10 itself stores its sync API key this way | Verified (source). **Internal** | 10.0.9 | [src10:`chrome/content/zotero/xpcom/osKeyStore.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/osKeyStore.js) (wraps `resource://gre/modules/OSKeyStore.sys.mjs`, loaded lazily with `ChromeUtils.importESModule`; prefix `oskv1:`; `encrypt` throws "OSKeyStore unavailable" rather than storing plain text); src10:`…/xpcom/sync/syncLocal.js` (`_writeEncryptedAPIKey`: `await this._writeAPIKey(await Zotero.OSKeyStore.encrypt(apiKey));`; `getAPIKey`: `if (Zotero.OSKeyStore.isEncrypted(login.password)) { return Zotero.OSKeyStore.decrypt(login.password); }`) | Since which Zotero version it exists was not checked |
+| `item.isPDFAttachment()` (sync) | F010 (010b): pick each paper's PDF attachment | Verified (source) | 10.0.9 | src10:`…/xpcom/data/item.js` (`Zotero.Item.prototype.isPDFAttachment = function () {`; JSDoc "@return {Boolean} - Returns true if item is a stored or linked PDF attachment") | Read-only. Use after `isFileAttachment()` (existing row) or on its own |
+| `attachment.getFilePathAsync()` → absolute path or `false` (async) | F010 later (PDF-file mode) and 010b skip reason "no file" | Verified (source) | 10.0.9 | src10:`…/xpcom/data/item.js` (`Zotero.Item.prototype.getFilePathAsync = async function () {`; JSDoc "Get the absolute path for the attachment, if the file exists") | Read-only. Return value for a missing file (`false`) inferred from the JSDoc wording, not read |
+| `await attachment.attachmentText` (async getter) → the attachment's full text | F010 (010b, spec Q4 option a): the paper text sent to the model and used to verify quotes | Verified (docs). Getter body not read; page breaks **UNVERIFIED (runtime)**: RT-AI3 | JSAPI page (current); 10.0.9 | [JSAPI](https://www.zotero.org/support/dev/client_coding/javascript_api) (reads full text with `await attachment.attachmentText`) | Read-only. Probably depends on Zotero's full-text index (Settings → Search); an unindexed PDF may return empty text (RT-AI3 shows the owner's case). Z10 guide: some `Zotero.FullText` methods "were removed or replaced", so Tabellify does not call `Zotero.FullText` directly |
+| `Zotero.PDFWorker.getFullText(itemID, maxPages, isPriority, password)` → Promise (worker result) | F010 (010b, spec Q4 option b): text read straight from the PDF | Verified (source) for the signature. **Internal.** Result shape **UNVERIFIED (runtime)**: RT-AI3 | 10.0.9 | [src10:`chrome/content/zotero/xpcom/pdfWorker/manager.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/pdfWorker/manager.js) (~L560: JSDoc "Get fulltext", `@param {Integer} itemID Attachment item id`, `@param {Integer\|null} maxPages Pages count to extract, or all pages if 'null'`; `async getFullText(itemID, maxPages, isPriority, password) {`; PDF attachments only; reads the file and sends it to the worker action `pdf.getFulltext`; no caching in this file); document-worker [`src/index.js` @ 8fb70af](https://github.com/zotero/document-worker/blob/8fb70af4000873561c82b2f4eb88be190efb9979/src/index.js) (`message.action === 'pdf.getFulltext'`) | Read-only by reading `manager.js` (file read + worker message; no DB call in this function). Not a documented plugin API |
+| `Zotero.PDFWorker.getStructuredDocumentText(itemID, { isPriority, password, onProgress })` → `{ buf }` (a packed "Structured Document Text" file) or `null` | F010 (010d spike, ADR-0025 geometry G1): maybe text with positions | Verified (source) for the signature and the `{ buf }` result. **Internal.** Contents (anchors, rects) **UNVERIFIED** | 10.0.9 | src10:`…/pdfWorker/manager.js` (~L600: JSDoc "Get structured document text for a PDF, EPUB, or snapshot attachment", `@returns {Promise<Object\|null>}`; returns `null` without a file; throws "Attachment is missing an MD5 hash"; worker action `getStructuredDocumentText`); document-worker `src/index.js` @ 8fb70af (replies with `{ buf }` from `packStructuredDocumentText(structure, { destructive: true, deflate: … })`); format README [github.com/zotero/structured-document-text](https://github.com/zotero/structured-document-text) ("stores a normalized document tree together with document metadata, outline, page mappings, source anchors" and text ranges; "The default persisted form is a binary `.sdt` pack") | Spike only (T17). How a plugin unpacks the `.sdt` pack is unknown (no JS reader API in the README). High maintenance risk |
+| `Zotero.PDFWorker.getRecognizerData(itemID, isPriority, password)` | F010: **not used** (recorded for the spike) | Verified (source) for the signature. **Internal** | 10.0.9 | src10:`…/pdfWorker/manager.js` (~L650, JSDoc "Get data for recognizer-server"; worker action `pdf.getRecognizerData`) | Result shape not read |
+| Reader internals for character rectangles: `reader._internalReader._primaryView._iframeWindow.PDFViewerApplication.pdfDocument.getPageData(…)` | F010 (010d spike, ADR-0025 geometry G2) | **UNVERIFIED.** **Internal** (deepest level) | — | Seen only in third-party code: SkimRead (AGPL) [`src/reader/adapter.ts`](https://github.com/adellife/zotero-skimread/blob/main/src/reader/adapter.ts) (`reader?._internalReader?._primaryView?._iframeWindow`, `win.PDFViewerApplication`, `app.pdfDocument.getPageData(…)`, chars with `rect`). `_internalReader` is assigned in src10:`…/xpcom/reader.js` `_open` (`this._internalReader = this._iframeWindow.wrappedJSObject.createReader(`) | To verify: read the `reader` submodule at `c3d467b` (`src/pdf/pdf-view.js`, search `_iframeWindow`) and Zotero's pdf.js fork for `getPageData`. Needs the PDF open in a reader tab |
+| `Zotero.Reader.open(itemID, location, { title, tabIndex, tabID, openInBackground, openInWindow, allowDuplicate, secondViewState, preventJumpback } = {})`; `ReaderInstance.navigate(location)` | F010 (010b "Show in PDF", 010c): open the PDF at the suggestion's page | Verified (source) for the signatures; the **shape of `location`** (e.g. `{ pageIndex }`) is **UNVERIFIED** | 10.0.9 | src10:`…/xpcom/reader.js` (~L1800 `async open(itemID, location, { … } = {}) {`, no JSDoc; an already open reader gets `reader.navigate(location);` ~L500 `async navigate(location) {`) | `location` is passed through to the `reader` submodule. To verify: read `navigate` in the `reader` submodule at `c3d467b` (`src/common/reader.js`) before 010b T12. Opening the reader is what a double-click does; Zotero may then store the last viewed page itself |
+| Annotation fields on `Zotero.Item` (type `annotation`): `annotationType`, `annotationAuthorName`, `annotationText`, `annotationComment`, `annotationColor`, `annotationPageLabel`, `annotationSortIndex`, `annotationIsExternal`, `annotationPosition` (getters and setters) | F010 (010d, ADR-0025 §2): fields of a Tabellify-made highlight | Verified (source). **Internal** (no dev guide documents annotation creation) | 10.0.9 | src10:`…/xpcom/data/item.js` (setters generated in a loop over `['type', 'authorName', 'text', 'comment', 'color', 'pageLabel', 'sortIndex', 'isExternal']`, `position` in a second loop; values `value.trim().normalize()`, empty → null; `throw new Error("annotationType must be set before other annotation properties");`; type must be one of `['highlight', 'underline', 'note', 'text', 'image', 'ink']`; text only for `highlight`/`underline`; colour must match `/#[a-f0-9]{6}/` (not anchored); PDF sort index `/^\d{5}\|\d{6}\|\d{5}$/`, EPUB `/^\d{5}\|\d{8}$/`, snapshot `/^\d{7,8}$/`; `annotationIsExternal` must be a boolean and cannot change; position "must be a string") | Write-time validation only; no text length limit. The meaning of the three sort-index parts (page index, offset, top position) is **UNVERIFIED** (third-party SkimRead uses `pageIndex\|startChar\|00000`). RT-AI4 reads an existing highlight's values |
+| Annotation save rules in `Zotero.Item.prototype._saveData` | F010 (010d): what makes a save fail | Verified (source) | 10.0.9 | src10:`…/xpcom/data/item.js` (`_saveData`: "Annotation item must have a parent item", "Annotation parent must be an attachment item", "Annotation parent must be a file attachment", "Annotation parent must be a PDF, EPUB, or HTML snapshot"; ``Invalid annotation type '${type}'``; colour stored as `color \|\| Zotero.Annotations.DEFAULT_COLOR`) | — |
+| `Zotero.Annotations` constants: `ANNOTATION_POSITION_MAX_SIZE` (65000), `ANNOTATION_TYPE_HIGHLIGHT` (1) … `ANNOTATION_TYPE_TEXT` (6), `COLORS` (pairs like `['general-yellow', '#ffd400']`), `DEFAULT_COLOR` (= first colour, `#ffd400`) | F010 (010d): size cap for positions, colour choices | Verified (source). **Internal** | 10.0.9 | [src10:`chrome/content/zotero/xpcom/annotations.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/annotations.js) (~L27 `Zotero.defineProperty(this, 'ANNOTATION_POSITION_MAX_SIZE', { value: 65000 });`; ~L29–34 types; ~L38–49 `COLORS`; ~L51 `DEFAULT_COLOR`; `splitAnnotationJSON` ~L215 splits oversized positions) | The full `COLORS` list (and so the purple value proposed in ADR-0025 §4) was not read: check before use |
+| `Zotero.Annotations.saveFromJSON(attachment, json, saveOptions)` (F005 row above) — details for writing | F010: ADR-0025 option **B** (not recommended) | Verified (source). **Internal** | 10.0.9 | src10:`…/xpcom/annotations.js` (throws `"'key' not provided in JSON"`; `var item = Zotero.Items.getByLibraryAndKey(attachment.libraryID, json.key);` then, **only if none exists**, `item = new Zotero.Item('annotation'); item.libraryID = attachment.libraryID; item.key = json.key; await item.loadPrimaryData();`; sets fields from JSON without its own checks; `item.annotationPosition = JSON.stringify(Object.assign({}, json.position));`; `await item.saveTx(saveOptions);`) | **Risk:** a key that already exists updates that annotation. Zotero's reader calls it from `onSaveAnnotations` with `notifierQueue` / `notifierData` save options (src10:`…/xpcom/reader.js` ~L190–240) |
+| `Zotero.DataObjectUtilities.generateKey()` → `Zotero.Utilities.generateObjectKey()`; `checkKey(key)` → throws "key is not valid" | F010: only needed with ADR-0025 option B | Verified (source). **Internal** | 10.0.9 | [src10:`chrome/content/zotero/xpcom/data/dataObjectUtilities.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/dataObjectUtilities.js) (`generateKey: function () { return Zotero.Utilities.generateObjectKey();`; `checkKey` uses `Zotero.Utilities.isValidObjectKey(key)`) | The key alphabet and length are in `Zotero.Utilities` (not read) |
+| `Zotero.Items.getByLibraryAndKey(libraryID, key)` → item or `false` | F010 (010c linking, 010d undo): find an annotation by the key stored in `ai-runs.json` | Verified (source, **by usage**; definition in `dataObjects.js` not read) | 10.0.9 | src10:`…/xpcom/annotations.js` (`saveFromJSON`), src10:`…/xpcom/reader.js` `onDeleteAnnotations` (`let annotation = Zotero.Items.getByLibraryAndKey(libraryID, key);`) | Read-only. Return value for an unknown key (`false`) inferred from `saveFromJSON`'s `if (!item)` |
+| `item.saveTx(options)` creates a new annotation; Zotero 10 **undo does not cover creating or erasing** | F010 (010d): why Tabellify has its own "Remove highlights made in this run" | Verified (docs + source) | 10.0.9 | Z10 guide "Undo/redo" ("creating or permanently deleting an object isn't undoable (trashing is, since it just sets the object's `deleted` flag)"; `undoAction` / `undoActionArgs` only for changes to existing objects); src10:`…/xpcom/data/dataObject.js` (`Zotero.DataObject.prototype.saveTx = function (options = {}) {` sets `tx` and calls `save`; undo data is captured only for non-new saves via `this._getUndoData()`) | **Write.** Planned write-guard entry for `content/ai-annotation-writer.js` only (010d) |
+| `item.eraseTx(options)` (sync wrapper → `erase({ ...options, tx: true })`) | F010 (010d undo): permanently delete a Tabellify-made annotation | Verified (source) | 10.0.9 | src10:`…/xpcom/data/dataObject.js` (`Zotero.DataObject.prototype.eraseTx = function (options) {` sets `options.tx = true` and returns `this.erase(options)`); Zotero's reader deletes annotations the same way: src10:`…/xpcom/reader.js` `onDeleteAnnotations` (~L265–285: `await annotation.eraseTx({ notifierQueue });`, after checking `annotation.parentID === this._item.id`) | **Write, permanent** (no trash). 010d only, unchanged Tabellify-made annotations only (ADR-0025 §5) |
+| `dataObject.isEditable(op = 'edit')` → `library.editable` (feeds excepted); `_initSave` throws `"Cannot edit " + objectType + " in library " …` when not editable; group annotations created by other users are not editable | F010 (010d): disable writes in read-only libraries; never erase another member's annotation | Verified (source) | 10.0.9 | src10:`…/xpcom/data/dataObject.js` (`Zotero.DataObject.prototype.isEditable = function (_op = 'edit') {` … `return library.editable;`; `_initSave` error text); src10:`…/xpcom/data/item.js` ("Group library annotations created by other users aren't editable"; imported file attachments also need `filesEditable`) | Read-only checks. Existing row `library.editable` (F003b) covers the library flag |
+| `item.setTags([{ tag, type? }])` | F010 (010d): codebook tag + marker tag on a new annotation | Verified (source, **by usage**; definition not read) | 10.0.9 | src10:`…/xpcom/annotations.js` `saveFromJSON` (`item.setTags((json.tags \|\| []).map(t => ({ tag: t.name })));`); tag type rules: existing row "Tag `type` values" | **Write** (on save). Planned allow-list: `content/ai-annotation-writer.js` only |
 
 ## Runtime checks for owner
 
@@ -871,3 +914,166 @@ The increase is the owner's own two new highlights tagged in Zotero's reader dur
 test (`build/debug-28.txt`: `add item-tag` for "who" and "what" with no Tabellify line; the
 paper is in both test collections, so +2 tags count as +4). Tabellify's code has no tag-writing
 call. Read-only confirmed.
+
+### Feature 010: AI fill (spec F010 AC1, AC2, AC13; run before development of each phase)
+None of these sends library data, and none changes any library. RT-AI1 sends two **empty**
+requests **without a key** (the providers answer "not authorized"). RT-AI2 writes a dummy
+entry to the dev **profile's** login store and removes it again. Run them in the **dev
+Zotero window** → Tools → Developer → Run JavaScript, and paste each result into the Claude
+Code session.
+
+**RT-AI1: Can the Tabellify tab reach the two AI providers?** Open the Tabellify tab first.
+Tick **Run as async function**.
+```js
+const frame = Zotero.getMainWindow().document.querySelector('iframe[src="chrome://tabellify/content/workspace.xhtml"]');
+if (!frame) return "Tabellify tab not open";
+const win = frame.contentWindow;
+const out = {
+  fetch: typeof win.fetch,
+  abortController: typeof win.AbortController,
+  services: typeof win.Services,
+  toBase64: typeof new win.Uint8Array(1).toBase64,
+};
+const targets = [
+  ["anthropic", "https://api.anthropic.com/v1/messages", { "content-type": "application/json", "anthropic-version": "2026-10-21" }],
+  ["openai", "https://api.openai.com/v1/responses", { "content-type": "application/json" }],
+];
+for (const [name, url, headers] of targets) {
+  try {
+    const r = await win.fetch(url, { method: "POST", headers, body: "{}", redirect: "error" });
+    const body = await r.json().catch(() => null);
+    out[name] = { status: r.status, errorType: body?.error?.type ?? null };
+  } catch (e) {
+    out[name] = { failed: `${e.name}: ${e.message}` };
+  }
+}
+return out;
+```
+Pass = `fetch` and `abortController` are `"function"`, and **both** providers return a
+`status` of `401` (no key sent) with a readable `errorType` (for example
+`"authentication_error"`). Also record `services` and `toBase64` (either value is fine; they
+decide fallbacks). Fail = `failed: "TypeError: NetworkError …"` for a provider: the request
+was blocked (probably CORS); the developer uses ADR-0021 §8.
+
+**RT-AI2: Can Tabellify keep a secret the way Zotero keeps its sync key?** Tick **Run as
+async function**. macOS may ask whether Zotero may use "Zotero Encrypted Storage" in the
+Keychain: click **Allow** (Zotero's own sync uses the same Keychain item).
+```js
+const { OSKeyStore } = ChromeUtils.importESModule("resource://gre/modules/OSKeyStore.sys.mjs");
+const cipher = await OSKeyStore.encrypt("tabellify-probe");
+const plainOK = (await OSKeyStore.decrypt(cipher)) === "tabellify-probe";
+const LoginInfo = Components.Constructor("@mozilla.org/login-manager/loginInfo;1", Components.interfaces.nsILoginInfo, "init");
+const origin = "chrome://tabellify";
+const realm = "Tabellify AI: probe";
+await Services.logins.addLoginAsync(new LoginInfo(origin, null, realm, "API Key", cipher, "", ""));
+const found = Services.logins.findLogins(origin, null, realm);
+const roundTrip = found.length === 1 && (await OSKeyStore.decrypt(found[0].password)) === "tabellify-probe";
+for (const l of found) Services.logins.removeLogin(l);
+return {
+  cipherLooksEncrypted: cipher !== "tabellify-probe" && cipher.length > 20,
+  plainOK,
+  roundTrip,
+  leftAfterCleanup: Services.logins.findLogins(origin, null, realm).length,
+};
+```
+Pass = `{ cipherLooksEncrypted: true, plainOK: true, roundTrip: true, leftAfterCleanup: 0 }`.
+Fail = an error from `encrypt` (OS key store unavailable: Tabellify would keep keys for the
+session only, ADR-0022 §2) or from `addLoginAsync`.
+
+**RT-AI2b: Does Tabellify still have any saved key?** (spec F010 AC5; read-only)
+```js
+["anthropic", "openai"].map((p) => Services.logins.findLogins("chrome://tabellify", null, `Tabellify AI: ${p}`).length)
+```
+Pass after **Forget key** for both = `[0, 0]`.
+
+**RT-AI3: Which paper text can Tabellify read, and does it keep page breaks?** Needs at least
+one paper with a PDF in My Library (dev profile). Tick **Run as async function**. Read-only:
+it reads the text and the PDF file; it saves nothing.
+```js
+const libID = Zotero.Libraries.userLibraryID;
+await Zotero.Libraries.get(libID).waitForDataLoad("item");
+let att = null;
+outer: for (const c of Zotero.Collections.getByLibrary(libID, true)) {
+  for (const item of c.getChildItems()) {
+    if (!item.isRegularItem()) continue;
+    att = Zotero.Items.get(item.getAttachments()).find((a) => a.isPDFAttachment());
+    if (att) break outer;
+  }
+}
+if (!att) return "no PDF attachment found in My Library collections";
+const text = await att.attachmentText;
+let ft = null, ftError = null;
+try { ft = await Zotero.PDFWorker.getFullText(att.id, null); } catch (e) { ftError = `${e.name}: ${e.message}`; }
+const ftText = typeof ft?.text === "string" ? ft.text : null;
+return {
+  attachmentText: { type: typeof text, length: text?.length ?? null, formFeeds: (text?.match(/\f/g) || []).length },
+  pdfWorker: {
+    error: ftError,
+    keys: ft && typeof ft === "object" ? Object.keys(ft) : null,
+    textLength: ftText?.length ?? null,
+    formFeeds: ftText ? (ftText.match(/\f/g) || []).length : null,
+    totalPages: ft?.totalPages ?? null,
+    extractedPages: ft?.extractedPages ?? null,
+  },
+};
+```
+Pass = no error and at least one source returns text (`length` > 0). Record everything: a
+`formFeeds` count close to the page count means that source keeps page breaks (spec Q4). The
+snippet returns sizes and counts only, never the text itself.
+
+**RT-AI3b: My Library baseline for "no library writes"** (spec F010 AC27; read-only; run
+before and after the 010b smoke test, numbers must match). Tick **Run as async function**.
+```js
+const libID = Zotero.Libraries.userLibraryID;
+await Zotero.Libraries.get(libID).waitForDataLoad("item");
+let papers = 0, annotations = 0, annotationTags = 0;
+for (const c of Zotero.Collections.getByLibrary(libID, true)) {
+  for (const item of c.getChildItems()) {
+    if (!item.isRegularItem()) continue;
+    papers++;
+    for (const a of Zotero.Items.get(item.getAttachments())) {
+      if (!a.isFileAttachment()) continue;
+      for (const ann of a.getAnnotations()) { annotations++; annotationTags += ann.getTags().length; }
+    }
+  }
+}
+return { tagNames: (await Zotero.Tags.getAll(libID)).length, papers, annotations, annotationTags };
+```
+
+**RT-AI4: What does a real Zotero highlight look like inside?** (needed before 010d; read-only)
+Make one yellow highlight on any PDF in My Library with Zotero's reader first. Tick **Run as
+async function**.
+```js
+const libID = Zotero.Libraries.userLibraryID;
+await Zotero.Libraries.get(libID).waitForDataLoad("item");
+for (const c of Zotero.Collections.getByLibrary(libID, true)) {
+  for (const item of c.getChildItems()) {
+    if (!item.isRegularItem()) continue;
+    for (const a of Zotero.Items.get(item.getAttachments())) {
+      if (!a.isPDFAttachment()) continue;
+      const h = a.getAnnotations().find((x) => x.annotationType === "highlight");
+      if (!h) continue;
+      const pos = JSON.parse(h.annotationPosition);
+      return {
+        sortIndex: h.annotationSortIndex,
+        pageLabel: h.annotationPageLabel,
+        color: h.annotationColor,
+        textLength: h.annotationText?.length ?? 0,
+        positionKeys: Object.keys(pos),
+        pageIndex: pos.pageIndex,
+        rects: pos.rects?.length ?? null,
+        firstRect: pos.rects?.[0] ?? null,
+        colors: Zotero.Annotations.COLORS,
+      };
+    }
+  }
+}
+return "no highlight found in My Library collections";
+```
+Pass = a result with `positionKeys` including `pageIndex` and `rects`. The architect records
+the sort-index format, the rectangle numbers and the colour list for ADR-0025.
+
+**RT-AI5** (010d spike only, T17): the developer writes a read-only snippet for
+`Zotero.PDFWorker.getStructuredDocumentText` after reading how to unpack its result.
+**RT-AI6** (010d, one write on a throwaway test PDF in the dev profile): written only after
+ADR-0025 is amended and accepted. Do not improvise either.
