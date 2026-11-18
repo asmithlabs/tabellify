@@ -112,11 +112,11 @@ Each tagged `[auto]` (automated test, `npm test`) or `[manual]` (owner verifies 
 profile). The manual ones need a test group library (see "Owner setup").
 
 **Before development (owner, read-only):**
-- [ ] AC1 `[manual]` **RT-G1 passes** (`docs/zotero-api-notes.md`, "Runtime checks"): the
+- [x] AC1 `[manual]` **RT-G1 passes** (PASS 2026-11-18) (`docs/zotero-api-notes.md`, "Runtime checks"): the
   user library reports `type: "user"` and `name: "My Library"`; each test group reports
   `type: "group"` and its collection count; `allTypes` contains exactly one `"user"` and one
   `"group"` per group (plus `"feed"` only if the profile has feeds).
-- [ ] AC2 `[manual]` **RT-G2 passes**: for the test group, `tagNames`, `papers` and
+- [x] AC2 `[manual]` **RT-G2 passes** (PASS 2026-11-18): for the test group, `tagNames`, `papers` and
   `annotationTags` are non-zero and match what the owner set up (proves `waitForDataLoad`,
   `Tags.getAll` and annotation reads work for a group library).
 - [ ] AC3 `[manual]` **RT-G3 passes**: the temporary dropdown in the Tabellify tab shows the
