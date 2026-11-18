@@ -56,6 +56,7 @@ Tabellify turns **curated tags** into **structured literature tables** inside Zo
 | F008 | CSV export (then optional XLSX) | Done (v0.1.0) for CSV; XLSX Planned |
 | F009 | Column customization: user-created columns, drag-and-drop reorder, column types | Planned |
 | F010+ | AI-assisted extraction and classification. Owner's v2 idea: the user picks Claude or ChatGPT and enters their own API key, and the AI fills highlights from the table (exact behaviour to be specified; any library write needs a spec) | Planned (v2) |
+| F011 | Collection selection: tick several collections or subcollections (one library) for one table, and a "Subcollection" column (sortable, with row groups) showing where each paper sits; spec `docs/features/011-collection-selection.md`, ADR-0027 (Proposed). Answers Q6. Number overlaps the "F010+" range above: see spec F011 Q15 | Planned |
 
 **Proposed split (2026-11-13, approved by the owner).** The owner's workspace
 restructure request is planned as 006a (layout, tag script box, optional groups; ADR-0016),
