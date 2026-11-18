@@ -1,6 +1,6 @@
 # ADR-0022: Storing the user's AI API key (Login Manager + OS key store encryption)
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-18)
 - **Date:** 2026-11-18
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** ADR-0021 (provider access), ADR-0011 (security review: "API keys" is in the

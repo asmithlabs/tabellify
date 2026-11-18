@@ -1,6 +1,6 @@
 # Feature 010: AI fill ("build backwards": from the table to the highlights)
 
-- **Status:** Draft
+- **Status:** Approved (owner, 2026-11-18: "approve all" — every recommendation Q1–Q19 accepted, including Q1 full flow for every F010 phase)
 - **Branch:** `docs/010-ai-fill-spec` (this spec and ADRs). Implementation branches, one per
   phase: `feat/010a-ai-settings`, `feat/010b-ai-suggestions`, `feat/010c-assisted-highlights`,
   `feat/010d-ai-highlights`.

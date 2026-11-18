@@ -1,6 +1,6 @@
 # ADR-0021: AI provider access (Claude and OpenAI, user's own API key, plain `fetch`)
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-18)
 - **Date:** 2026-11-18
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** Feature 010 spec `docs/features/010-ai-fill.md`; ADR-0022 (API key storage),

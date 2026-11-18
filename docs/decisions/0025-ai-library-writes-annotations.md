@@ -1,6 +1,6 @@
 # ADR-0025: First library writes: creating highlight annotations and tags from accepted AI suggestions
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-18)
 - **Date:** 2026-11-18
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** CLAUDE.md rule 8 (no library writes unless a spec authorizes it), PRD §6

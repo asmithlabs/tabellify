@@ -1,6 +1,6 @@
 # ADR-0024: AI suggestions, their verification, and the review queue (`ai-runs.json`)
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-18)
 - **Date:** 2026-11-18
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** ADR-0012 (Accepted: Tabellify's JSON files, write pattern, validation, limits),

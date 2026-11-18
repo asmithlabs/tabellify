@@ -1,6 +1,6 @@
 # ADR-0023: What paper data leaves the device, and how the user agrees to it
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-18)
 - **Date:** 2026-11-18
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** ADR-0021 (provider access), ADR-0022 (key storage), ADR-0024 (suggestions),
