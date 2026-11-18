@@ -1,6 +1,6 @@
 # ADR-0027: Collection selections: one table from several collections (`tables.json` schema 2, selection keys in `layout.json`)
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-11-18)
 - **Date:** 2026-11-18
 - **Deciders:** Antonio Smith (owner), Claude (architect, drafted)
 - **Related:** Feature 011 spec `docs/features/011-collection-selection.md` (this ADR's first

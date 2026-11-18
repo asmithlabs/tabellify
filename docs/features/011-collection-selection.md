@@ -1,6 +1,6 @@
 # Feature 011: Collection selection: several collections and a Subcollection column
 
-- **Status:** Draft (architect, 2026-11-18), for owner approval. Answers to the open questions
+- **Status:** Approved (owner, 2026-11-18, all recommendations Q1–Q15; drafted by the architect). Answers to the open questions
   (Q1–Q15) are needed before development.
 - **Branch:** `feat/011-collection-selection` (from `main`). This spec was drafted on
   `docs/011-collection-selection`.
