@@ -119,7 +119,7 @@ profile). The manual ones need a test group library (see "Owner setup").
 - [x] AC2 `[manual]` **RT-G2 passes** (PASS 2026-11-18): for the test group, `tagNames`, `papers` and
   `annotationTags` are non-zero and match what the owner set up (proves `waitForDataLoad`,
   `Tags.getAll` and annotation reads work for a group library).
-- [ ] AC3 `[manual]` **RT-G3 passes**: the temporary dropdown in the Tabellify tab shows the
+- [x] AC3 `[manual]` **RT-G3 passes** (PASS 2026-11-18): the temporary dropdown in the Tabellify tab shows the
   headings "My Library" and "Test Group" (not selectable) with the options indented under them.
   If it fails, the developer uses the fallback in "Design" (disabled heading options).
 
@@ -197,7 +197,7 @@ profile). The manual ones need a test group library (see "Owner setup").
   the `workspace.js` Zotero allow-list in `workspace-script.test.mjs` gains exactly
   `Zotero.Groups.getAll`; every new Fluent ID exists in `tabellify.ftl`; lifecycle symmetry
   tests pass (no new observer, timer or listener without its removal).
-- [ ] AC18 `[manual]` Read-only proof: the owner runs RT-G2 before and after the smoke test
+- [x] AC18 `[manual]` Read-only proof (PASS 2026-11-18; see RT-G notes): the owner runs RT-G2 before and after the smoke test
   (without tagging anything in between those two runs): `tagNames`, `papers` and
   `annotationTags` are unchanged, and Debug Output shows no Tabellify line about saving
   anything except `codebooks.json`, `layout.json` or `tables.json`.
