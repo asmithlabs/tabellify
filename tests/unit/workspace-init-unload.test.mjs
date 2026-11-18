@@ -126,7 +126,9 @@ test("SEC-012: control: without a close, init() registers the observer once", as
   assert.equal(W.notifierKey, "key-1");
   // F003b: the observer also listens for group libraries; both libraries were listed.
   assert.deepEqual([...calls.types], ["item-tag", "collection-item", "item", "collection", "group"]);
-  assert.equal(calls.collections, 2);
+  // Two reads per library: the listed collections, and (SEC-018) the same with
+  // includeTrashed = true for the manual orders to keep.
+  assert.equal(calls.collections, 4);
   assert.deepEqual([...W.collectionKeys.values()], ["1/AAAA", "5/AAAA"]);
   assert.deepEqual([...W.listedLibraryIDs], [1, 5]);
   W.onUnload();

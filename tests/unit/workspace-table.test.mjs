@@ -3032,6 +3032,26 @@ test("003b: buildCollectionIndex fills all-library lookups; the dropdown has one
   assert.equal(line, "Tabellify: workspace: listing 3 collection(s) in 3 librar(ies) (2 group(s))");
 });
 
+test("003b SEC-018: trashed collections are retained for pruning but never listed", () => {
+  const env = installLibraries(setup());
+  const { W, select } = env;
+  // getByLibrary(id, recursive, includeTrashed): a trashed collection appears only with
+  // includeTrashed = true (docs/zotero-api-notes.md, SEC-018 row).
+  const trashed = { id: 51, libraryID: 5, key: "TRSH0000", name: "In the trash", level: 0, deleted: true };
+  env.Zotero.Collections = {
+    getByLibrary: (id, recursive, includeTrashed) => [
+      ...(env.world.collections[id] ?? []),
+      ...(includeTrashed === true && id === 5 ? [trashed] : []),
+    ],
+  };
+  W.buildCollectionIndex();
+  assert.deepEqual(plainJson([...W.collectionKeys.values()]), ["1/COLL0001", "1/COLL0002", "5/GRP00001"]);
+  assert.deepEqual(plainJson([...W.retainedCollectionKeys]), ["1/COLL0001", "1/COLL0002", "5/GRP00001", "5/TRSH0000"]);
+  assert.equal(W.collectionNames.has("5/TRSH0000"), false);
+  W.renderCollectionSelect();
+  assert.ok(!selectOutline(select).some((line) => line.includes("In the trash")), "a trashed collection is not listed");
+});
+
 test("003b: the fallback headings (disabled options) are one switch away", () => {
   const { W, select } = installLibraries(setup());
   W.COLLECTION_HEADINGS = "option";

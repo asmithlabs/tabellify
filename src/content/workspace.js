@@ -887,6 +887,14 @@ var TabellifyWorkspace = {
   /** Collection ID → collection key, from the latest read of the collection tree. */
   collectionKeys: new Map(),
 
+  /**
+   * SEC-018: "<libraryID>/<collectionKey>" of every collection of the listed libraries,
+   * INCLUDING those in the Zotero trash. Used only to decide which manual orders to keep
+   * when saving the layout (saveLayout); never for the dropdown or anything shown.
+   * @type {Set<string>}
+   */
+  retainedCollectionKeys: new Set(),
+
   /** IDs of the papers in the order they are shown now (the seed of a manual order). */
   displayedPaperIds: [],
 
@@ -935,7 +943,8 @@ var TabellifyWorkspace = {
   /**
    * Read the list of libraries and every library's collections (all synchronous, in
    * memory) and fill the ALL-LIBRARY lookups: `collectionKeys` (collection ID → key),
-   * `collectionNames` (key → name), `libraryNames` and `listedLibraryIDs`. Library objects
+   * `collectionNames` (key → name), `libraryNames`, `listedLibraryIDs` and (SEC-018)
+   * `retainedCollectionKeys` (keys including trashed collections). Library objects
    * are never kept: a group removed later would throw "has been disabled" on most reads,
    * so the list is read fresh every time. A library that cannot be read is left out (and
    * its saved manual orders are then kept, see TabellifyTableLayout.cleanManualOrders).
@@ -949,6 +958,7 @@ var TabellifyWorkspace = {
     const libraries = [];
     const byLibrary = new Map();
     const keys = new Map();
+    const retained = new Set();
     const names = new Map();
     const libraryNames = new Map();
     let collectionCount = 0;
@@ -961,6 +971,12 @@ var TabellifyWorkspace = {
         // start-up. `true` = include subcollections, flattened depth-first, each with a
         // `level` for indentation.
         const collections = Zotero.Collections.getByLibrary(entry.libraryID, true);
+        // SEC-018: the same read with includeTrashed = true (third argument), only for the
+        // keys of the manual orders to keep. A collection in the trash is not listed in
+        // the dropdown, but its order must survive so restoring it brings the order back.
+        // Read before anything below is stored, so a throw leaves the library out entirely.
+        const withTrashed = TabellifyTableLayout.collectionKeySet(Zotero.Collections.getByLibrary(entry.libraryID, true, true));
+        for (const k of withTrashed) retained.add(k);
         for (const [id, key] of this.collectionKeyMap(collections)) keys.set(id, key);
         for (const c of collections) names.set(`${c.libraryID}/${c.key}`, String(c.name ?? ""));
         byLibrary.set(entry.libraryID, collections);
@@ -980,6 +996,7 @@ var TabellifyWorkspace = {
       }
     }
     this.collectionKeys = keys;
+    this.retainedCollectionKeys = retained;
     this.collectionNames = names;
     this.libraryNames = libraryNames;
     this.listedLibraryIDs = new Set(libraries.map((l) => l.libraryID));
@@ -2240,7 +2257,8 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * Write the current layout. Collections that no longer exist are left out (pruned);
+   * Write the current layout. Collections that no longer exist (not even in the trash) are
+   * left out (pruned);
    * the chosen collection's missing papers were already dropped by the move itself.
    */
   async saveLayout() {
@@ -2254,7 +2272,10 @@ var TabellifyWorkspace = {
       // F003b (AC11): `known` holds the collections of EVERY listed library, and orders of a
       // library that is not listed right now are kept, so a move in a group collection
       // never deletes My Library's manual orders (or the other way round).
-      const known = this.collectionKeys.size > 0 ? new Set(this.collectionKeys.values()) : null;
+      // SEC-018: `known` also holds collections in the Zotero trash (retainedCollectionKeys),
+      // so trashing a collection (e.g. another group member did) keeps its order; only a
+      // collection that is really gone (trash emptied) loses it.
+      const known = this.retainedCollectionKeys.size > 0 ? this.retainedCollectionKeys : null;
       const listed = this.listedLibraryIDs.size > 0 ? this.listedLibraryIDs : null;
       const data = TabellifyTableLayout.layoutData(this.columnLayout, this.manualOrders, known, listed);
       const result = await TabellifyLayoutStore.saveData(this.layoutFs, this.layoutDir, data, this.layoutRevision);
