@@ -3274,6 +3274,15 @@ async function placeSetup(selection, setupFn = setup) {
   };
   W.collectionKeys = new Map(PLACE_TREE().map((c) => [c.id, c.key]));
   W.collectionNames = new Map(PLACE_TREE().map((c) => [c.key, c.name]));
+  W.libraryTrees = new Map([[1, PLACE_TREE()]]);
+  W.libraryGroups = [{ libraryID: 1, label: "My Library", options: [], empty: false }];
+  // `new Option(text, value)` as in a browser (the dropdown's "N collections" entry).
+  sandbox.Option = function Option(text, value) {
+    const option = new FakeElement("option");
+    option.textContent = text;
+    option.value = value;
+    return option;
+  };
   W.listedLibraryIDs = new Set([1]);
   W.libraryNames = new Map([[1, "My Library"]]);
   W.strings["tabellify-column-subcollection"] = "Subcollection";
@@ -3488,4 +3497,197 @@ test("F011 AC25 (as data): a selection whose collections are all gone clears the
   W.renderCollectionSelect();
   assert.deepEqual(W.lastShow, ["", "collection gone"]);
   assert.equal(W.collectionGone, true);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 (T7): "Choose several…", the picker dialog, the dropdown entry and the line
+// under the collection row
+// ---------------------------------------------------------------------------------------
+
+/** placeSetup() plus the picker's buttons as real <button>s and its strings. */
+async function pickerSetup(selection = { include: [PHEN], exclude: [] }) {
+  const env = await placeSetup(selection);
+  const d = (id) => env.document.getElementById(id);
+  for (const [id, action] of [["tabellify-picker-select-all", "select-all"], ["tabellify-picker-clear", "clear"],
+    ["tabellify-picker-apply", "apply"], ["tabellify-picker-cancel", "cancel"]]) {
+    d(id).localName = "button";
+    d(id).dataset.action = action;
+    d(id).disabled = false;
+  }
+  d("tabellify-picker-library").id = "tabellify-picker-library";
+  d("tabellify-picker-library-row").hidden = true;
+  d("tabellify-picker-dialog").addEventListener("close", env.W.onPickerClose);
+  Object.assign(env.W.strings, {
+    "tabellify-picker-none": "Tick at least one collection.",
+    "tabellify-picker-too-many": "Too many separate choices.",
+  });
+  const boxes = () => env.W.pickerBoxes();
+  const box = (name) => boxes().find((b) => b.parentNode.querySelector("label").textContent === name);
+  // [...] copies into a Node array (arrays made in the sandbox are another realm's).
+  const ticked = () => [...boxes().filter((b) => b.checked).map((b) => b.parentNode.querySelector("label").textContent)];
+  const mixed = () => [...boxes().filter((b) => b.indeterminate).map((b) => b.parentNode.querySelector("label").textContent)];
+  const tick = (name) => env.W.onPickerChange({ target: box(name) });
+  const press = (id) => env.W.onPickerClick({ target: d(id) });
+  return { ...env, d, boxes, box, ticked, mixed, tick, press };
+}
+
+test("F011 AC7 (as data): the picker shows the library's tree as nested checkboxes, the current selection ticked", async () => {
+  const { W, d, boxes, ticked, mixed, debug } = await pickerSetup();
+  W.onChooseSeveralClick();
+  assert.equal(d("tabellify-picker-dialog").open, true);
+  // Nesting: top level Phenotypes and Methods; Bronchitis inside Respiratory inside Phenotypes.
+  const top = d("tabellify-picker-tree").children;
+  assert.deepEqual(top.map((li) => li.querySelector("label").textContent), ["Phenotypes", "Methods"]);
+  const phenKids = top[0].querySelector("ul.tabellify-picker-children").children.map((li) => li.children[1].textContent);
+  assert.deepEqual(phenKids, ["Asthma", "COPD", "Respiratory"]);
+  // Each box: a checkbox with a numeric ID, its label points at it.
+  for (const b of boxes()) {
+    assert.equal(b.getAttribute("type"), "checkbox");
+    assert.match(b.id, /^tabellify-pick-\d+$/);
+    assert.equal(b.parentNode.querySelector("label").getAttribute("for"), b.id);
+  }
+  // Phenotypes was chosen: it and all its subcollections are ticked; Methods is not.
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis"]);
+  assert.deepEqual(mixed(), []);
+  assert.equal(d("tabellify-picker-library-row").hidden, true, "one library: no Library dropdown");
+  assert.equal(boxes()[0].focused, true, "focus on the first ticked box");
+  assert.equal(d("tabellify-picker-status").textContent, "5", "count (Fluent fills the words)");
+  assert.equal(d("tabellify-picker-apply").disabled, false);
+  assert.ok(debug.includes("Tabellify: workspace: picker: opened with 6 collection(s), 5 ticked"), debug.join("\n"));
+});
+
+test("F011 AC8 (as data): ticking a parent ticks its subcollections; unticking one makes it mixed; a mixed click ticks all", async () => {
+  const { W, d, ticked, mixed, tick, press, document } = await pickerSetup({ include: [METH], exclude: [] });
+  W.onChooseSeveralClick();
+  assert.deepEqual(ticked(), ["Methods"]);
+  tick("Methods"); // untick
+  tick("Phenotypes");
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis"]);
+  tick("COPD");
+  assert.deepEqual(mixed(), ["Phenotypes"]);
+  assert.equal(document.getElementById("tabellify-picker-status").textContent, "4");
+  tick("Phenotypes"); // the mixed parent: everything again
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis"]);
+  assert.deepEqual(mixed(), []);
+  tick("COPD");
+  // Show table: canonical rules, the dropdown entry and the line under the row.
+  await press("tabellify-picker-apply");
+  assert.equal(d("tabellify-picker-dialog").open, false);
+  assert.equal(W.currentCollection, "selection");
+  assert.deepEqual(JSON.parse(JSON.stringify(W.multiSelection)), { include: [PHEN], exclude: [COPD] });
+  const select = d("tabellify-collection-select");
+  const entry = select.children.find((o) => o.value === "selection");
+  assert.equal(entry.textContent, "4", "N = collections in scope");
+  assert.equal(select.value, "selection");
+  assert.equal(d("tabellify-selection-summary").hidden, false);
+  assert.equal(d("tabellify-selection-names").textContent, "Phenotypes");
+  assert.equal(d("tabellify-selection-more").hidden, true);
+  assert.equal(d("tabellify-selection-gone").hidden, true);
+  assert.deepEqual(rowTitles(document).sort(), ["Alpha", "Beta", "Delta", "Gamma"], "Beta stays through Asthma");
+  // Focus goes back to "Choose several…".
+  assert.equal(d("tabellify-choose-several").focused, true);
+});
+
+test("F011 AC8 (as data): three children without their parent; the line lists their names", async () => {
+  const { W, d, tick, press } = await pickerSetup({ include: [METH], exclude: [] });
+  W.onChooseSeveralClick();
+  tick("Methods");
+  tick("Asthma");
+  tick("COPD");
+  tick("Bronchitis");
+  await press("tabellify-picker-apply");
+  assert.deepEqual(JSON.parse(JSON.stringify(W.multiSelection)), { include: [ASTH, BRON, COPD].sort(), exclude: [] });
+  assert.equal(d("tabellify-selection-names").textContent, "Asthma, COPD, Bronchitis", "tree order");
+  // More than five names: "+N more".
+  W.multiSelection = { include: [PHEN, ASTH, COPD, RESP, BRON, METH].sort(), exclude: [] };
+  W.renderSelectionSummary();
+  assert.equal(d("tabellify-selection-names").textContent, "Phenotypes, Asthma, COPD, Respiratory, Bronchitis");
+  assert.equal(d("tabellify-selection-more").hidden, false);
+  assert.equal(d("tabellify-selection-more").textContent, "1");
+  // One included collection gone: the line says so.
+  W.collectionNames.delete(METH);
+  W.renderSelectionSummary();
+  assert.equal(d("tabellify-selection-gone").hidden, false);
+  assert.equal(d("tabellify-selection-gone").textContent, "1");
+});
+
+test("F011 AC10 (as data): nothing ticked → Show table off with the help line; Select all and Clear; Cancel changes nothing", async () => {
+  const { W, d, ticked, press } = await pickerSetup();
+  W.onChooseSeveralClick();
+  press("tabellify-picker-clear");
+  assert.deepEqual(ticked(), []);
+  assert.equal(d("tabellify-picker-apply").disabled, true);
+  assert.equal(d("tabellify-picker-status").textContent, "Tick at least one collection.");
+  assert.equal(press("tabellify-picker-apply"), null, "a disabled Show table does nothing");
+  press("tabellify-picker-select-all");
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis", "Methods"]);
+  press("tabellify-picker-cancel");
+  assert.equal(d("tabellify-picker-dialog").open, false);
+  assert.equal(W.currentCollection, "1", "Cancel keeps the shown collection");
+  assert.equal(d("tabellify-choose-several").focused, true);
+  // A single collection ticked with all its subcollections is a dropdown choice.
+  W.onChooseSeveralClick();
+  press("tabellify-picker-clear");
+  W.onPickerChange({ target: W.pickerBoxes().find((b) => b.dataset.collectionId === "4") }); // Respiratory (and Bronchitis)
+  await press("tabellify-picker-apply");
+  assert.equal(W.currentCollection, "4");
+  assert.equal(d("tabellify-selection-summary").hidden, true);
+  assert.equal(d("tabellify-collection-select").children.some((o) => o.value === "selection"), false);
+});
+
+test("F011 AC9 (as data): Tab wraps inside the picker, Esc closes it like Cancel, keys while composing are ignored", async () => {
+  const { W, d, boxes } = await pickerSetup();
+  W.onChooseSeveralClick();
+  const order = W.pickerFocusOrder();
+  assert.deepEqual([...order.slice(-4).map((el) => el.dataset.action)], ["select-all", "clear", "apply", "cancel"]);
+  assert.equal(order[0], boxes()[0], "no Library dropdown with one library: the first box starts");
+  order.at(-1).focus();
+  const tab = key("Tab");
+  W.onPickerKeydown(tab);
+  assert.equal(tab.prevented, true);
+  assert.equal(boxes()[0].focused, true);
+  boxes()[0].focus();
+  const back = key("Tab", { shiftKey: true });
+  W.onPickerKeydown(back);
+  assert.equal(back.prevented, true);
+  assert.equal(order.at(-1).focused, true);
+  const composing = key("Escape", { isComposing: true });
+  W.onPickerKeydown(composing);
+  assert.equal(d("tabellify-picker-dialog").open, true);
+  const esc = key("Escape");
+  W.onPickerKeydown(esc);
+  assert.equal(esc.prevented, true);
+  assert.equal(d("tabellify-picker-dialog").open, false);
+  assert.equal(W.currentCollection, "1");
+});
+
+test("F011 AC7 (as data): with a group library the Library dropdown shows; switching starts empty", async () => {
+  const { W, d, ticked, sandbox } = await pickerSetup();
+  W.libraryTrees.set(5, [{ id: 50, parentID: false, name: "Shared <b>papers</b>", key: "5/GRP00001" }]);
+  W.libraryGroups = [
+    { libraryID: 1, label: "My Library", options: [], empty: false },
+    { libraryID: 5, label: "Lab <b>Group</b>", options: [], empty: false },
+    { libraryID: 7, label: "Empty Group", options: [], empty: true },
+  ];
+  W.onChooseSeveralClick();
+  assert.equal(d("tabellify-picker-library-row").hidden, false);
+  const options = d("tabellify-picker-library").children;
+  assert.deepEqual(options.map((o) => [o.value, o.textContent]), [["1", "My Library"], ["5", "Lab <b>Group</b>"]], "names as text; empty library left out");
+  assert.equal(W.pickerFocusOrder()[0], d("tabellify-picker-library"));
+  d("tabellify-picker-library").value = "5";
+  W.onPickerChange({ target: d("tabellify-picker-library") });
+  assert.deepEqual(ticked(), [], "the other library starts with nothing ticked");
+  assert.deepEqual([...W.pickerBoxes().map((b) => b.parentNode.querySelector("label").textContent)], ["Shared <b>papers</b>"]);
+  assert.equal(sandbox.TabellifySelection.libraryOfSelection({ include: ["5/GRP00001"] }), 5);
+});
+
+test("F011: choosing the \"N collections\" entry again changes nothing; another entry replaces the selection", async () => {
+  const { W, d } = await pickerSetup({ include: [ASTH, COPD], exclude: [] });
+  assert.equal(W.currentCollection, "selection");
+  W.onCollectionChange({ target: { value: "selection" } });
+  assert.equal(W.currentCollection, "selection");
+  W.onCollectionChange({ target: { value: "9" } });
+  assert.equal(W.currentCollection, "9");
+  assert.equal(W.multiSelection, null);
+  assert.equal(d("tabellify-selection-summary").hidden, true);
 });

@@ -109,6 +109,8 @@
  * closed only logs (the `unloaded` check).
  * F003b adds no listener, observer or timer: the same observer also gets the "group" type,
  * and library-list rebuilds run on the same debounce timer (both ended in onUnload).
+ * F011 adds one click listener on "Choose several…" and four on the picker <dialog> (click,
+ * change, keydown, close), all removed in onUnload; no observer, timer or pref.
  * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
  * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
@@ -362,6 +364,15 @@ var TabellifyWorkspace = {
     saved.addEventListener("click", this.onSavedClick);
     saved.addEventListener("keydown", this.onSavedKeydown);
     this.el("tabellify-saved-filter").addEventListener("change", this.onSavedFilterChange);
+    // F011: "Choose several…" and the collection picker <dialog>: clicks (its buttons), changes
+    // (a checkbox or the Library dropdown), keys (Tab wrap, Esc) and the "close" event.
+    // Removed in onUnload.
+    this.el("tabellify-choose-several").addEventListener("click", this.onChooseSeveralClick);
+    const picker = this.el("tabellify-picker-dialog");
+    picker.addEventListener("click", this.onPickerClick);
+    picker.addEventListener("change", this.onPickerChange);
+    picker.addEventListener("keydown", this.onPickerKeydown);
+    picker.addEventListener("close", this.onPickerClose);
     this.columnLayout = TabellifyTableLayout.emptyColumnLayout();
     // Owner decision 2026-11-13: the "count item tags" checkbox (removed in onUnload).
     const countBox = this.el("tabellify-monitor-count-item-tags");
@@ -498,6 +509,7 @@ var TabellifyWorkspace = {
     this.currentCollection = value;
     // F011: no choice (or a single collection) means no selection of several.
     if (value !== this.SELECTION_VALUE) this.multiSelection = null;
+    this.renderSelectionSummary();
     // F007b: the filter "This collection" follows the chosen collection.
     if (!recompute) {
       this.confirmDeleteId = null;
@@ -560,6 +572,270 @@ var TabellifyWorkspace = {
   },
 
   // ---------------------------------------------------------------------------------------
+  // Feature 011: selection line and the collection picker ("Choose several…"). The rules
+  // (scope, ticks, canonical form) are pure logic in selection-model.js (TabellifySelection,
+  // unit-tested). The picker only reads the in-memory collection index; it never changes the
+  // library or Zotero's own collection selection. Debug Output: counts only (SEC-011).
+  // ---------------------------------------------------------------------------------------
+
+  /** How many collection names the line under the collection row shows before "+N more". */
+  SUMMARY_NAMES_SHOWN: 5,
+
+  /**
+   * The collection IDs `selection` covers today, from the collection index (no library read).
+   * @param {{ include: string[], exclude: string[] } | null} selection
+   * @returns {number[]}
+   */
+  selectionScope(selection) {
+    const tree = this.libraryTrees.get(TabellifySelection.libraryOfSelection(selection)) ?? [];
+    return TabellifySelection.scope(tree, selection);
+  },
+
+  /**
+   * The muted line under the collection row (spec F011): hidden for a single collection;
+   * for a selection of several, "Showing:" and the included collections' names in tree order
+   * (first SUMMARY_NAMES_SHOWN, then "+N more"), and "N chosen collections are no longer
+   * available." when some included ones are gone (trashed, erased, library removed).
+   */
+  renderSelectionSummary() {
+    const line = this.el("tabellify-selection-summary");
+    const selection = this.currentCollection === this.SELECTION_VALUE ? this.multiSelection : null;
+    line.hidden = selection === null;
+    const names = this.el("tabellify-selection-names");
+    const more = this.el("tabellify-selection-more");
+    const gone = this.el("tabellify-selection-gone");
+    if (selection === null) {
+      names.textContent = "";
+      more.hidden = true;
+      gone.hidden = true;
+      return;
+    }
+    const tree = this.libraryTrees.get(TabellifySelection.libraryOfSelection(selection)) ?? [];
+    const list = TabellifySelection.shortList(TabellifySelection.includedNames(tree, selection), this.SUMMARY_NAMES_SHOWN);
+    names.textContent = list.shown.join(", "); // collection names: plain text only
+    more.hidden = list.more === 0;
+    if (list.more > 0) this.setCountText(more, "tabellify-selection-more", list.more);
+    const goneCount = selection.include.filter((k) => !this.collectionNames.has(k)).length;
+    gone.hidden = goneCount === 0;
+    if (goneCount > 0) this.setCountText(gone, "tabellify-selection-partly-gone", goneCount);
+  },
+
+  /** The library whose tree the open picker shows, or null. */
+  pickerLibraryID: null,
+
+  /** The ticked collection IDs while the picker is open (its only state). */
+  pickerTicks: new Set(),
+
+  /** "click" handler of "Choose several…" (an arrow function, so onUnload can remove it). */
+  onChooseSeveralClick: () => TabellifyWorkspace.openPicker(),
+
+  /** The collections of the picker's library (plain objects, tree order). */
+  pickerTree() {
+    return this.libraryTrees.get(this.pickerLibraryID) ?? [];
+  },
+
+  /**
+   * Open the picker on the shown selection's library (or the first listed library), with the
+   * shown selection already ticked. Does nothing when it is open or there are no collections.
+   */
+  openPicker() {
+    const dialog = this.el("tabellify-picker-dialog");
+    if (dialog.open || this.collectionKeys.size === 0) return;
+    const selection = this.currentSelection();
+    const libraries = this.libraryGroups.filter((g) => !g.empty).map((g) => g.libraryID);
+    const fromSelection = TabellifySelection.libraryOfSelection(selection);
+    this.pickerLibraryID = libraries.includes(fromSelection) ? fromSelection : libraries[0] ?? null;
+    this.pickerTicks = new Set(selection ? TabellifySelection.scope(this.pickerTree(), selection) : []);
+    // The Library dropdown (only with group libraries): names as plain text (new Option).
+    const librarySelect = this.el("tabellify-picker-library");
+    librarySelect.replaceChildren(...this.libraryGroups.filter((g) => !g.empty).map((g) => new Option(g.label, String(g.libraryID))));
+    librarySelect.value = String(this.pickerLibraryID);
+    this.el("tabellify-picker-library-row").hidden = libraries.length < 2;
+    this.renderPickerTree();
+    try {
+      // As for the View table modal: showModal() makes the rest of this document inert.
+      dialog.showModal();
+    } catch (e) {
+      this.log("picker: could not open the dialog");
+      Zotero.logError(e);
+      return;
+    }
+    // Focus: the first ticked box, else the first box.
+    const boxes = this.pickerBoxes();
+    (boxes.find((b) => this.pickerTicks.has(Number(b.dataset.collectionId))) ?? boxes[0] ?? this.el("tabellify-picker-cancel")).focus();
+    this.log(`picker: opened with ${this.pickerTree().length} collection(s), ${this.pickerTicks.size} ticked`);
+  },
+
+  /**
+   * Build the checkbox tree of the picker's library: a nested list (each collection's
+   * subcollections in a <ul> inside its <li>), so the indentation comes from the nesting.
+   * Each box has an ID made from the numeric collection ID, and its <label> holds the name
+   * as plain text (textContent).
+   */
+  renderPickerTree() {
+    const tree = this.pickerTree();
+    const { children, roots } = TabellifySelection.tree(tree);
+    const visited = new Set();
+    const item = (c) => {
+      visited.add(c.id);
+      const li = this.html("li", "tabellify-picker-item");
+      const box = this.html("input", "tabellify-picker-box");
+      box.setAttribute("type", "checkbox");
+      box.id = `tabellify-pick-${Number(c.id)}`;
+      box.dataset.collectionId = String(c.id);
+      const label = this.html("label");
+      label.setAttribute("for", box.id);
+      label.textContent = c.name; // collection names: plain text only (see SECURITY)
+      li.append(box, label);
+      const kids = (children.get(c.id) ?? []).filter((k) => !visited.has(k.id));
+      if (kids.length > 0) {
+        const ul = this.html("ul", "tabellify-picker-children");
+        ul.append(...kids.map(item));
+        li.append(ul);
+      }
+      return li;
+    };
+    this.el("tabellify-picker-tree").replaceChildren(...roots.map(item));
+    this.updatePicker();
+  },
+
+  /** The picker's checkboxes in tree order. */
+  pickerBoxes() {
+    return [...this.el("tabellify-picker-tree").querySelectorAll("input.tabellify-picker-box")];
+  },
+
+  /**
+   * Set every box from `pickerTicks` (a user click changes `checked` and clears
+   * `indeterminate` by itself, so both are always set from our own state), the status line
+   * and "Show table".
+   * @returns {{ include: string[], exclude: string[] }}  The canonical rules of the ticks
+   */
+  updatePicker() {
+    const tree = this.pickerTree();
+    const states = TabellifySelection.tickStates(tree, this.pickerTicks);
+    for (const box of this.pickerBoxes()) {
+      const state = states.get(Number(box.dataset.collectionId));
+      box.checked = state === "checked";
+      // The "mixed" look of a partly ticked parent (HTMLInputElement.indeterminate; standard
+      // DOM, docs/zotero-api-notes.md F011 row): screen readers announce it as "mixed".
+      box.indeterminate = state === "indeterminate";
+    }
+    const rules = TabellifySelection.fromTicks(tree, this.pickerTicks);
+    const count = TabellifySelection.scope(tree, rules).length;
+    const tooMany = rules.include.length + rules.exclude.length > TabellifySelection.MAX_RULES;
+    const status = this.el("tabellify-picker-status");
+    if (count === 0) status.textContent = this.text("tabellify-picker-none");
+    else if (tooMany) status.textContent = this.text("tabellify-picker-too-many");
+    else this.setCountText(status, "tabellify-picker-count", count);
+    this.el("tabellify-picker-apply").disabled = count === 0 || tooMany;
+    return rules;
+  },
+
+  /**
+   * "change" inside the picker: a checkbox (TabellifySelection.applyTick: a ticked box
+   * unticks itself and everything below; an empty or mixed one ticks them all) or the
+   * Library dropdown (a selection is one library, so the other library starts empty).
+   */
+  onPickerChange: (event) => {
+    const W = TabellifyWorkspace;
+    const target = event.target;
+    if (target?.id === "tabellify-picker-library") {
+      W.pickerLibraryID = Number(target.value);
+      W.pickerTicks = new Set();
+      W.renderPickerTree();
+      W.pickerBoxes()[0]?.focus();
+      return;
+    }
+    if (!target?.classList?.contains("tabellify-picker-box")) return;
+    W.pickerTicks = TabellifySelection.applyTick(W.pickerTree(), W.pickerTicks, Number(target.dataset.collectionId));
+    W.updatePicker();
+  },
+
+  /**
+   * Clicks on the picker's buttons. "Show table" turns the ticks into canonical rules
+   * (fromTicks), closes the picker and shows the table (applySelection). Returns that
+   * Promise (the tests wait for it), else null.
+   */
+  onPickerClick: (event) => {
+    const W = TabellifyWorkspace;
+    const button = event.target?.closest?.("button[data-action]");
+    if (!button || button.disabled) return null;
+    switch (button.dataset.action) {
+      case "select-all":
+        W.pickerTicks = new Set(W.pickerTree().map((c) => c.id));
+        W.updatePicker();
+        return null;
+      case "clear":
+        W.pickerTicks = new Set();
+        W.updatePicker();
+        return null;
+      case "cancel":
+        W.closePicker();
+        return null;
+      case "apply": {
+        const rules = W.updatePicker();
+        if (W.el("tabellify-picker-apply").disabled) return null;
+        W.closePicker();
+        W.log(`picker: show table for ${rules.include.length + rules.exclude.length} rule(s)`);
+        return W.applySelection(rules);
+      }
+      default:
+        return null;
+    }
+  },
+
+  /** Close the picker (close() on a closed dialog does nothing; onPickerClose runs after). */
+  closePicker() {
+    const dialog = this.el("tabellify-picker-dialog");
+    if (dialog.open) dialog.close();
+  },
+
+  /** The picker's controls in Tab order (hidden and disabled ones skipped). */
+  pickerFocusOrder() {
+    const library = this.el("tabellify-picker-library-row").hidden ? [] : [this.el("tabellify-picker-library")];
+    const buttons = ["tabellify-picker-select-all", "tabellify-picker-clear", "tabellify-picker-apply", "tabellify-picker-cancel"]
+      .map((id) => this.el(id))
+      .filter((el) => !el.disabled && !el.hidden);
+    return [...library, ...this.pickerBoxes(), ...buttons];
+  },
+
+  /**
+   * Keys in the picker: Esc closes it like Cancel; Tab from the last control goes to the
+   * first and Shift+Tab from the first to the last (the dialog makes only THIS document
+   * inert, so without this Tab could leave into Zotero's window; as in onViewKeydown).
+   * Space on a checkbox is the browser's own toggle (then a "change" event).
+   */
+  onPickerKeydown: (event) => {
+    const W = TabellifyWorkspace;
+    if (event.isComposing) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      W.closePicker();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const order = W.pickerFocusOrder();
+    const first = order[0];
+    const last = order[order.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  },
+
+  /** The picker's "close" event (however it closed): focus back on "Choose several…". */
+  onPickerClose: () => {
+    const W = TabellifyWorkspace;
+    W.pickerTicks = new Set();
+    W.el("tabellify-choose-several").focus();
+    W.log("picker: closed");
+  },
+
+  // ---------------------------------------------------------------------------------------
   // Feature 005: Tag monitor (uses Zotero and the DOM; checked by the owner's smoke test).
   // The comparison rules are in tag-monitor-model.js (TabellifyTagMonitor, unit-tested).
   // ---------------------------------------------------------------------------------------
@@ -589,6 +865,9 @@ var TabellifyWorkspace = {
   COLLECTION_STRINGS: [
     "tabellify-collection-none-in-library",
     "tabellify-collection-gone",
+    // F011: the picker's status line when nothing (or too much) is ticked.
+    "tabellify-picker-none",
+    "tabellify-picker-too-many",
   ],
 
   /** True once MONITOR_STRINGS are formatted; renderMonitor() waits for it. */
@@ -1120,6 +1399,13 @@ var TabellifyWorkspace = {
   /** IDs of the libraries listed in the dropdown now (My Library and the groups). */
   listedLibraryIDs: new Set(),
 
+  /**
+   * F011: library ID → that library's collections as plain objects
+   * `{ id, parentID, name, key }` in tree order (from buildCollectionIndex; no extra read).
+   * @type {Map<number, Array<{ id: number, parentID: number | false | null, name: string, key: string }>>}
+   */
+  libraryTrees: new Map(),
+
   /** The dropdown's groups, from libraryOptionGroups(), as last built. */
   libraryGroups: [],
 
@@ -1150,6 +1436,8 @@ var TabellifyWorkspace = {
     const retained = new Set();
     const names = new Map();
     const libraryNames = new Map();
+    // F011: each library's tree as plain objects, for the picker and the selection lines.
+    const trees = new Map();
     let collectionCount = 0;
     for (const library of found) {
       if (!library) continue;
@@ -1168,6 +1456,7 @@ var TabellifyWorkspace = {
         for (const k of withTrashed) retained.add(k);
         for (const [id, key] of this.collectionKeyMap(collections)) keys.set(id, key);
         for (const c of collections) names.set(`${c.libraryID}/${c.key}`, String(c.name ?? ""));
+        trees.set(entry.libraryID, collections.map((c) => ({ id: c.id, parentID: c.parentID, name: String(c.name ?? ""), key: `${c.libraryID}/${c.key}` })));
         byLibrary.set(entry.libraryID, collections);
         libraryNames.set(entry.libraryID, entry.name);
         libraries.push(entry);
@@ -1187,6 +1476,7 @@ var TabellifyWorkspace = {
     this.collectionKeys = keys;
     this.retainedCollectionKeys = retained;
     this.collectionNames = names;
+    this.libraryTrees = trees;
     this.libraryNames = libraryNames;
     this.listedLibraryIDs = new Set(libraries.map((l) => l.libraryID));
     this.libraryGroups = this.libraryOptionGroups(libraries, byLibrary, this.text("tabellify-collection-none-in-library"));
@@ -1227,16 +1517,25 @@ var TabellifyWorkspace = {
         nodes.push(heading, ...options);
       }
     }
-    select.replaceChildren(...(placeholder ? [placeholder] : []), ...nodes);
-
+    // F011: while a selection of several collections is shown, one extra entry right after
+    // the placeholder reads "N collections" (N = collections in scope) and is chosen.
+    // Choosing any other entry replaces the selection (onCollectionChange).
     const chosen = this.currentCollection;
+    const listed = chosen === this.SELECTION_VALUE && (this.multiSelection?.include ?? []).some((k) => this.collectionNames.has(k));
+    const extra = [];
+    if (listed) {
+      const several = new Option("", this.SELECTION_VALUE);
+      this.setCountText(several, "tabellify-collection-several", this.selectionScope(this.multiSelection).length);
+      extra.push(several);
+    }
+    select.replaceChildren(...(placeholder ? [placeholder] : []), ...extra, ...nodes);
+
     if (chosen === this.SELECTION_VALUE) {
       // F011: a selection of several collections stays while at least one of its included
       // collections is listed (the rest are reported as no longer available); with none
       // left it is gone like a single collection.
-      const listed = (this.multiSelection?.include ?? []).some((k) => this.collectionNames.has(k));
       if (listed) {
-        select.value = "";
+        select.value = this.SELECTION_VALUE;
       } else {
         select.value = "";
         this.log("the chosen selection has no listed collection any more; table cleared");
@@ -1261,6 +1560,9 @@ var TabellifyWorkspace = {
 
     const any = this.collectionKeys.size > 0;
     select.disabled = !any;
+    // F011: "Choose several…" needs collections too; the line under the row follows.
+    this.el("tabellify-choose-several").disabled = !any;
+    this.renderSelectionSummary();
     if (!any) this.showStatus("tabellify-no-collections");
     else this.el("tabellify-no-collections").hidden = true;
   },
@@ -5019,6 +5321,13 @@ var TabellifyWorkspace = {
     saved?.removeEventListener("keydown", TabellifyWorkspace.onSavedKeydown);
     TabellifyWorkspace.el("tabellify-saved-filter")
       ?.removeEventListener("change", TabellifyWorkspace.onSavedFilterChange);
+    TabellifyWorkspace.el("tabellify-choose-several")
+      ?.removeEventListener("click", TabellifyWorkspace.onChooseSeveralClick);
+    const picker = TabellifyWorkspace.el("tabellify-picker-dialog");
+    picker?.removeEventListener("click", TabellifyWorkspace.onPickerClick);
+    picker?.removeEventListener("change", TabellifyWorkspace.onPickerChange);
+    picker?.removeEventListener("keydown", TabellifyWorkspace.onPickerKeydown);
+    picker?.removeEventListener("close", TabellifyWorkspace.onPickerClose);
     TabellifyWorkspace.el("tabellify-monitor-count-item-tags")
       ?.removeEventListener("change", TabellifyWorkspace.onCountItemTagsChange);
     const section = TabellifyWorkspace.el("tabellify-codebook");

@@ -77,6 +77,18 @@
   max-width: 100%;
 }
 
+/* Feature 011: the line under the collection row while a selection of several collections
+   is shown ("Showing: Asthma, COPD +2 more"): muted, smaller, wrapping. */
+#tabellify-selection-summary {
+  margin-block: 0 var(--tabellify-space-3);
+  font-size: var(--tabellify-font-size-sm);
+  color: var(--tabellify-color-text-muted);
+}
+
+#tabellify-selection-summary > span + span {
+  margin-inline-start: var(--tabellify-space-2);
+}
+
 /* Muted helper text (untitled papers, "none", "no tags"): a muted colour instead of
    lowered opacity, so the contrast stays checked by the token test. */
 .tabellify-untitled {
@@ -1022,6 +1034,78 @@
 /* Feature 011: the Subcollection column of the modal copy may wrap (one place per line). */
 #tabellify-view-grid td.tabellify-col-place {
   min-width: 8em;
+}
+
+/* ---------------------------------------------------------------------------------------
+   Collection picker (Feature 011): an HTML <dialog> opened with showModal(), styled like
+   the View table modal (surface and text tokens instead of the system colours; [open] in
+   the layout rule; no ::backdrop rule). Only the tree scrolls; every collection is shown
+   expanded, each level indented by its nested list.
+   --------------------------------------------------------------------------------------- */
+
+#tabellify-picker-dialog {
+  box-sizing: border-box;
+  width: min(36em, calc(100% - 2 * var(--tabellify-space-6)));
+  max-height: calc(100% - 2 * var(--tabellify-space-6));
+  padding: var(--tabellify-space-5);
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border-strong);
+  border-radius: var(--tabellify-radius-md);
+  background-color: var(--tabellify-color-surface);
+  color: var(--tabellify-color-text);
+}
+
+#tabellify-picker-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tabellify-space-3);
+}
+
+#tabellify-picker-dialog h2,
+#tabellify-picker-dialog p {
+  margin: 0;
+}
+
+#tabellify-picker-help,
+#tabellify-picker-status {
+  font-size: var(--tabellify-font-size-sm);
+  color: var(--tabellify-color-text-muted);
+}
+
+#tabellify-picker-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: var(--tabellify-border-width) solid var(--tabellify-color-border);
+  border-radius: var(--tabellify-radius-sm);
+  padding: var(--tabellify-space-2) var(--tabellify-space-3);
+}
+
+#tabellify-picker-tree,
+#tabellify-picker-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One level deeper per nested list. */
+#tabellify-picker-tree ul {
+  padding-inline-start: var(--tabellify-space-6);
+}
+
+#tabellify-picker-tree li {
+  padding-block: var(--tabellify-space-1);
+}
+
+#tabellify-picker-tree input:focus-visible {
+  outline: var(--tabellify-focus-width) solid var(--tabellify-color-focus-ring);
+  outline-offset: var(--tabellify-focus-offset);
+}
+
+#tabellify-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tabellify-space-3);
+  justify-content: flex-end;
 }
 
 /* ---------------------------------------------------------------------------------------

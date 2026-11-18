@@ -631,7 +631,8 @@ test("F003b AC17: library list, observer types, strings and plain-text names", (
   // COLLECTION_STRINGS exist, start with tabellify-, and are formatted in init().
   const list = /COLLECTION_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
   const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(ids, ["tabellify-collection-none-in-library", "tabellify-collection-gone"]);
+  // F011 adds the picker's two status texts.
+  assert.deepEqual(ids, ["tabellify-collection-none-in-library", "tabellify-collection-gone", "tabellify-picker-none", "tabellify-picker-too-many"]);
   for (const id of ids) assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   assert.match(js, /await this\.formatStrings\(this\.COLLECTION_STRINGS\);/);
   // Library headings: names only through the optgroup's `label` property or new Option.
@@ -984,4 +985,59 @@ test("F011 AC26: no new listener, observer or timer in T6; the Zotero allow-list
   assert.equal((js.match(/\bregisterObserver\s*\(/g) ?? []).length, 1);
   // The same window timers as before F011: the recompute debounce and the layout save.
   assert.equal((js.match(/\bsetTimeout\s*\(/g) ?? []).length, 2);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 AC26 (T7): "Choose several…", the picker dialog, the dropdown entry and the
+// line under the collection row
+// ---------------------------------------------------------------------------------------
+
+test("F011 AC26: picker markup: button after the dropdown, an html:dialog with heading, group tree, status and four buttons", () => {
+  const row = /<html:div id="tabellify-collection-row">([\s\S]*?)<\/html:div>/.exec(xhtml)?.[1] ?? "";
+  assert.ok(row.indexOf('id="tabellify-collection-select"') < row.indexOf('id="tabellify-choose-several"'), "button after the dropdown");
+  assert.match(row, /<html:button id="tabellify-choose-several" disabled="disabled" aria-haspopup="dialog"\s+data-l10n-id="tabellify-collection-choose-several">/);
+  assert.match(xhtml, /<html:p id="tabellify-selection-summary" hidden="hidden">/);
+  const dialog = /<html:dialog id="tabellify-picker-dialog" aria-labelledby="tabellify-picker-heading">([\s\S]*?)<\/html:dialog>/.exec(xhtml)?.[1] ?? "";
+  assert.ok(dialog, "picker dialog found");
+  assert.match(dialog, /<html:h2 id="tabellify-picker-heading" data-l10n-id="tabellify-picker-heading">/);
+  assert.match(dialog, /<html:div id="tabellify-picker-scroll" role="group" data-l10n-id="tabellify-picker-tree">/);
+  assert.match(dialog, /<html:p id="tabellify-picker-status" role="status">/);
+  const actions = [...dialog.matchAll(/data-action="([\w-]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(actions, ["select-all", "clear", "apply", "cancel"]);
+  assert.doesNotMatch(dialog, /method="dialog"/);
+  const ftl = read("locale/en-US/tabellify.ftl");
+  assert.match(ftl, /^tabellify-picker-tree =\n\s+\.aria-label = Collections$/m);
+  for (const id of ["tabellify-collection-choose-several", "tabellify-collection-several", "tabellify-selection-showing",
+    "tabellify-selection-more", "tabellify-selection-partly-gone", "tabellify-picker-heading", "tabellify-picker-library-label",
+    "tabellify-picker-help", "tabellify-picker-tree", "tabellify-picker-count", "tabellify-picker-none", "tabellify-picker-too-many",
+    "tabellify-picker-select-all", "tabellify-picker-clear", "tabellify-picker-apply", "tabellify-picker-cancel",
+    "tabellify-column-subcollection", "tabellify-place-group-papers", "tabellify-view-live-partly-gone"]) {
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+  }
+});
+
+test("F011 AC26: the five picker listeners are added in init and removed in onUnload", () => {
+  const init = /async init\(\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  const unload = /onUnload: \(\) => \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(init, /this\.el\("tabellify-choose-several"\)\.addEventListener\("click", this\.onChooseSeveralClick\)/);
+  assert.match(unload, /\.el\("tabellify-choose-several"\)\s*\?\.removeEventListener\("click", TabellifyWorkspace\.onChooseSeveralClick\)/);
+  for (const [type, fn] of [["click", "onPickerClick"], ["change", "onPickerChange"], ["keydown", "onPickerKeydown"], ["close", "onPickerClose"]]) {
+    assert.match(init, new RegExp(`picker\\.addEventListener\\("${type}", this\\.${fn}\\)`), `${type} added`);
+    assert.match(unload, new RegExp(`picker\\?\\.removeEventListener\\("${type}", TabellifyWorkspace\\.${fn}\\)`), `${type} removed`);
+  }
+  // showModal only for the two dialogs, both in workspace.js.
+  assert.equal((js.match(/\.showModal\(\)/g) ?? []).length, 2);
+});
+
+test("F011 AC26: picker names go in as text (label textContent, new Option); checkbox IDs are numeric; the mixed look is set from state", () => {
+  assert.match(js, /label\.textContent = c\.name;/);
+  assert.match(js, /box\.id = `tabellify-pick-\$\{Number\(c\.id\)\}`;/);
+  assert.match(js, /new Option\(g\.label, String\(g\.libraryID\)\)/);
+  assert.match(js, /names\.textContent = list\.shown\.join\(", "\);/);
+  assert.match(js, /box\.indeterminate = state === "indeterminate";/);
+  assert.match(js, /box\.checked = state === "checked";/);
+  // The picker only reads the in-memory index: no Zotero call inside its code.
+  const pickerCode = /SUMMARY_NAMES_SHOWN:([\s\S]*?)MONITOR_STRINGS:/.exec(js)?.[1] ?? "";
+  assert.ok(pickerCode.length > 1000, "picker section found");
+  assert.doesNotMatch(pickerCode, /\bZotero\.(?!logError\b)\w+/);
 });

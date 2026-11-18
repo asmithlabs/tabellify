@@ -148,6 +148,37 @@ tabellify-column-count = k/M
 ## also the CSV header. Messages with `$count` get only a number (numericArgs).
 
 tabellify-column-subcollection = Subcollection
+# The collection row's "Choose several…" button, the dropdown's entry for a selection of
+# several collections, and the line under the row ("Showing: Asthma, COPD +2 more").
+tabellify-collection-choose-several = Choose several…
+tabellify-collection-several =
+    { $count ->
+        [one] 1 collection
+       *[other] { $count } collections
+    }
+tabellify-selection-showing = Showing:
+tabellify-selection-partly-gone =
+    { $count ->
+        [one] 1 chosen collection is no longer available.
+       *[other] { $count } chosen collections are no longer available.
+    }
+# The collection picker dialog ("Choose several…").
+tabellify-picker-heading = Choose collections
+tabellify-picker-library-label = Library
+tabellify-picker-help = Ticking a collection includes its subcollections. Untick a subcollection to leave it out.
+tabellify-picker-tree =
+    .aria-label = Collections
+tabellify-picker-count =
+    { $count ->
+        [one] 1 collection ticked
+       *[other] { $count } collections ticked
+    }
+tabellify-picker-none = Tick at least one collection.
+tabellify-picker-too-many = Too many separate choices. Tick whole parent collections instead.
+tabellify-picker-select-all = Select all
+tabellify-picker-clear = Clear
+tabellify-picker-apply = Show table
+tabellify-picker-cancel = Cancel
 tabellify-place-group-papers =
     { $count ->
         [one] 1 paper
