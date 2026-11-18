@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Tabellify logo (Concept B, Tabula T): a gold header row over a grid of table cells. -->
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#004d43"/>
+  <rect x="13" y="14" width="38" height="10" rx="2.5" fill="#bfa76f"/>
+  <rect x="27" y="27" width="10" height="10" rx="2" fill="#ffffff"/>
+  <rect x="27" y="40" width="10" height="10" rx="2" fill="#ffffff"/>
+  <rect x="13" y="27" width="11" height="10" rx="2" fill="#6e9075"/>
+  <rect x="40" y="27" width="11" height="10" rx="2" fill="#6e9075"/>
+  <rect x="13" y="40" width="11" height="10" rx="2" fill="#6e9075"/>
+  <rect x="40" y="40" width="11" height="10" rx="2" fill="#6e9075"/>
+</svg>
