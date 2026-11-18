@@ -790,6 +790,22 @@ var TabellifyTableLayout = {
     return match ? Number(match[1]) : null;
   },
 
+  /** Start of a selection's manual-order key (TabellifySelection.SEL_PREFIX, ADR-0027 §3). */
+  SEL_PREFIX: "sel:",
+
+  /**
+   * Feature 011: the collection keys inside a selection's manual-order key
+   * ("sel:<include,…>" or "sel:<include,…>|<exclude,…>", ADR-0027 §3), or null for any
+   * other key (a plain collection key). Only splits the text: this file must also run alone
+   * in its Node test, so it does not use TabellifySelection.
+   * @param {string} key
+   * @returns {string[] | null}
+   */
+  selectionKeyMembers(key) {
+    if (typeof key !== "string" || !key.startsWith(this.SEL_PREFIX)) return null;
+    return key.slice(this.SEL_PREFIX.length).split(/[|,]/).filter((k) => k !== "");
+  },
+
   /**
    * Manual orders as a plain object: collection key → cleaned item keys. Empty keys and
    * empty orders are dropped; with `knownCollectionKeys`, so are other collections.
@@ -806,12 +822,21 @@ var TabellifyTableLayout = {
    */
   cleanManualOrders(entries, knownCollectionKeys = null, listedLibraryIDs = null) {
     const out = [];
+    /** True when this collection key is gone for good: unknown, and its library is listed. */
+    const gone = (collectionKey) => {
+      if (knownCollectionKeys.has(collectionKey)) return false;
+      const libraryID = this.libraryIdOfKey(collectionKey);
+      return !listedLibraryIDs || (libraryID !== null && listedLibraryIDs.has(libraryID));
+    };
     for (const [collectionKey, order] of entries) {
       if (typeof collectionKey !== "string" || collectionKey === "") continue;
-      if (knownCollectionKeys && !knownCollectionKeys.has(collectionKey)) {
-        const libraryID = this.libraryIdOfKey(collectionKey);
-        const listed = !listedLibraryIDs || (libraryID !== null && listedLibraryIDs.has(libraryID));
-        if (listed) continue;
+      if (knownCollectionKeys) {
+        // Feature 011 (ADR-0027 §3): the order of a selection of several collections is kept
+        // under "sel:<keys>". It is dropped when ANY of its collections is gone for good (a
+        // trashed one is still known, SEC-018); a member of a library that is not listed
+        // right now never drops it. A plain key follows the 003b rule (gone() above).
+        const members = this.selectionKeyMembers(collectionKey);
+        if (members ? members.some(gone) : gone(collectionKey)) continue;
       }
       const keys = this.cleanKeys(order);
       if (keys.length > 0) out.push([collectionKey, keys]);
