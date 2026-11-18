@@ -278,3 +278,82 @@ test("AC14: fileName pads the date and uses the fallback for an empty base", () 
   assert.equal(C.fileName("a:b", { year: 2026, month: 12, day: 31 }, "F"), "ab 2026-12-31.csv");
   assert.equal(C.fileName("", { year: 2026, month: 1, day: 5 }, ""), "2026-01-05.csv");
 });
+
+// ------------------------------------------------------------------------------------------
+// Feature 011 AC14: the optional Subcollection column
+// ------------------------------------------------------------------------------------------
+
+const PLACE_LABELS = frozen({ ...LABELS, subcollection: "Subcollection" });
+
+/** The example view with the Subcollection column shown (as the workspace passes it). */
+function placeView() {
+  const v = exampleView();
+  const places = [["Asthma"], ["Asthma", "COPD"], ["=cmd|' /C calc'!A0"], []];
+  return frozen({
+    ...v,
+    subcollectionColumn: true,
+    groupRows: true, // what the table shows on screen; the CSV never writes group rows
+    papers: v.papers.map((p, i) => ({ ...p, subcollections: places[i] })),
+  });
+}
+
+test("F011 AC14: Subcollection after Title, blank cell above it, places joined with \"; \"", () => {
+  const { text, stats } = C.build(placeView(), PLACE_LABELS);
+  assert.equal(
+    text,
+    "﻿,,,Exposure,Exposure,Outcome,,\r\n" +
+      "Title,Subcollection,age,Heat index,Temperature,Hospitalization,Tags used (k),Codebook tags (M)\r\n" +
+      "Smith 2020,Asthma,1,,1,,2,4\r\n" +
+      '"Heat, humidity and health",Asthma; COPD,,1,,,1,4\r\n' +
+      '"\'=HYPERLINK(""https://example.org"",""x"")","\'=cmd|\' /C calc\'!A0",,,,,0,4\r\n' +
+      "(untitled),,,,,1,1,4\r\n",
+  );
+  // Same counts as without the column; no group header rows in the file.
+  assert.deepEqual(plain(stats), { papers: 4, tagColumns: 4, groups: 2, headerRows: 2 });
+  assert.equal(text.split("\r\n").length - 1, 2 + 4, "two header rows and one row per paper");
+});
+
+test("F011 AC14: one header row: Subcollection still follows Title", () => {
+  const view = frozen({
+    counting: false,
+    subcollectionColumn: true,
+    groups: [{ id: "ungrouped", run: 0, name: "", tags: ["age"], ungrouped: true }],
+    papers: [{ title: "A", untitled: false, groups: [{ present: ["age"] }], subcollections: ["Respiratory › Bronchitis"] }],
+  });
+  assert.equal(
+    C.build(view, PLACE_LABELS).text,
+    "﻿Title,Subcollection,age,Tags used (k),Codebook tags (M)\r\n" +
+      "A,Respiratory › Bronchitis,1,,\r\n",
+  );
+});
+
+test("F011 AC14: without the column the file is byte-for-byte the 0.2.0 output", () => {
+  const before = C.build(exampleView(), LABELS).text;
+  // Extra fields (subcollections on papers, a subcollection label) change nothing while the
+  // column is off.
+  const v = exampleView();
+  const withData = frozen({ ...v, subcollectionColumn: false, papers: v.papers.map((p) => ({ ...p, subcollections: ["X"] })) });
+  assert.equal(C.build(withData, PLACE_LABELS).text, before);
+  assert.equal(C.build(frozen({ ...v }), PLACE_LABELS).text, before);
+  assert.equal(
+    before,
+    "﻿,,Exposure,Exposure,Outcome,,\r\n" +
+      "Title,age,Heat index,Temperature,Hospitalization,Tags used (k),Codebook tags (M)\r\n" +
+      "Smith 2020,1,,1,,2,4\r\n" +
+      '"Heat, humidity and health",,1,,,1,4\r\n' +
+      '"\'=HYPERLINK(""https://example.org"",""x"")",,,,,0,4\r\n' +
+      "(untitled),,,,1,1,4\r\n",
+  );
+});
+
+test("F011 AC14: a missing or odd subcollections list gives an empty cell, never \"undefined\"", () => {
+  const view = frozen({
+    counting: false,
+    subcollectionColumn: true,
+    groups: [],
+    papers: [{ title: "A", untitled: false }, { title: "B", untitled: false, subcollections: "Asthma" }, { title: "C", untitled: false, subcollections: [null, "@x"] }],
+  });
+  const text = C.build(view, PLACE_LABELS).text;
+  assert.doesNotMatch(text, /undefined|null/);
+  assert.equal(text, "﻿Title,Subcollection,Tags used (k),Codebook tags (M)\r\nA,,,\r\nB,,,\r\nC,; @x,,\r\n");
+});

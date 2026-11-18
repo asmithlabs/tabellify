@@ -25,6 +25,14 @@
  * Title, k and M), else only the tag-name row. "1" where the screen shows ✓, empty
  * elsewhere.
  *
+ * Feature 011 (spec Q10): when the table shows the Subcollection column
+ * (`view.subcollectionColumn === true`), one extra column "Subcollection" comes right after
+ * Title (a blank cell above it when there are two header rows). Its cell lists the paper's
+ * places joined with "; " (collection names are untrusted text, so the formula guard
+ * applies). The table's group header rows ("Asthma · 3 papers") are never written: a
+ * spreadsheet sorts and filters a column, and extra rows would break that. Without the
+ * column the file is exactly what 0.2.0 writes.
+ *
  * Classic script (no import/export): workspace.xhtml loads it with <script>, and its one
  * global, TabellifyCsv, is then visible to workspace.js. Never changes its inputs.
  */
@@ -43,6 +51,9 @@ var TabellifyCsv = {
    * alone in the Node tests.
    */
   UNGROUPED_ID: "ungrouped",
+
+  /** Between two places of one paper in the Subcollection cell (Feature 011). */
+  PLACE_SEPARATOR: "; ",
 
   /** Longest suggested file name (characters, without the date and ".csv"). */
   MAX_FILE_BASE: 80,
@@ -112,29 +123,43 @@ var TabellifyCsv = {
    * The rows of the file, cells still unescaped (toCsv quotes them).
    * @param {{ groups?: Array<{ id: string, name?: string, tags?: string[], ungrouped?: boolean, run?: number }>,
    *   papers?: Array<{ title?: string, untitled?: boolean, count?: number, total?: number,
-   *     groups?: Array<{ present?: string[] }> }>,
-   *   counting?: boolean }} view  What the table shows now (workspace.js tableGroups /
-   *   tableRows / tableCounting)
-   * @param {{ title: string, untitled: string, k: string, m: string }} labels  Fluent texts
+   *     groups?: Array<{ present?: string[] }>, subcollections?: string[] }>,
+   *   counting?: boolean, subcollectionColumn?: boolean }} view  What the table shows now
+   *   (workspace.js tableGroups / tableRows / tableCounting / the Subcollection column)
+   * @param {{ title: string, untitled: string, k: string, m: string, subcollection?: string }} labels
+   *   Fluent texts
    * @returns {string[][]}
    */
   rows(view, labels) {
     const groups = view?.groups ?? [];
     const papers = view?.papers ?? [];
     const counting = view?.counting === true;
+    // Feature 011: the optional Subcollection column right after Title. `extra` is spread
+    // into every row, so without the column every row is exactly as before.
+    const places = view?.subcollectionColumn === true;
+    const placeCell = (paper) => (Array.isArray(paper?.subcollections) ? paper.subcollections : [])
+      .map((p) => this.str(p))
+      .join(this.PLACE_SEPARATOR);
     // One entry per tag column, left to right, with the text above it.
     const columns = groups.flatMap((g) => (g.tags ?? []).map((tag) => ({
       tag: this.str(tag),
       above: this.isUngrouped(g) ? "" : this.str(g.name),
     })));
-    const tagRow = [this.str(labels?.title), ...columns.map((c) => c.tag), this.str(labels?.k), this.str(labels?.m)];
+    const tagRow = [
+      this.str(labels?.title),
+      ...(places ? [this.str(labels?.subcollection)] : []),
+      ...columns.map((c) => c.tag),
+      this.str(labels?.k),
+      this.str(labels?.m),
+    ];
     const out = [];
-    if (this.headerRowCount(groups) === 2) out.push(["", ...columns.map((c) => c.above), "", ""]);
+    if (this.headerRowCount(groups) === 2) out.push(["", ...(places ? [""] : []), ...columns.map((c) => c.above), "", ""]);
     out.push(tagRow);
     for (const paper of papers) {
       const present = new Set((paper.groups ?? []).flatMap((g) => g.present ?? []));
       out.push([
         paper.untitled ? this.str(labels?.untitled) : this.str(paper.title),
+        ...(places ? [placeCell(paper)] : []),
         ...columns.map((c) => (present.has(c.tag) ? "1" : "")),
         counting ? this.number(paper.count) : "",
         counting ? this.number(paper.total) : "",
