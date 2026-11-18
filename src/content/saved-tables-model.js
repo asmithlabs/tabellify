@@ -622,6 +622,26 @@ var TabellifySavedTables = {
   },
 
   /**
+   * F003b: the library name to show before a saved table's collection, or null to leave
+   * it out. The name is shown only while the collection key itself is known (in the
+   * current collection index). Zotero can give a removed group's library ID to a group
+   * joined later, so for a collection that is not found the library ID may now name a
+   * different library: showing that name would be wrong.
+   * @param {string | null} collectionKey  "<libraryID>/<collectionKey>"
+   * @param {{ has(key: string): boolean }} collectionNames  Known collection keys
+   * @param {{ has(id: number): boolean, get(id: number): string | undefined }} libraryNames
+   *   Listed libraries: library ID -> name
+   * @returns {string | null}
+   */
+  libraryLabel(collectionKey, collectionNames, libraryNames) {
+    if (typeof collectionKey !== "string" || !collectionNames.has(collectionKey)) return null;
+    const match = /^(\d+)\//.exec(collectionKey);
+    if (!match) return null;
+    const libraryID = Number(match[1]);
+    return libraryNames.has(libraryID) ? libraryNames.get(libraryID) : null;
+  },
+
+  /**
    * Refuse data whose JSON text would be longer than `limit` characters (the whole file is
    * read at every workspace start, ADR-0018 §4).
    * @param {object} data

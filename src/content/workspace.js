@@ -3658,7 +3658,7 @@ var TabellifyWorkspace = {
     }
     const key = table?.definition.collectionKey ?? null;
     // F003b: "<library> · <collection>"; the library part is left out when that library
-    // is no longer listed (e.g. a removed group).
+    // is no longer listed (e.g. a removed group) or the collection is not found.
     const library = this.libraryLabel(key);
     const collection = (library === null ? "" : `${library} · `) + this.collectionLabel(key, this.viewSnapshot.collectionName);
     meta.hidden = false;
@@ -4127,14 +4127,14 @@ var TabellifyWorkspace = {
 
   /**
    * F003b: the current name of a saved key's library ("My Library" or the group's name),
-   * or null when that library is not listed (a removed group): the name is looked up live
-   * and never stored in tables.json.
+   * or null when it is left out: the library is not listed (a removed group), or the
+   * collection is not found (its library ID may since name a different group). The name
+   * is looked up live and never stored in tables.json; the rule is in saved-tables-model.js.
    * @param {string | null} key  "<libraryID>/<collectionKey>"
    * @returns {string | null}
    */
   libraryLabel(key) {
-    const libraryID = this.libraryOfKey(key);
-    return libraryID !== null && this.libraryNames.has(libraryID) ? this.libraryNames.get(libraryID) : null;
+    return TabellifySavedTables.libraryLabel(key, this.collectionNames, this.libraryNames);
   },
 
   /** True when saving and deleting are allowed now. */
@@ -4208,7 +4208,7 @@ var TabellifyWorkspace = {
     name.textContent = entry.name; // untrusted file text: plain text only
     const meta = this.html("span", "tabellify-saved-meta");
     // F003b: the library name comes first ("Lab Group · Shared papers · …"); left out when
-    // the library is no longer listed.
+    // the library is no longer listed or the collection is not found.
     const library = this.libraryLabel(entry.collectionKey);
     for (const part of [
       ...(library === null ? [] : [library]),
