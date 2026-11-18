@@ -131,7 +131,7 @@ test("F004: codebook-model.js and codebook-store.js load after include.js, befor
 
 test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
   // 1. The lists workspace.js formats at start-up (F004 codebook, F005 tag monitor).
-  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "LAYOUT_STRINGS", "EXPORT_STRINGS", "VIEW_STRINGS", "SAVED_STRINGS"].flatMap((name) => {
+  const listed = ["CODEBOOK_STRINGS", "MONITOR_STRINGS", "COLLECTION_STRINGS", "LAYOUT_STRINGS", "EXPORT_STRINGS", "VIEW_STRINGS", "SAVED_STRINGS"].flatMap((name) => {
     const list = new RegExp(`${name}:\\s*\\[([\\s\\S]*?)\\]`).exec(js)?.[1] ?? "";
     return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   });
@@ -145,7 +145,7 @@ test("F004: codebook Fluent IDs used from JS exist in tabellify.ftl", () => {
     assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   }
   // Every ID shown by text()/showCodebookStatus must have been formatted at start-up.
-  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS, LAYOUT_STRINGS, EXPORT_STRINGS, VIEW_STRINGS or SAVED_STRINGS`);
+  for (const id of literal) assert.ok(listed.includes(id), `${id} is not in CODEBOOK_STRINGS, MONITOR_STRINGS, COLLECTION_STRINGS, LAYOUT_STRINGS, EXPORT_STRINGS, VIEW_STRINGS or SAVED_STRINGS`);
 });
 
 test("F003: Fluent IDs used in workspace.js exist in tabellify.ftl", () => {
@@ -184,6 +184,8 @@ test("F003: workspace.js uses only the Zotero APIs recorded for F003", () => {
     // Owner decision 2026-11-13: the "Also count tags on the paper itself" switch (a pref).
     "Zotero.Prefs.get",
     "Zotero.Prefs.set",
+    // F003b: the group libraries for the collection dropdown (read-only, in memory).
+    "Zotero.Groups.getAll",
   ]);
   const used = new Set([...js.matchAll(/\bZotero(?:\.[A-Za-z_$][\w$]*)+/g)].map((m) => m[0]));
   assert.ok(used.size > 0, "no Zotero calls found (check is vacuous)");
@@ -591,7 +593,7 @@ test("F006b AC12: new Fluent IDs exist, start with tabellify-, and are formatted
 test("F006b AC12: item-tag marks the tag list stale before the no-collection early return; old field gone", () => {
   const notify = /onNotify:\s*\(event, type, ids, extraData\)\s*=>\s*\{([\s\S]*?)\n {2}\},/.exec(js)?.[1] ?? "";
   const stale = notify.search(/if \(type === "item-tag"\) W\.libraryTagsStale = true;/);
-  const early = notify.search(/if \(W\.currentCollection === ""\) return;/);
+  const early = notify.search(/if \(W\.currentCollection === ""(?: && !W\.libraryListStale)?\) return;/);
   assert.ok(stale >= 0 && early >= 0, "stale flag or early return not found");
   assert.ok(stale < early, "the stale flag must be set before the early return");
   // Refresh reloads the tag list before its own early return.
@@ -599,9 +601,38 @@ test("F006b AC12: item-tag marks the tag list stale before the no-collection ear
   assert.ok(refresh.search(/W\.loadLibraryTags\(\)/) >= 0, "Refresh does not reload the tag list");
   assert.ok(refresh.search(/W\.loadLibraryTags\(\)/) < refresh.search(/if \(W\.currentCollection === ""\) return;/));
   assert.doesNotMatch(js, /libraryTagNames/);
-  // Still exactly one library read for the tag list (the 006a call).
+  // Still exactly one library read for the tag list (the 006a call). F003b: it reads the
+  // chosen collection's library (suggestLibraryID, My Library before any choice).
   assert.equal([...js.matchAll(/Zotero\.Tags\.getAll\(/g)].length, 1);
-  assert.match(js, /Zotero\.Tags\.getAll\(Zotero\.Libraries\.userLibraryID\)/);
+  assert.match(js, /Zotero\.Tags\.getAll\(libraryID\)/);
+  assert.match(js, /const libraryID = this\.suggestLibraryID\(\);/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 003b AC17: group libraries
+// ---------------------------------------------------------------------------------------
+
+test("F003b AC17: library list, observer types, strings and plain-text names", () => {
+  // The observer gains exactly the "group" type (still one registerObserver call).
+  assert.match(js, /\["item-tag", "collection-item", "item", "collection", "group"\]/);
+  assert.equal((js.match(/\bregisterObserver\s*\(/g) ?? []).length, 1);
+  // One read of the group list, inside buildCollectionIndex, with My Library first.
+  assert.equal([...js.matchAll(/Zotero\.Groups\.getAll\(/g)].length, 1);
+  assert.match(js, /\[Zotero\.Libraries\.get\(Zotero\.Libraries\.userLibraryID\), \.\.\.Zotero\.Groups\.getAll\(\)\]/);
+  // COLLECTION_STRINGS exist, start with tabellify-, and are formatted in init().
+  const list = /COLLECTION_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
+  const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ["tabellify-collection-none-in-library", "tabellify-collection-gone"]);
+  for (const id of ids) assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+  assert.match(js, /await this\.formatStrings\(this\.COLLECTION_STRINGS\);/);
+  // Library headings: names only through the optgroup's `label` property or new Option.
+  assert.match(js, /heading\.label = group\.label;/);
+  assert.match(js, /new Option\(group\.label, ""\)/);
+  assert.match(js, /COLLECTION_HEADINGS: "(?:optgroup|option)",/);
+  // The layout save passes the listed libraries (AC11 data-loss fix).
+  assert.match(js, /TabellifyTableLayout\.layoutData\(this\.columnLayout, this\.manualOrders, known, listed\)/);
+  // The old one-library replacement of the lookups is gone.
+  assert.doesNotMatch(js, /this\.collectionKeys = data\.collectionKeys/);
 });
 
 // ---------------------------------------------------------------------------------------

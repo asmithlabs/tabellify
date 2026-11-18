@@ -9,10 +9,30 @@ are never published.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-16
+## [0.2.0] - Unreleased
 
 First public release. Works with Zotero 10.0.x (`strict_min_version` 10.0,
-`strict_max_version` 10.0.*).
+`strict_max_version` 10.0.*). It includes everything listed under 0.1.0 below.
+
+### Added
+- **Group libraries** (Feature 003b). The collection list shows My Library and every group
+  library you can see in Zotero: one heading per library, with its collections and
+  subcollections under it. Tag counts, the per-paper table, manual order, **View table**,
+  **Save table**, **Export CSV** and the reader section work the same for a group collection.
+  Tag suggestions come from the chosen collection's library. Nothing is written to any
+  library; the codebook is shared by all libraries.
+- The **Saved tables** list and the saved table's info line show the library name. The
+  collection list updates when a group is added, renamed or removed while the tab is open;
+  if the chosen collection disappears, the table is cleared with a message.
+
+### Fixed
+- Manual paper orders of one library are no longer at risk when you reorder papers in
+  another library.
+
+## [0.1.0] - 2026-11-16
+
+Tagged but never published. Its contents first ship in 0.2.0. Works with Zotero 10.0.x
+(`strict_min_version` 10.0, `strict_max_version` 10.0.*).
 
 ### Added
 - **Workspace tab** (Features 001, 002). **Tools → Tabellify…** opens a **Tabellify** tab in

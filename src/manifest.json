@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Tabellify",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turn curated Zotero tags into structured literature tables (synthesis matrices).",
   "applications": {
     "zotero": {

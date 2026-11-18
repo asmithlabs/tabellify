@@ -36,7 +36,11 @@ tabellify-tab-title = Tabellify
 
 tabellify-collection-label = Collection
 tabellify-collection-placeholder = Choose a collection
-tabellify-no-collections = My Library has no collections yet.
+tabellify-no-collections = Your libraries have no collections yet.
+# Feature 003b: shown under a library heading in the collection dropdown when that library
+# has no collections, and in the monitor line when the chosen collection disappeared.
+tabellify-collection-none-in-library = (no collections)
+tabellify-collection-gone = The chosen collection is no longer available. Choose another collection.
 tabellify-loading-items = Loading items…
 tabellify-no-items = No papers in this collection.
 tabellify-load-error = Could not load this collection. See Help → Debug Output Logging for details.
@@ -288,7 +292,7 @@ tabellify-view-snapshot-updated = Snapshot updated.
 tabellify-view-loading = Building the live table…
 # The column names follow, separated by commas.
 tabellify-view-live-missing = Saved columns that are no longer in the codebook:
-tabellify-view-live-no-collection = This table's collection is no longer in My Library, so only the saved snapshot can be shown.
+tabellify-view-live-no-collection = This table's collection is no longer available (it was deleted, is in the trash, or its group library was removed), so only the saved snapshot can be shown.
 tabellify-view-live-no-codebook = The codebook could not be loaded, so the live table cannot be built.
 tabellify-view-live-error = The live table could not be built. The saved snapshot is still shown.
 

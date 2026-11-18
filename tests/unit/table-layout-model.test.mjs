@@ -512,6 +512,38 @@ test("AC28: layoutData prunes unknown collections and empty orders, cleans the c
   assert.deepEqual(orders.get("1/AAAA1111"), ["K1", "K2", "K1"]);
 });
 
+// Feature 003b AC11: manual orders of other libraries survive a save in one library.
+test("003b AC11: pruning keeps orders of libraries that are not listed", () => {
+  const orders = new Map([
+    ["1/AAAA1111", ["K1"]],
+    ["5/BBBB2222", ["K2"]],
+    ["5/GONE0000", ["K3"]],
+    ["9/CCCC3333", ["K4"]],
+  ]);
+  const known = new Set(["1/AAAA1111", "5/BBBB2222"]);
+  const listed = new Set([1, 5]);
+  assert.deepEqual(plain(L.layoutData(null, orders, known, listed).manualOrders), {
+    "1/AAAA1111": ["K1"],
+    "5/BBBB2222": ["K2"],
+    "9/CCCC3333": ["K4"],
+  });
+  assert.deepEqual(plain(L.cleanManualOrders(orders, known, listed)), {
+    "1/AAAA1111": ["K1"],
+    "5/BBBB2222": ["K2"],
+    "9/CCCC3333": ["K4"],
+  });
+  // Without a list of libraries the old rule applies: everything not known is dropped.
+  assert.deepEqual(plain(L.layoutData(null, orders, known).manualOrders), {
+    "1/AAAA1111": ["K1"],
+    "5/BBBB2222": ["K2"],
+  });
+  // Empty orders are still dropped, also for libraries that are not listed.
+  assert.deepEqual(plain(L.cleanManualOrders([["9/EMPTY000", []]], known, listed)), {});
+  assert.equal(L.libraryIdOfKey("12/ABCD1234"), 12);
+  assert.equal(L.libraryIdOfKey("ABCD1234"), null);
+  assert.equal(orders.size, 4);
+});
+
 // SEC-015: revision must stay below Number.MAX_SAFE_INTEGER, so the store's `+ 1` is exact.
 test("SEC-015: layout revision at or above MAX_SAFE_INTEGER is rejected", () => {
   const MAX = Number.MAX_SAFE_INTEGER;

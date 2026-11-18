@@ -141,6 +141,18 @@ installs plugin updates, not code in `src/`. Line numbers are approximate (count
 tool); search for the quoted text. Runtime check: the update check in
 `docs/release-checklist.md` (owner, dev profile).
 
+The Feature 003b rows (group libraries, spec `docs/features/003b-group-libraries.md`, Draft;
+no ADR) were checked on 2026-11-16 against Zotero source at tag **`10.0.9`**
+(`xpcom/data/libraries.js`, `library.js`, `groups.js`, `group.js`, `feed.js`,
+`xpcom/notifier.js`, `xpcom/zotero.js`, `xpcom/sync/syncRunner.js`, `collectionTree.jsx`,
+`resource/schema/userdata.sql`, `chrome/locale/en-US/zotero/zotero.properties`) and MDN. None of
+these APIs is in a zotero.org developer guide (the JSAPI page mentions only
+`Zotero.Libraries.userLibraryID`); they are the data layer Zotero's own collection tree uses.
+Line numbers are approximate (counted by a fetch tool); search for the quoted identifier.
+Existing rows (`Libraries.get`, `waitForDataLoad`, `getByLibrary`, `Tags.getAll`, Notifier)
+already take any `libraryID`; 003b uses them with group library IDs. Runtime checks: RT-G1,
+RT-G2, RT-G3 (end of this file; all read-only).
+
 Abbreviations used in the Source column:
 `Z7`/`Z8`/`Z10` = the dev guides above; `src:` = `https://github.com/zotero/zotero/blob/10.0.8/`;
 `src10:` = `https://github.com/zotero/zotero/blob/10.0.9/`;
@@ -284,6 +296,18 @@ Abbreviations used in the Source column:
 | Zotero does **not** require or check plugin signatures | SEC-001 context: why the hash and immutable release files are the only integrity protection | Verified (source) | 10.0.9 (ESR 140) | [src10:`app/assets/prefs.js`](https://github.com/zotero/zotero/blob/10.0.9/app/assets/prefs.js) (`pref("xpinstall.signatures.required", false);` ~L72; `pref("extensions.update.requireBuiltInCerts", false);` ~L79); [src10:`app/scripts/fetch_xulrunner`](https://github.com/zotero/zotero/blob/10.0.9/app/scripts/fetch_xulrunner) (`replace_line 'MOZ_REQUIRE_SIGNING:' 'MOZ_REQUIRE_SIGNING: false \&\&' modules/AppConstants.sys.mjs` ~L153); moz `XPIInstall.sys.mjs` (the signature check in `loadManifest` runs only `if (XPIExports.XPIDatabase.mustSign(this.addon.type))`) | `mustSign()` itself was not read (it lives in `XPIDatabase.sys.mjs`); the conclusion rests on the pref and the build patch plus the audit's finding. Whoever controls `updates.json` on `main` **and** a file it points to controls what every install runs |
 | Update manifest is fetched with a plain GET; no rule that it must be `https:` and no redirect restriction | Release: why `update_url` must stay an `https:` URL on a protected branch | Verified (source) | ESR 140 (Zotero 10.0.9) | [moz:`…/internal/AddonUpdateChecker.sys.mjs`](https://github.com/mozilla-firefox/firefox/blob/esr140/toolkit/mozapps/extensions/internal/AddonUpdateChecker.sys.mjs) `UpdateParser`: `this.request.open("GET", this.url, true);` ~L261; `!lazy.AddonSettings.UPDATE_REQUIREBUILTINCERTS` ~L264 (Zotero sets that pref to false, row above) | Ours is `https://raw.githubusercontent.com/asmithlabs/tabellify/main/updates.json`: trust rests on the `main` ruleset (PR + `test-and-build`, no bypass) |
 | Plugins window menu labels (en-US): gear button title "Tools for all plugins", menu items "Check for Updates", "Install Plugin From File…", "Update Plugins Automatically"; result text "No updates found" | Release checklist: exact labels for the owner's install and update steps | Verified (source); exact rendering **UNVERIFIED (runtime)**: confirm in the dev Zotero window during the checklist | ESR 140 + Zotero 10.0.9 build patch | [moz:`toolkit/locales/en-US/toolkit/about/aboutAddons.ftl`](https://github.com/mozilla-firefox/firefox/blob/esr140/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl) (`addon-updates-check-for-updates = Check for Updates`, `addon-install-from-file = Install Add-on From File…`, `addon-updates-update-addons-automatically = Update Add-ons Automatically`, `addon-page-options-button` `.title = Tools for all add-ons`, `addon-updates-none-found = No updates found`, `addon-detail-update-check-label = Check for Updates`); [src10:`app/scripts/fetch_xulrunner`](https://github.com/zotero/zotero/blob/10.0.9/app/scripts/fetch_xulrunner) ~L473–474 `replace_line 'Add-on' 'Plugin' …aboutAddons.ftl`, `replace_line 'add-ons' 'plugins' …aboutAddons.ftl`; [zotero.org/support/plugins](https://www.zotero.org/support/plugins) ("Tools → Plugins") | Labels derived by applying the patch to the Firefox strings; whether `replace_line` replaces every match on a line was not checked |
+| `Zotero.Groups.getAll()` → array of group library objects (`Zotero.Group`, which extends `Zotero.Library`), **sorted by name** (locale collation); no feeds, no My Library | F003b: list the group libraries for the collection dropdown (`[Zotero.Libraries.get(userLibraryID), ...Zotero.Groups.getAll()]`) | Verified (source); **Verified (runtime) RT-G1 PASS (owner, Zotero 10.0.9, 2026-11-18)** | 10.0.9 | [src10:`chrome/content/zotero/xpcom/data/groups.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/groups.js) (`this.getAll = function () {` ~L76: `if (!this._cache) throw new Error("Zotero.Groups cache is not initialized");`, `var groups = Object.keys(this._cache.groupIDByLibraryID).map(id => Zotero.Libraries.get(id));`, sorted with `collation.compareString(1, a.name, b.name)`; `this.init` ~L58 is empty, "Cache initialized in Zotero.Libraries"); [src10:`…/xpcom/data/group.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/group.js) (constructor `params.libraryType = 'group';`; `libraryTypes` = `Zotero.Group._super.prototype.libraryTypes.concat(['group'])`, so its superclass is `Zotero.Library`); Zotero's own use: [src10:`chrome/content/zotero/collectionTree.jsx`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/collectionTree.jsx) `refresh()` (`var groups = Zotero.Groups.getAll();`) | **Read-only, synchronous** (in-memory cache filled at startup by `Zotero.Libraries.init`). Throws only before init (the workspace awaits `Zotero.initializationPromise` first). Returns `[]` when the profile has no groups. Includes groups the user can only read and "kept" (archived) groups. Not in any dev guide. Maintenance risk low-moderate: re-check `groups.js` before each `strict_max_version` raise. Added to the `workspace.js` allow-list by spec F003b |
+| `Zotero.Libraries.getAll()` → every library: My Library first, then the others by name — **including feeds** | F003b: **not used** (alternative to `Groups.getAll`; would need a `libraryType` filter) | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/data/libraries.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/libraries.js) (`getAll` ~L154: `Object.keys(this._cache).map(v => Zotero.Libraries.get(parseInt(v)))`, comment "Sort My Library, then others by name"; `init` loads user, feed and group libraries into the same cache); deprecated helpers in the same file: `getName`, `getType`, `isEditable`, `isFilesEditable`, `hasTrash` each log "is deprecated. Use Zotero.Library.prototype.<prop> instead" | Read-only. Used by RT-G1 only (to show which library types exist) |
+| `library.libraryID` (getter; setter throws "Cannot change library ID"), `library.libraryType` (`"user"` \| `"group"` \| `"feed"`), `library.isGroup` (`libraryType == 'group'`), `feed.isFeed` (`true`) | F003b: tell My Library and groups apart; the pure helper drops anything that is not `"user"` or `"group"` | Verified (source) | 10.0.9 | [src10:`…/xpcom/data/library.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/library.js) (`libraryID` ~L116 `get: function () { return this._libraryID; }`; `libraryType` ~L126 `get: function () { return this._get('_libraryType'); }`; `isGroup` ~L157 `return this.libraryType == 'group';`); `group.js` (constructor `params.libraryType = 'group';`); [src10:`…/xpcom/data/feed.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/data/feed.js) (`params.libraryType = 'feed';`, `Zotero.extendClass(Zotero.Library, Zotero.Feed);`, `isFeed` value `true`) | Read-only getters. `src/` uses `libraryID` and `libraryType`; `isGroup` / `isFeed` recorded only |
+| `library.name` — My Library: `Zotero.getString('pane.collections.library')` = **"My Library"** (en-US); group: the group's name from zotero.org; feed: the feed's name | F003b: dropdown headings and the library name in the Saved tables list | Verified (source); **Verified (runtime) RT-G1 PASS (owner, Zotero 10.0.9, 2026-11-18)** | 10.0.9 | `library.js` (`name` getter ~L179: `if (this._libraryType == 'user') { return Zotero.getString('pane.collections.library'); }`, otherwise "provided by the extending objects (Group, Feed)"); `group.js` (accessors loop `['name', 'description', 'version']`); [src10:`chrome/locale/en-US/zotero/zotero.properties`](https://github.com/zotero/zotero/blob/10.0.9/chrome/locale/en-US/zotero/zotero.properties) (`pane.collections.library = My Library`, `pane.collections.groupLibraries = Group Libraries`) | "My Library" is localized by Zotero, so Tabellify needs no Fluent string for it. **A group name is untrusted text written by another person**: show it only as plain text (`textContent`, `optgroup.label`), never in Debug Output (SEC-011) |
+| `library.editable`, `library.filesEditable`, `library.archived` (generated accessors) | F003b: **not used** (Tabellify never writes, so a read-only group behaves the same). Recorded for the spec's data-safety statement and RT-G1 | Verified (source) | 10.0.9 | `library.js` (~L212: `let accessors = ['editable', 'filesEditable', 'clientVersion', 'storageVersion', 'archived', 'isAdmin'];`, each `get: function () { return this._get(prop); }`); `group.js` `fromJSON` (`({ editable, filesEditable, isAdmin } = Zotero.Groups.getPermissionsFromJSON(json, userID));`) | Group permissions come from zotero.org at sync. Read-only reads |
+| Collections of **every non-feed library** (My Library and all groups) are loaded into memory at startup | F003b: `Zotero.Collections.getByLibrary(groupLibraryID, true)` works synchronously for groups, like for My Library | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/zotero.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/zotero.js) (`_initFull` ~L794–804: comment "Load all library data except for items, which are loaded when libraries are first…", `Array.fromAsync` over `Zotero.Libraries.getAll()`, and only `if (library.libraryType != 'feed')`: `Zotero.Collections.loadAll(library.libraryID)` and `Zotero.Searches.loadAll(library.libraryID)`) | Items of a group are **not** loaded at startup: `waitForDataLoad("item")` (F003 row) loads them on first use, per library. Groups added by a sync during the session have their collections loaded by sync (not traced; RT-G1 after a sync shows the counts) |
+| Notifier type **`"group"`**: `add`, `modify`, `delete` events, `ids` = **group IDs** (zotero.org numbers, not library IDs); for `delete`, `extraData[groupID].libraryID` | F003b: rebuild the dropdown when a group arrives, is renamed, or is removed while the tab is open (added to the workspace observer's types) | Verified (source); runtime = spec F003b AC15 | 10.0.9 | [src10:`chrome/content/zotero/xpcom/notifier.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/notifier.js) (`_types` ~L33–56 includes `'group'` and `'feed'`; there is **no** `'library'` type: `queue`/`trigger` throw "Invalid type" for unknown types); `group.js` (`_saveData`: `Zotero.Notifier.queue('add', 'group', this.groupID, env.notifierData);` and `Zotero.Notifier.queue('modify', 'group', this.groupID, env.notifierData);`; `_finalizeErase`: `Zotero.Notifier.queue('delete', 'group', this.groupID, notifierData);`); `library.js` `_saveData` (`Zotero.Notifier.queue('modify', this.libraryType, this.libraryTypeID);` when not the user library); `collectionTree.jsx` `notify` (`case 'group':` on delete: `this._rowMap["L" + extraData[id].libraryID]`) | Tabellify does not read `ids` or `extraData`: any `group` event just rebuilds the library list (debounced with the existing timer). Collection add/move/delete inside a group fire the existing `collection` type (F005 row: exact events UNVERIFIED, Refresh covers them) |
+| Erasing a library: `_finalizeErase` calls `Zotero.Libraries.unregister(libraryID)`; afterwards the old object **throws** "Library (N) has been disabled" for every property except `libraryID`, `id`, `name` | F003b: never keep library objects across events; re-read the list fresh, inside `try`/`catch` | Verified (source); that `Zotero.Libraries.get(id)` then returns `false` is **by inference** (`unregister`'s body not read) | 10.0.9 | `library.js` (`_finalizeErase`: `Zotero.Libraries.unregister(this.libraryID);`, then `dropDeadObjectsFromCache()` per child type, then `this._disabled = true`; Proxy getter: `throw new Error("Library (" + obj.libraryID + ") has been disabled");` with `libraryID`, `id`, `name` allowed); `eraseTx` sets `options.tx = true` and calls `erase` | To verify the inference: read `unregister` in `libraries.js` at tag 10.0.9, or observe AC15 (the dropdown no longer lists the group and no "disabled" error appears) |
+| Lost group access at sync: prompt "You are no longer a member of the group ‘…’." (title "Group Not Found"), buttons **Remove Group** / **Keep Group**; Keep sets `editable = false`, `archived = true`; Remove calls `group.eraseTx()` | F003b: owner test steps for AC15/AC16 (not called by Tabellify) | Verified (source) | 10.0.9 | [src10:`chrome/content/zotero/xpcom/sync/syncRunner.js`](https://github.com/zotero/zotero/blob/10.0.9/chrome/content/zotero/xpcom/sync/syncRunner.js) (`checkLibraries`, `remotelyMissingGroups` loop: `msg = "You are no longer a member of the group ‘" + group.name + "’.";`, `title: "Group Not Found",`, `button0: "Remove Group",`, `button2: "Keep Group",`; Keep: `group.editable = false;` `group.archived = true;`; `removedGroups` loop: `await group.eraseTx();`) | These prompt strings are hard-coded English in the source (not localized there) |
+| Group libraries exist only through sync | F003b: why the owner's dev profile must sync with a zotero.org account to test | Verified (source) | 10.0.9 | `collectionTree.jsx` `notify`, `add` case: comment "Groups only come from sync, so they should never be auto-selected." | — |
+| Database identity: `libraries.libraryID INTEGER PRIMARY KEY` (no `AUTOINCREMENT`); `groups.groupID INTEGER PRIMARY KEY` + `libraryID INT NOT NULL UNIQUE`; `collections.collectionID INTEGER PRIMARY KEY` + `UNIQUE (libraryID, key)` | F003b: (1) dropdown option values (collection IDs) are unique across all libraries; (2) `"<libraryID>/<key>"` keys in `layout.json` / `tables.json` cannot collide between libraries; (3) library IDs are **local** to one database, and SQLite may reuse the highest ID after it is deleted | Verified (source) | 10.0.9 | [src10:`resource/schema/userdata.sql`](https://github.com/zotero/zotero/blob/10.0.9/resource/schema/userdata.sql) (`CREATE TABLE libraries` with `libraryID INTEGER PRIMARY KEY,`; `CREATE TABLE groups` with `groupID INTEGER PRIMARY KEY,` and `libraryID INT NOT NULL UNIQUE,`; `CREATE TABLE collections` with `collectionID INTEGER PRIMARY KEY,` and `UNIQUE (libraryID, key),`) | `groupID` is the zotero.org group number (global); `libraryID` is a local row number. ID reuse without `AUTOINCREMENT` is standard SQLite behaviour ([sqlite.org/autoinc.html](https://www.sqlite.org/autoinc.html)) |
+| HTML `<optgroup label="…">` (and `disabled`) inside `<select>`; created with `document.createElementNS(HTML_NS, "optgroup")` and `optgroup.label = text` | F003b: one heading per library in the collection dropdown | Verified (docs); **Verified (runtime) in our chrome XUL document: RT-G3 PASS (owner, 2026-11-18)** | Firefox ESR 140 (Zotero 10.0.9) | MDN [`<optgroup>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/optgroup) (`label`: "The name of the group of options, which the browser can use when labeling the options in the user interface. This attribute is mandatory if this element is used."), [`HTMLOptGroupElement`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLOptGroupElement) (`label` property reflects the attribute) | Standard HTML. `label` is a plain-text attribute (not parsed as markup). Fallback if RT-G3 fails: a disabled `<option>` with the library name as a heading line |
 
 ## Runtime checks for owner
 
@@ -753,3 +777,96 @@ explicit focus return. `modal: false` or an error = RT-S3 failed: 007a uses the 
 **RT-S3b result (owner, Zotero 10.0.9, 2026-11-14): PASS.** `{ modal: true, focusedInside: true,
 escClosed: true, focusRestored: true }`: `<dialog>.showModal()` works in the Tabellify tab
 (this also covers RT-S3: the dialog opened as modal).
+
+### Feature 003b: group libraries (spec F003b AC1–AC3; run before development)
+Needs at least one group library in the dev profile (spec F003b, "Owner setup"). All three
+are read-only: they change nothing in any library. Paste each result into the Claude Code
+session.
+
+**RT-G1: Which libraries Tabellify will list.** Run JavaScript (no async needed).
+```js
+const user = Zotero.Libraries.get(Zotero.Libraries.userLibraryID);
+const groups = Zotero.Groups.getAll();
+({
+  user: { id: user.libraryID, type: user.libraryType, name: user.name },
+  groups: groups.map((g) => ({
+    id: g.libraryID, groupID: g.groupID, type: g.libraryType,
+    editable: g.editable, archived: g.archived,
+    collections: Zotero.Collections.getByLibrary(g.libraryID, true).length,
+  })),
+  allTypes: Zotero.Libraries.getAll().map((l) => l.libraryType),
+})
+```
+Pass = `user.type` is `"user"` and `user.name` is `"My Library"`; one entry per test group with
+`type: "group"` and the number of collections you created; `allTypes` has one `"user"`, one
+`"group"` per group, and `"feed"` only if the profile has feeds.
+
+**RT-G2: A group library's items, highlights and tags can be read.** Tick **Run as async
+function**.
+```js
+const g = Zotero.Groups.getAll()[0];
+if (!g) return "no group library in this profile";
+await g.waitForDataLoad("item");
+const tagNames = (await Zotero.Tags.getAll(g.libraryID)).length;
+let papers = 0, annotationTags = 0;
+for (const c of Zotero.Collections.getByLibrary(g.libraryID, true)) {
+  for (const item of c.getChildItems()) {
+    if (!item.isRegularItem()) continue;
+    papers++;
+    for (const a of Zotero.Items.get(item.getAttachments())) {
+      if (!a.isFileAttachment()) continue;
+      for (const ann of a.getAnnotations()) annotationTags += ann.getTags().length;
+    }
+  }
+}
+return { libraryID: g.libraryID, tagNames, papers, annotationTags };
+```
+Pass = no error, and `tagNames`, `papers` (a paper in two collections counts twice here) and
+`annotationTags` are non-zero and fit what you set up in the first group (alphabetically). Spec
+F003b AC18 runs it again after the smoke test: the numbers must be unchanged.
+
+**RT-G3: Headings inside the dropdown (`<optgroup>`) in the Tabellify tab.** Open the
+Tabellify tab first. Tick **Run as async function**, press Run, then within 20 seconds click the
+small extra dropdown that appears at the start of the collection row.
+```js
+const frame = Zotero.getMainWindow().document.querySelector('iframe[src="chrome://tabellify/content/workspace.xhtml"]');
+if (!frame) return "Tabellify tab not open";
+const win = frame.contentWindow;
+const doc = frame.contentDocument;
+const NS = "http://www.w3.org/1999/xhtml";
+const select = doc.createElementNS(NS, "select");
+for (const name of ["My Library", "Test Group"]) {
+  const group = doc.createElementNS(NS, "optgroup");
+  group.label = name;
+  group.append(new win.Option("Collection A", "1"), new win.Option("   Subcollection", "2"));
+  select.append(group);
+}
+doc.getElementById("tabellify-collection-row").prepend(select);
+await new Promise((r) => win.setTimeout(r, 20000));
+select.remove();
+return { optgroups: select.querySelectorAll("optgroup").length };
+```
+Pass = the open list shows **My Library** and **Test Group** as headings that cannot be
+chosen, with "Collection A" and the indented "Subcollection" under each, and the snippet
+returns `{ optgroups: 2 }`. The temporary dropdown disappears after 20 seconds (nothing is
+saved). Fail = no headings, or headings that can be chosen: the developer uses the fallback
+(disabled heading options, spec F003b "UI").
+
+**RT-G1 result (owner, Zotero 10.0.9, 2026-11-18): PASS.** `user`: `{ id: 1, type: "user",
+name: "My Library" }`; one group `{ id: 2, groupID: 6769184, type: "group", editable: true,
+archived: false, collections: 2 }`; `allTypes: ["user", "group"]` (no feeds). Before the test
+group was synced, the same snippet returned `groups: []`, as expected.
+
+**RT-G2 result (owner, Zotero 10.0.9, 2026-11-18): PASS.** `{ libraryID: 2, tagNames: 1,
+papers: 9, annotationTags: 2 }`. These numbers are the baseline for spec F003b AC18 (run again
+after the smoke test; they must be unchanged).
+
+**RT-G3 result (owner, Zotero 10.0.9, 2026-11-18): PASS.** The snippet returned
+`{ optgroups: 2 }`; in the F003b smoke test the real collection dropdown showed "My Library" and
+"Tabellify Test Group" as headings that cannot be chosen, with collections under each.
+
+**AC18 re-run (owner, 2026-11-18):** `{ libraryID: 2, tagNames: 3, papers: 9, annotationTags: 6 }`.
+The increase is the owner's own two new highlights tagged in Zotero's reader during the smoke
+test (`build/debug-28.txt`: `add item-tag` for "who" and "what" with no Tabellify line; the
+paper is in both test collections, so +2 tags count as +4). Tabellify's code has no tag-writing
+call. Read-only confirmed.
