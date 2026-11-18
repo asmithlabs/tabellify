@@ -112,6 +112,20 @@ test("AC1: manifest has applications.zotero.update_url (required for install)", 
   assert.match(url, /^https:\/\/\S+$/, "update_url must be an https:// URL");
 });
 
+// The plugin icon shown in Tools → Plugins. Zotero asks Firefox's AddonManager for the icon
+// listed under manifest `icons` (zotero/zotero tag 10.0.9, plugins.js L493 getIconURI);
+// see docs/zotero-api-notes.md (manifest `icons` row). A wrong path would ship silently.
+test("manifest icons point to SVG files that ship in the XPI", () => {
+  const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
+  assert.deepEqual(Object.keys(manifest.icons ?? {}).sort(), ["48", "96"]);
+  for (const [size, path] of Object.entries(manifest.icons)) {
+    assert.ok(files.has(path), `icon ${size} (${path}) is missing from the XPI`);
+    const svg = files.get(path).toString("utf8");
+    // MDN: Firefox does not display an SVG icon without the xmlns attribute.
+    assert.match(svg, /<svg[^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/, `${path} lacks xmlns`);
+  }
+});
+
 test("AC1: versions agree (XPI file name, manifest, package.json)", () => {
   const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
