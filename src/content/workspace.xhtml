@@ -65,6 +65,7 @@
   <script src="chrome://tabellify/content/tag-script-model.js"/>
   <script src="chrome://tabellify/content/script-suggest-model.js"/>
   <script src="chrome://tabellify/content/tag-monitor-model.js"/>
+  <script src="chrome://tabellify/content/selection-model.js"/>
   <script src="chrome://tabellify/content/table-layout-model.js"/>
   <script src="chrome://tabellify/content/regroup-model.js"/>
   <script src="chrome://tabellify/content/layout-store.js"/>
@@ -248,7 +249,12 @@
          Feature 006a (ADR-0016): tags without a group form one block whose group header
          is blank (it still spans its tags and has a grip). When no real group has
          columns, the header is a single row: the tag headers go into the first row and
-         the second row is hidden. -->
+         the second row is hidden.
+
+         Feature 011: the Subcollection header after Title is shown only when the table
+         covers more than one collection (workspace.js). Sorted by it, each group of papers
+         gets its own tbody with a header row first; the first group uses the tbody below,
+         workspace.js adds the others after it. -->
     <html:table id="tabellify-items-table" class="tabellify-grid" hidden="hidden">
       <html:colgroup id="tabellify-items-cols"></html:colgroup>
       <html:thead>
@@ -258,6 +264,11 @@
           <html:th scope="col" rowspan="2" class="tabellify-col-title tabellify-fixed-header">
             <html:button class="tabellify-sort" data-sort="title"
                          data-l10n-id="tabellify-column-title"></html:button>
+          </html:th>
+          <html:th id="tabellify-items-place-header" scope="col" rowspan="2" hidden="hidden"
+                   class="tabellify-col-place tabellify-fixed-header">
+            <html:button class="tabellify-sort" data-sort="subcollection"
+                         data-l10n-id="tabellify-column-subcollection"></html:button>
           </html:th>
           <html:th id="tabellify-items-count-header" scope="col" rowspan="2"
                    class="tabellify-col-count tabellify-fixed-header">

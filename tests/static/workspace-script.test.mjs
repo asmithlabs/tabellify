@@ -227,8 +227,12 @@ test("F005: every MONITOR_STRINGS ID exists in tabellify.ftl and starts with tab
 });
 
 test("F005: Fluent is used without arguments (no formatValue(id, args), no setAttributes)", () => {
-  assert.doesNotMatch(js, /formatValue\(\s*[^)]*,/);
+  // F011: one exception, a number through numericArgs in setCountText (plural texts such as
+  // "3 papers"); no other formatValue call has arguments.
+  const withArgs = [...js.matchAll(/formatValue\(\s*[^)]*,[^\n]*/g)].map((m) => m[0]);
+  assert.deepEqual(withArgs, ["formatValue(id, this.numericArgs({ count }));"]);
   assert.doesNotMatch(js, /\bsetAttributes\s*\(/);
+  assert.doesNotMatch(js, /data-l10n-args/);
 });
 
 test("F005: Notifier observer symmetry (one register, unregister on unload, debounce cleared)", () => {
@@ -385,15 +389,18 @@ test("Owner 2026-11-13: old summary columns and detail rows are gone (markup, co
 test("Owner 2026-11-13: header = grip, Title, (tag groups), k/M; tag row and <colgroup> exist", () => {
   const groupRow = /<html:tr id="tabellify-items-group-row"[^>]*>([\s\S]*?)<\/html:tr>/.exec(xhtml)?.[1] ?? "";
   const order = [...groupRow.matchAll(/class="(tabellify-col-[\w-]+)/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["tabellify-col-grip", "tabellify-col-title", "tabellify-col-count"]);
+  // F011: the Subcollection header (hidden unless shown) sits right after Title.
+  assert.deepEqual(order, ["tabellify-col-grip", "tabellify-col-title", "tabellify-col-place", "tabellify-col-count"]);
   assert.match(groupRow, /id="tabellify-items-count-header"/);
+  assert.match(groupRow, /id="tabellify-items-place-header"[^>]*hidden="hidden"/);
+  assert.match(groupRow, /data-sort="subcollection"/);
   assert.match(groupRow, /data-sort="title"/);
   assert.match(groupRow, /data-sort="count"/);
   assert.match(xhtml, /<html:tr id="tabellify-items-tag-row"/);
   assert.match(xhtml, /<html:colgroup id="tabellify-items-cols">/);
   // Group headers are inserted before k/M, so k/M stays last.
   assert.match(js, /groupRow\.insertBefore\(th, countHeader\)/);
-  assert.match(js, /tr\.append\(this\.rowGripCell\(paper\), title, \.\.\.tagCells, count\)/);
+  assert.match(js, /tr\.append\(this\.rowGripCell\(paper\), title, \.\.\.\(place \? \[place\] : \[\]\), \.\.\.tagCells, count\)/);
 });
 
 test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never tag names)", () => {
@@ -417,6 +424,8 @@ test("F006a AC17 / F006b AC12 / F006c AC15 / F008 AC17 / F007b AC22: script orde
     "tag-script-model.js",
     "script-suggest-model.js",
     "tag-monitor-model.js",
+    // F011 (ADR-0027 §5): the selection model, after the tag monitor model.
+    "selection-model.js",
     "table-layout-model.js",
     "regroup-model.js",
     "layout-store.js",
@@ -925,4 +934,54 @@ test("F007b AC22: table IDs are never put into a selector; saved-mode texts go i
   assert.match(js, /name\.textContent = entry\.name;/);
   // The clock is read only in workspace.js (the model gets `now`).
   assert.match(js, /new Date\(\)\.toISOString\(\)/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 AC26 (T6): selection model, Subcollection column, group rows, Fluent plurals
+// ---------------------------------------------------------------------------------------
+
+const selectionJs = code("content/selection-model.js");
+
+test("F011 AC26: selection-model.js uses no Zotero / DOM / IOUtils / file globals and never writes", () => {
+  assert.match(selectionJs, /var TabellifySelection = \{/);
+  assert.doesNotMatch(selectionJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
+  assert.doesNotMatch(selectionJs, /\bwrite\w*\(|\blocalStorage\b/);
+});
+
+test("F011 AC26: the Subcollection header, its sort key and the new Fluent IDs exist; plurals take only $count", () => {
+  const ftl = read("locale/en-US/tabellify.ftl");
+  assert.match(monitorJs, /SORT_KEYS: \["title", "count", "subcollection"\]/);
+  assert.ok(ftlIds.has("tabellify-column-subcollection"));
+  assert.ok(js.includes('"tabellify-column-subcollection"'), "formatted with the export strings");
+  // Every message filled by setCountText exists and uses only the variable $count.
+  const counted = [...js.matchAll(/setCountText\([^,]+,\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(counted.length >= 3, "setCountText calls found (check is vacuous)");
+  for (const id of counted) {
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+    const block = new RegExp(`^${id}\\s*=([^\\n]*(?:\\n\\s+[^\\n]*)*)`, "m").exec(ftl)?.[1] ?? "";
+    const vars = new Set([...block.matchAll(/\$(\w+)/g)].map((m) => m[1]));
+    assert.deepEqual([...vars], ["count"], `${id} uses ${[...vars]}`);
+  }
+  assert.match(ftl, /^tabellify-saved-filter-collection = Current selection$/m);
+});
+
+test("F011 AC26: collection names reach the table, group rows and list only as text", () => {
+  // Subcollection cells: one <span> per place, filled with textContent.
+  assert.match(js, /const line = this\.html\("span", "tabellify-place"\);\n\s*line\.textContent = text;/);
+  // Group header rows: the name with textContent; the count through setCountText.
+  assert.match(js, /name\.textContent = run\.label;/);
+  assert.match(js, /this\.setCountText\(count, "tabellify-place-group-papers", run\.count\)/);
+  // setCountText sets text, never markup, and passes numbers only.
+  const body = /setCountText\(el, id, count\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(body, /el\.textContent = String\(count\);/);
+  assert.match(body, /formatValue\(id, this\.numericArgs\(\{ count \}\)\)/);
+  assert.match(body, /el\.textContent = text;/);
+});
+
+test("F011 AC26: no new listener, observer or timer in T6; the Zotero allow-list test above is unchanged", () => {
+  // The observer types stay the F005/F003b list (collection events were already included).
+  assert.match(js, /\["item-tag", "collection-item", "item", "collection", "group"\]/);
+  assert.equal((js.match(/\bregisterObserver\s*\(/g) ?? []).length, 1);
+  // The same window timers as before F011: the recompute debounce and the layout save.
+  assert.equal((js.match(/\bsetTimeout\s*\(/g) ?? []).length, 2);
 });

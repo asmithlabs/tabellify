@@ -872,6 +872,43 @@
 #tabellify-items-table col.tabellify-col-title { width: auto; }
 #tabellify-items-table col.tabellify-col-tag { width: 5.5em; }
 #tabellify-items-table col.tabellify-col-count { width: 5.5em; }
+/* Feature 011: the Subcollection column (after Title, only when the table covers more than
+   one collection). */
+#tabellify-items-table col.tabellify-col-place { width: 11em; }
+
+/* Feature 011: Subcollection cells. A paper in several places shows one per line (each
+   place is its own <span>); long names wrap inside the column. */
+.tabellify-grid td.tabellify-col-place {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: start;
+}
+
+.tabellify-grid td.tabellify-col-place .tabellify-place {
+  display: block;
+}
+
+/* Feature 011: the group header row while the table is sorted by Subcollection
+   ("Asthma · 3 papers"): one cell across the table, in the header colour, with a rule
+   above it so each group starts visibly. The "·" before the count comes from here. */
+.tabellify-grid tr.tabellify-place-row th {
+  text-align: start;
+  font-weight: bold;
+  background-color: var(--tabellify-color-header);
+  color: var(--tabellify-color-text);
+  border-top: 1px solid var(--tabellify-color-border-strong);
+  padding: var(--tabellify-row-pad-block) var(--tabellify-row-pad-inline);
+}
+
+.tabellify-grid tr.tabellify-place-row .tabellify-place-count {
+  font-weight: normal;
+  color: var(--tabellify-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabellify-grid tr.tabellify-place-row .tabellify-place-count::before {
+  content: " · ";
+}
 
 /* ---------------------------------------------------------------------------------------
    "View table" modal (Feature 007a): an HTML <dialog> opened with showModal().
@@ -980,6 +1017,11 @@
 
 #tabellify-view-grid .tabellify-col-title {
   min-width: 16em;
+}
+
+/* Feature 011: the Subcollection column of the modal copy may wrap (one place per line). */
+#tabellify-view-grid td.tabellify-col-place {
+  min-width: 8em;
 }
 
 /* ---------------------------------------------------------------------------------------
