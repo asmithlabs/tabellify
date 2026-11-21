@@ -9,6 +9,11 @@ are never published.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-18
+
+### Added
+- Tabellify now has its own logo, shown as its icon in **Tools → Plugins**.
+
 ## [0.2.0] - 2026-11-18
 
 First public release. Works with Zotero 10.0.x (`strict_min_version` 10.0,
