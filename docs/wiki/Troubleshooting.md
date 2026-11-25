@@ -137,6 +137,14 @@ cleared. Choose another collection from the **Collection** list. Saved tables of
 collection are kept; you can still open their snapshot and export them, see
 [Saved Tables](Saved-Tables#snapshot-or-live).
 
+### "1 chosen collection is no longer available"
+
+With several collections chosen (**Choose several…**), some of them were deleted or moved to
+the trash. The table goes on with the others. Click **Choose several…** to tick other
+collections if you like. In a saved table's live view the
+note reads "1 saved collection is no longer available." (or the number of collections); the
+saved snapshot is unchanged.
+
 ### "Some highlights could not be read"
 
 The full message is "Some highlights could not be read, so their tags are not counted. See

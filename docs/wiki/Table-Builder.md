@@ -1,8 +1,9 @@
 # Table Builder
 
 The table in the [Tabellify tab](Workspace) is your synthesis matrix: one row per paper, one
-column per [codebook](Codebooks) tag. It is built from the chosen collection and the
-codebook, and it changes as you tag highlights. Nothing you do in the table changes your
+column per [codebook](Codebooks) tag. It is built from the chosen collection (or
+[several collections](Workspace#show-several-collections-or-subcollections-in-one-table)) and
+the codebook, and it changes as you tag highlights. Nothing you do in the table changes your
 Zotero library.
 
 ## Columns
@@ -11,14 +12,16 @@ From left to right:
 
 1. A narrow **grip** column (⠿) for moving papers.
 2. **Title** of the paper ("(untitled)" if it has none).
-3. **One column per codebook tag**, under a header row with group names:
+3. **Subcollection**, only when the table covers more than one collection; see
+   [below](#the-subcollection-column).
+4. **One column per codebook tag**, under a header row with group names:
    - tags in a group sit under that group's name;
    - tags without a group sit under a header that reads **Ungrouped**. Ungrouped tags that
      are next to each other share one **Ungrouped** header; ungrouped tags in different
      places each get their own.
    - If no group has tags, there is only one header row (no group names, no "Ungrouped").
    - A group without tags has no column.
-4. **k/M**: how many of the codebook tags the paper uses (see [Tag Monitor](Tag-Monitor)).
+5. **k/M**: how many of the codebook tags the paper uses (see [Tag Monitor](Tag-Monitor)).
 
 A tag cell shows **✓** when the paper uses that tag, and is empty otherwise. Pointing at a cell
 shows, for example, "Heat index: Used" or "Heat index: Not used". The header stays visible
@@ -27,11 +30,38 @@ when you scroll down; a table with many tags scrolls sideways.
 Columns follow the codebook: tags you add, remove or move in the codebook appear, disappear
 or move in the table at once.
 
+## The Subcollection column
+
+The **Subcollection** column says where in your chosen collections each paper is filed. It
+appears by itself, right after Title, whenever the table covers more than one collection:
+when you choose a collection that has subcollections, or when you choose several with
+[Choose several…](Workspace#show-several-collections-or-subcollections-in-one-table). A
+collection without subcollections, chosen on its own, shows no Subcollection column.
+
+- A paper in a subcollection shows that subcollection's name, for example "Asthma".
+- A paper filed directly in the chosen parent collection shows the parent's name, for example
+  "Phenotypes".
+- Deeper levels show the path, for example "Respiratory › Bronchitis".
+- A paper in two subcollections shows both names, each on its own line. It is still **one
+  row**; papers are never listed twice.
+- If you ticked several separate collections that have subcollections of their own, the path
+  starts at the ticked collection, for example "Phenotypes › Asthma", so two subcollections
+  with the same name cannot be confused.
+
+The column always stays right after Title; it cannot be moved. It follows Zotero by itself:
+move a paper to another subcollection or rename a subcollection in Zotero, and the cell
+changes shortly after.
+
 ## Sorting
 
 Click a column header to sort by it; click it again to reverse the order.
 
 - **Title**: alphabetical.
+- **Subcollection**: in the order of Zotero's left pane (each collection followed by its
+  subcollections), then by title. While the table is sorted this way, a header row such as
+  "Asthma · 3 papers" appears above each group of papers. A paper in two subcollections
+  appears once, under the first of them. Sorting by another column, or using your manual
+  order, removes the header rows (the Subcollection column stays).
 - **k/M**: by the number of codebook tags used.
 - **A tag column**: papers with ✓ first (a second click puts them last).
 
@@ -51,8 +81,10 @@ move it one place.
   **Manual order** to go back to it.
 - **Clear manual order** forgets the order for this collection and goes back to the default
   sort.
-- Each collection has its own manual order, in My Library and in group libraries alike;
-  arranging papers in one library never changes the order in another. Papers added to the
+- Each collection has its own manual order, in My Library and in group libraries alike.
+  A choice of several collections made with **Choose several…** has its own manual order
+  too: tick the same collections again and your order is back.
+  Arranging papers in one library never changes the order in another. Papers added to the
   collection later appear after the papers you arranged.
 - The order is kept after you close the tab or restart Zotero.
 
@@ -68,7 +100,7 @@ Each tag header and each group header has a grip.
   Windows and Linux). A tag inside a group moves one place within its group; an ungrouped tag
   or a group moves one place left or right among the top-level columns.
 - The **"Ungrouped"** headers have no grip: move their tags one by one.
-- Title stays first and k/M stays last.
+- Title stays first (followed by Subcollection, if shown) and k/M stays last.
 - **Reset columns** puts the columns back in codebook order. It does **not** undo changes to
   groups (grouping lives in the codebook).
 

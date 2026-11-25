@@ -11,7 +11,8 @@ Zotero library.
    want it (sorting, manual order, column order).
 2. Under the table, click **Export CSV**.
 3. A save dialog titled **Export table as CSV** opens. It suggests a file name made of the
-   collection's name and today's date, for example `Heat and health 2026-11-14.csv`. Pick a
+   collection's name and today's date, for example `Heat and health 2026-11-14.csv`. With
+   several collections chosen, their names are used, separated by commas. Pick a
    folder, change the name if you like, and click the dialog's save button.
 
 **What you should see:** under the button, "CSV saved:" followed by the file's location.
@@ -40,7 +41,8 @@ characters. If nothing is left, the name starts with "Tabellify table".
 
 ### Columns
 
-**Title**, then every tag column in the order shown, then two number columns:
+**Title**, then **Subcollection** if the table shows that column (see below), then every
+tag column in the order shown, then two number columns:
 **Tags used (k)** and **Codebook tags (M)** (the k/M column, split in two so a spreadsheet can
 calculate with it).
 
@@ -50,7 +52,9 @@ calculate with it).
   - row 1: the **group name above each of its tag columns** (repeated above every column of
     the group, so filters work); **empty above ungrouped tags** (the file does not use the
     word "Ungrouped"); empty above Title, k and M;
-  - row 2: `Title`, the tag names, `Tags used (k)`, `Codebook tags (M)`.
+  - row 2: `Title`, the tag names, `Tags used (k)`, `Codebook tags (M)` (with
+    `Subcollection` after `Title` when that column is shown; the cell above it in row 1 is
+    empty).
 - **One header row** (just row 2) when the table on screen has only one header row (no group
   has tags).
 
@@ -61,6 +65,19 @@ calculate with it).
   counting rule as the screen, including **Also count tags on the paper itself**.
 - **k and M:** the two numbers from the k/M cell. Both are empty when the table shows "–"
   (no codebook, or a codebook without tags).
+
+### The Subcollection column
+
+When the table on screen shows a [**Subcollection** column](Table-Builder#the-subcollection-column)
+(the table covers more than one collection), the file has a `Subcollection` column right after
+`Title`.
+
+- Each cell holds the same text as the screen. A paper in two subcollections has both names
+  in one cell, separated by "; ", for example `Asthma; COPD`. The paper is still one row.
+- The group header rows you see while sorting by Subcollection ("Asthma · 3 papers") are
+  **not** written to the file, so a spreadsheet can sort and filter the column.
+- Collection names get the same formula guard as titles (see "File format" below).
+- A table without the Subcollection column gives exactly the same file as before.
 
 ### Example
 
@@ -84,7 +101,7 @@ Smith 2020,1,,1,2,3
   double quote inside is written twice (the usual CSV rule, RFC 4180).
 - **Formula guard:** a spreadsheet would run any cell that starts with `=`, `+`, `-` or `@` as
   a formula. A paper title or tag name could be made to do that on purpose. So when a text
-  cell (title, tag, group name) starts with one of these characters (or a tab or line break,
+  cell (title, tag, group name, subcollection name) starts with one of these characters (or a tab or line break,
   or their full-width forms), Tabellify puts an apostrophe `'` in front of it and quotes the
   cell. In the spreadsheet you see the text, not a formula result.
 

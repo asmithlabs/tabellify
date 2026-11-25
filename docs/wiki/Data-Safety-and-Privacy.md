@@ -15,8 +15,11 @@ Your Zotero library is your research. Tabellify is built so that it never change
 
 - The list of your libraries (**My Library** and every **group library** in your Zotero)
   with their names, and the collections in each of them. Feeds are not read.
-- For the collection you choose (and its subcollections): the papers, their titles, their
-  tags, their file attachments and the tags on their highlights.
+- For the collection you choose (and its subcollections), or the collections you tick with
+  **Choose several…**: the papers, their titles, their tags, their file attachments and the
+  tags on their highlights.
+- **Choose several…** only reads the list of collections. It never creates, renames, moves
+  or deletes a collection, and never changes what is selected in Zotero's left pane.
 - The list of tag names in the chosen collection's library, or in My Library before you
   choose a collection (for suggestions in the **Tags and groups** box).
 - For the paper shown in Zotero's right-hand pane: its tags and its highlights' tags (for
@@ -54,11 +57,16 @@ when you first save something.
 - **`codebooks.json`**: your codebook (tag names and group names). Created when you first
   add a tag or group.
 - **`layout.json`**: the column order (group IDs and tag names) and your own paper order for
-  each collection (Zotero's internal collection and item keys, not titles). Created when you
+  each collection and for each choice of several collections (Zotero's internal collection
+  and item keys, not titles). Created when you
   first move a column or a paper, or click **Reset columns** or **Clear manual order**.
 - **`tables.json`**: your saved tables: Name, Description, settings and a **snapshot that
-  includes paper titles**, item keys, and collection, group and tag names. Created when you
-  first click **Save table**.
+  includes paper titles**, item keys, and collection, subcollection, group and tag names.
+  Created when you first click **Save table**.
+- **`tables.v1.json`**: only if you saved tables with Tabellify 0.2.x. The newer Tabellify
+  stores saved tables in a new format, so the first time you save after updating, it keeps a
+  one-time copy of your old `tables.json` under this name. It is never overwritten. See
+  [Going back to an older Tabellify](#going-back-to-an-older-tabellify).
 - **`.bak` files** (`codebooks.json.bak`, `layout.json.bak`, `tables.json.bak`): the previous
   version of each file, from the second save on. `tables.json.bak` can still contain a table
   you just deleted, until the next save.
@@ -80,6 +88,27 @@ Notes:
 - **CSV exports** are written only to the location you pick in the save dialog (during the
   write, a temporary file ending in `.tabellify-tmp` briefly sits next to it). See
   [Export](Export).
+
+## Going back to an older Tabellify
+
+Saved tables written by the newer Tabellify (with collections chosen through **Choose
+several…** and the Subcollection column) use a newer file format. If you install Tabellify
+0.2.x again, it shows that the saved tables file was made by a newer Tabellify, turns saving
+off and never overwrites the file, so nothing is lost.
+
+To use your saved tables from before the update with 0.2.x:
+
+1. Quit Zotero (macOS: **Zotero → Quit Zotero**).
+2. Open the `tabellify` folder in your Zotero data folder (see
+   [where it is](#where-is-my-zotero-data-folder)) in Finder.
+3. Move `tables.json` somewhere safe (for example your Desktop), so you can return to the
+   newer Tabellify later.
+4. Select `tables.v1.json`, choose **File → Duplicate** in Finder's menu bar, and rename the
+   copy to `tables.json`. Keep `tables.v1.json` itself.
+5. Start Zotero.
+
+Tables saved after the update are not in `tables.v1.json`; they are only in the copy you made
+in step 3.
 
 ## Removing Tabellify's files and setting
 
