@@ -631,8 +631,9 @@ test("F003b AC17: library list, observer types, strings and plain-text names", (
   // COLLECTION_STRINGS exist, start with tabellify-, and are formatted in init().
   const list = /COLLECTION_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
   const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  // F011 adds the picker's two status texts.
-  assert.deepEqual(ids, ["tabellify-collection-none-in-library", "tabellify-collection-gone", "tabellify-picker-none", "tabellify-picker-too-many"]);
+  // F011 adds the picker's two status texts; SEC-026 its tree error.
+  assert.deepEqual(ids, ["tabellify-collection-none-in-library", "tabellify-collection-gone", "tabellify-picker-none", "tabellify-picker-too-many",
+    "tabellify-picker-error"]);
   for (const id of ids) assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   assert.match(js, /await this\.formatStrings\(this\.COLLECTION_STRINGS\);/);
   // Library headings: names only through the optgroup's `label` property or new Option.

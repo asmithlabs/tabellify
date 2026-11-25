@@ -175,6 +175,8 @@ tabellify-picker-count =
     }
 tabellify-picker-none = Tick at least one collection.
 tabellify-picker-too-many = Too many separate choices. Tick whole parent collections instead.
+# Shown in the picker's status line when the collection tree could not be shown.
+tabellify-picker-error = The collections could not be shown. See Help → Debug Output Logging for details.
 tabellify-picker-select-all = Select all
 tabellify-picker-clear = Clear
 tabellify-picker-apply = Show table

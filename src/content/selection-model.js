@@ -153,8 +153,46 @@ var TabellifySelection = {
   },
 
   /**
+   * The collections reachable from `starts`, depth-first, each with the ID of the collection
+   * it was reached from (null for a start). `visited` guards against cycles.
+   *
+   * ITERATIVE ON PURPOSE (SEC-026): a recursive function uses one JavaScript stack frame per
+   * level, and a collection chain thousands of levels deep (possible in a group library)
+   * would throw "RangeError: too much recursion". An explicit stack (an array we push to and
+   * pop from) has no such limit.
+   * - `mirrored` false: pre-order (a collection, then its children's subtrees in input
+   *   order), the order the recursive version had.
+   * - `mirrored` true: a collection, then its children's subtrees in REVERSE order; read
+   *   backwards, that list is the post-order (children first, in input order) that
+   *   tickStates needs.
+   * @param {Map<number, object[]>} children  From tree()
+   * @param {object[]} starts
+   * @param {boolean} [mirrored]
+   * @returns {Array<[object, number | null]>}
+   */
+  depthFirst(children, starts, mirrored = false) {
+    const order = [];
+    const visited = new Set();
+    const stack = [];
+    // The last one pushed comes off the stack first, so push in reverse for input order.
+    const push = (list, parentId) => {
+      if (mirrored) for (const c of list) stack.push([c, parentId]);
+      else for (let i = list.length - 1; i >= 0; i--) stack.push([list[i], parentId]);
+    };
+    push(starts, null);
+    while (stack.length > 0) {
+      const [c, parentId] = stack.pop();
+      if (visited.has(c.id)) continue;
+      visited.add(c.id);
+      order.push([c, parentId]);
+      push(children.get(c.id) ?? [], c.id);
+    }
+    return order;
+  },
+
+  /**
    * Visit every reachable collection depth-first (tree order), top down. `visit(c, inherited)`
-   * returns the value its children inherit. `visited` guards against cycles.
+   * returns the value its children inherit. Iterative (see depthFirst).
    * @template V
    * @param {Array<object>} collections
    * @param {V} rootValue  What a top-level collection inherits
@@ -162,14 +200,11 @@ var TabellifySelection = {
    */
   walk(collections, rootValue, visit) {
     const { children, roots } = this.tree(collections);
-    const visited = new Set();
-    const go = (c, inherited) => {
-      if (visited.has(c.id)) return;
-      visited.add(c.id);
-      const value = visit(c, inherited);
-      for (const child of children.get(c.id) ?? []) go(child, value);
-    };
-    for (const r of roots) go(r, rootValue);
+    const values = new Map();
+    // Pre-order: a parent's value is always known before its children are visited.
+    for (const [c, parentId] of this.depthFirst(children, roots)) {
+      values.set(c.id, visit(c, parentId === null ? rootValue : values.get(parentId)));
+    }
   },
 
   /**
@@ -224,22 +259,22 @@ var TabellifySelection = {
     const ticked = new Set(tickedIds ?? []);
     const { children, roots } = this.tree(collections);
     const states = new Map();
-    const visited = new Set();
-    // Post-order (children first): returns [any ticked, all ticked] for the subtree.
-    const go = (c) => {
-      if (visited.has(c.id)) return [false, true];
-      visited.add(c.id);
-      let any = ticked.has(c.id);
-      let all = any;
-      for (const child of children.get(c.id) ?? []) {
-        const [childAny, childAll] = go(child);
-        any = any || childAny;
-        all = all && childAll;
-      }
-      states.set(c.id, all ? "checked" : any ? "indeterminate" : "unchecked");
-      return [any, all];
-    };
-    for (const r of roots) go(r);
+    // Post-order (children first), iteratively (see depthFirst): [any ticked, all ticked] of
+    // each subtree, folded into the collection it was reached from.
+    const order = this.depthFirst(children, roots, true);
+    const any = new Map();
+    const all = new Map();
+    for (const [c] of order) {
+      any.set(c.id, ticked.has(c.id));
+      all.set(c.id, ticked.has(c.id));
+    }
+    for (let i = order.length - 1; i >= 0; i--) {
+      const [c, parentId] = order[i];
+      states.set(c.id, all.get(c.id) ? "checked" : any.get(c.id) ? "indeterminate" : "unchecked");
+      if (parentId === null) continue;
+      if (any.get(c.id)) any.set(parentId, true);
+      if (!all.get(c.id)) all.set(parentId, false);
+    }
     return states;
   },
 
@@ -252,16 +287,8 @@ var TabellifySelection = {
   subtree(collections, id) {
     const { byId, children } = this.tree(collections);
     if (!byId.has(id)) return [];
-    const out = [];
-    const visited = new Set();
-    const go = (c) => {
-      if (visited.has(c.id)) return;
-      visited.add(c.id);
-      out.push(c.id);
-      for (const child of children.get(c.id) ?? []) go(child);
-    };
-    go(byId.get(id));
-    return out;
+    // Iterative (see depthFirst): pre-order from this one collection.
+    return this.depthFirst(children, [byId.get(id)]).map(([c]) => c.id);
   },
 
   /**

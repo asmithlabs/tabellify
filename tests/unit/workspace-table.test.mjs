@@ -3584,6 +3584,44 @@ test("F011 AC7 (as data): the picker shows the library's tree as nested checkbox
   assert.ok(debug.includes("Tabellify: workspace: picker: opened with 6 collection(s), 5 ticked"), debug.join("\n"));
 });
 
+test("SEC-026: a tree that cannot be built opens the picker with an error, a constant log line, and only Cancel", async () => {
+  const { W, d, boxes, sandbox, Zotero, debug, press } = await pickerSetup();
+  W.strings["tabellify-picker-error"] = "The collections could not be shown.";
+  const errors = [];
+  Zotero.logError = (e) => errors.push(e);
+  const S = vm.runInContext("TabellifySelection", sandbox);
+  const realScope = S.scope;
+  const realDepthFirst = S.depthFirst;
+  const tooDeep = () => { throw Object.assign(new Error("too much recursion in Phenotypes"), { name: "RangeError" }); };
+  // Both places can fail: the initial ticks (scope) and the tree itself (depthFirst).
+  for (const broken of ["scope", "depthFirst"]) {
+    S.scope = broken === "scope" ? tooDeep : realScope;
+    S.depthFirst = broken === "depthFirst" ? tooDeep : realDepthFirst;
+    debug.length = 0;
+    W.onChooseSeveralClick();
+    assert.equal(d("tabellify-picker-dialog").open, true, `${broken}: the picker still opens`);
+    assert.equal(boxes().length, 0);
+    assert.equal(d("tabellify-picker-status").textContent, "The collections could not be shown.");
+    for (const id of ["tabellify-picker-select-all", "tabellify-picker-clear", "tabellify-picker-apply"]) {
+      assert.equal(d(id).disabled, true, `${broken}: ${id} off`);
+    }
+    assert.equal(d("tabellify-picker-cancel").focused, true, "focus on Cancel");
+    assert.ok(debug.includes("Tabellify: workspace: picker: could not build the tree (RangeError)"), debug.join("\n"));
+    for (const line of debug) assert.ok(!line.includes("Phenotypes") && !line.includes("recursion"), `private text in: ${line}`);
+    press("tabellify-picker-cancel");
+    assert.equal(d("tabellify-picker-dialog").open, false);
+  }
+  assert.equal(errors.length, 2, "Zotero.logError once per failure");
+  // A working tree turns Select all and Clear back on.
+  S.scope = realScope;
+  S.depthFirst = realDepthFirst;
+  W.onChooseSeveralClick();
+  assert.ok(boxes().length > 0);
+  assert.equal(d("tabellify-picker-select-all").disabled, false);
+  assert.equal(d("tabellify-picker-clear").disabled, false);
+  assert.equal(d("tabellify-picker-apply").disabled, false);
+});
+
 test("F011 AC8 (as data): ticking a parent ticks its subcollections; unticking one makes it mixed; a mixed click ticks all", async () => {
   const { W, d, ticked, mixed, tick, press, document } = await pickerSetup({ include: [METH], exclude: [] });
   W.onChooseSeveralClick();
