@@ -45,6 +45,16 @@ Yes. The **Collection** list in the Tabellify tab shows My Library and every gro
 you see in Zotero, each with its collections. Tag counts, the table, saving and export work
 the same way. See [Workspace](Workspace#which-papers-are-shown).
 
+**Can one table show several collections or only some subcollections?**
+Yes. Click **Choose several…** in the Tabellify tab, tick the collections or subcollections
+you want (ticking a parent includes its subcollections; untick one to leave it out) and click
+**Show table**. All of them must be in the same library. See
+[Workspace](Workspace#show-several-collections-or-subcollections-in-one-table).
+
+**A paper is in two subcollections. Is it counted twice?**
+No. Every paper is one row and counts once. Its **Subcollection** cell names both places; see
+[Table Builder](Table-Builder#the-subcollection-column).
+
 **Do I need permission to edit a group library?**
 No. Tabellify only reads, so read-only group libraries work too. It never adds tags or
 changes anything in a group library, even when you are allowed to edit it.

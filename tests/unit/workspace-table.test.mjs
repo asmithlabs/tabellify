@@ -2304,7 +2304,7 @@ test("007a AC14: no Debug Output line holds the Name, Description, a title, tag,
 
 const SAVED_TEXTS = {
   "tabellify-saved-empty": "No saved tables yet.",
-  "tabellify-saved-empty-collection": "No saved tables for this collection.",
+  "tabellify-saved-empty-collection": "No saved tables for this selection.",
   "tabellify-saved-choose": "Choose a collection to see its saved tables.",
   "tabellify-saved-load-error": "The saved tables file could not be read. File:",
   "tabellify-saved-newer": "The saved tables file was made by a newer version of Tabellify. File:",
@@ -2474,7 +2474,7 @@ test("007b AC19: the filter and the three messages; the summary count follows th
   W.renderSavedList();
   assert.equal(listItems(d).length, 0);
   assert.equal(d("tabellify-saved-count").textContent, "0");
-  assert.equal(d("tabellify-saved-message-text").textContent, "No saved tables for this collection.");
+  assert.equal(d("tabellify-saved-message-text").textContent, "No saved tables for this selection.");
   // No collection chosen.
   W.currentCollection = "";
   W.renderSavedList();
@@ -2565,6 +2565,34 @@ test("007b AC19: Delete is off while a save runs; a conflict reloads and says so
   assert.deepEqual(savedStatus(failing.d), { hidden: false, text: "The saved tables could not be saved. File:", path: SAVED_FILE, error: true });
   assert.ok(failing.debug.includes("Tabellify: workspace: saved tables: not saved (error: NotAllowedError)"), failing.debug.join("\n"));
   assert.equal(listItems(failing.d).length, 2, "nothing removed");
+});
+
+test("SEC-024: saveTables logs the one-time tables.v1.json copy by file name and error.name only", async () => {
+  // Stub the store so the result carries a v1Copy outcome (the store itself is pinned in
+  // tests/unit/tables-store.test.mjs); this pins what the workspace does with it.
+  const V1 = `${SAVED_DIR}/tables.v1.json`;
+  for (const v1Copy of [
+    { path: V1, ok: true },
+    { path: V1, ok: false, error: Object.assign(new Error(`${V1} exists`), { name: "NoModificationAllowedError" }) },
+  ]) {
+    const { W, d, debug, sandbox, Zotero } = await savedSetup({ entries: TWO_TABLES() });
+    const errors = [];
+    Zotero.logError = (e) => errors.push(e);
+    const Store = vm.runInContext("TabellifyTablesStore", sandbox);
+    Store.saveData = async (fs, dir, data) => ({ status: "saved", data: { ...data, revision: 4 }, path: SAVED_FILE, v1Copy });
+    W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "delete")));
+    await W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "confirm-delete")));
+    assert.equal(W.savedTables.revision, 4, "the save still counts");
+    if (v1Copy.ok) {
+      assert.ok(debug.includes("Tabellify: workspace: saved tables: kept the schema 1 data once in tables.v1.json"), debug.join("\n"));
+      assert.equal(errors.length, 0);
+    } else {
+      assert.ok(debug.includes("Tabellify: workspace: saved tables: could not write the one-time copy tables.v1.json " +
+        "(NoModificationAllowedError); continuing (tables.json.bak keeps the old data)"), debug.join("\n"));
+      assert.deepEqual(errors, [v1Copy.error]);
+    }
+    for (const line of debug) assert.ok(!line.includes(SAVED_DIR) && !line.includes("exists"), `private text in: ${line}`);
+  }
 });
 
 test("007b AC20: draft Save table with an empty Name writes nothing; the draft modal shows Save table first", async () => {
@@ -3554,6 +3582,44 @@ test("F011 AC7 (as data): the picker shows the library's tree as nested checkbox
   assert.equal(d("tabellify-picker-status").textContent, "5", "count (Fluent fills the words)");
   assert.equal(d("tabellify-picker-apply").disabled, false);
   assert.ok(debug.includes("Tabellify: workspace: picker: opened with 6 collection(s), 5 ticked"), debug.join("\n"));
+});
+
+test("SEC-026: a tree that cannot be built opens the picker with an error, a constant log line, and only Cancel", async () => {
+  const { W, d, boxes, sandbox, Zotero, debug, press } = await pickerSetup();
+  W.strings["tabellify-picker-error"] = "The collections could not be shown.";
+  const errors = [];
+  Zotero.logError = (e) => errors.push(e);
+  const S = vm.runInContext("TabellifySelection", sandbox);
+  const realScope = S.scope;
+  const realDepthFirst = S.depthFirst;
+  const tooDeep = () => { throw Object.assign(new Error("too much recursion in Phenotypes"), { name: "RangeError" }); };
+  // Both places can fail: the initial ticks (scope) and the tree itself (depthFirst).
+  for (const broken of ["scope", "depthFirst"]) {
+    S.scope = broken === "scope" ? tooDeep : realScope;
+    S.depthFirst = broken === "depthFirst" ? tooDeep : realDepthFirst;
+    debug.length = 0;
+    W.onChooseSeveralClick();
+    assert.equal(d("tabellify-picker-dialog").open, true, `${broken}: the picker still opens`);
+    assert.equal(boxes().length, 0);
+    assert.equal(d("tabellify-picker-status").textContent, "The collections could not be shown.");
+    for (const id of ["tabellify-picker-select-all", "tabellify-picker-clear", "tabellify-picker-apply"]) {
+      assert.equal(d(id).disabled, true, `${broken}: ${id} off`);
+    }
+    assert.equal(d("tabellify-picker-cancel").focused, true, "focus on Cancel");
+    assert.ok(debug.includes("Tabellify: workspace: picker: could not build the tree (RangeError)"), debug.join("\n"));
+    for (const line of debug) assert.ok(!line.includes("Phenotypes") && !line.includes("recursion"), `private text in: ${line}`);
+    press("tabellify-picker-cancel");
+    assert.equal(d("tabellify-picker-dialog").open, false);
+  }
+  assert.equal(errors.length, 2, "Zotero.logError once per failure");
+  // A working tree turns Select all and Clear back on.
+  S.scope = realScope;
+  S.depthFirst = realDepthFirst;
+  W.onChooseSeveralClick();
+  assert.ok(boxes().length > 0);
+  assert.equal(d("tabellify-picker-select-all").disabled, false);
+  assert.equal(d("tabellify-picker-clear").disabled, false);
+  assert.equal(d("tabellify-picker-apply").disabled, false);
 });
 
 test("F011 AC8 (as data): ticking a parent ticks its subcollections; unticking one makes it mixed; a mixed click ticks all", async () => {

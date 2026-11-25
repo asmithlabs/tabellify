@@ -8,7 +8,7 @@ Tabellify is a Zotero plugin for researchers doing literature reviews. You plan 
 (a **codebook**) and tag the highlights in your papers with them in Zotero's reader; Tabellify
 shows a **synthesis table** with one row per paper and one column per codebook tag, which you
 can save and export as CSV. It works with collections in **My Library** and in your
-**group libraries**.
+**group libraries**, and one table can combine several collections or subcollections.
 
 **All documentation, including getting started:** https://wiki.asmithlabs.com/tabellify
 

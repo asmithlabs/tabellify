@@ -7,14 +7,16 @@ changes your Zotero library.
 
 ## View table
 
-1. In the [Tabellify tab](Workspace), choose a collection.
+1. In the [Tabellify tab](Workspace), choose a collection (or several, with
+   [Choose several…](Workspace#show-several-collections-or-subcollections-in-one-table)).
 2. Under the table, click **View table**.
 
 **What you should see:** a panel over the Tabellify tab with the heading **View table**, the
 note "Not saved yet. Save table keeps this table with its name and description.", a **Name**
-field (filled in with the collection's name and selected, so you can type over it), a
-**Description** field, and a read-only copy of the table: the same columns, papers, order, ✓
-cells and k/M as in the workspace, without grips or sort buttons. A wide table scrolls
+field (filled in with the collection's name, or the chosen collections' names separated by
+commas, and selected, so you can type over it), a **Description** field, and a read-only
+copy of the table: the same columns (including **Subcollection**, if shown), papers, order,
+group header rows, ✓ cells and k/M as in the workspace, without grips or sort buttons. A wide table scrolls
 inside the panel.
 
 - **Name** (up to 200 characters) is also used as the name of the exported CSV file.
@@ -42,10 +44,11 @@ one. Two tables may have the same name.
 A saved table holds:
 
 - its **Name** and **Description**;
-- its **settings**: the collection, the column order, the paper order (sort or manual order)
+- its **settings**: the collection, or the collections you chose with **Choose several…**
+  (including any subcollection you left out), the column order, the paper order (sort or manual order)
   and whether **Also count tags on the paper itself** was ticked;
 - a **snapshot**: the table exactly as it was when you saved it (titles, columns, ✓ cells,
-  k/M). Because of this, `tables.json` contains your paper titles; see
+  k/M, and the Subcollection column if it was shown). Because of this, `tables.json` contains your paper titles; see
   [Data Safety and Privacy](Data-Safety-and-Privacy).
 
 ## The Saved tables list
@@ -53,12 +56,16 @@ A saved table holds:
 In the Tabellify tab, click **Saved tables** (under the collection row) to open the list. The
 heading shows how many tables are listed.
 
-- **Show:** **All collections** (default) or **This collection** (only tables of the chosen
-  collection).
+- **Show:** **All collections** (default) or **Current selection**: only tables made from
+  exactly what the Tabellify tab shows now. A table saved from one collection matches when
+  that collection is chosen on its own; a table saved from several collections matches when
+  you tick the same collections again.
 - Each entry shows the Name, then the library (**My Library** or the group library's name),
   the collection, the number of papers and columns, and when it was saved, for example
-  "Lab Group · Shared papers · 12 papers · 5 columns · Saved 14 Nov 2026, 15:40". If the
-  collection no longer exists, its old name is shown with "(collection not found)". If its
+  "Lab Group · Shared papers · 12 papers · 5 columns · Saved 14 Nov 2026, 15:40". A table
+  made from several collections lists their names, for example "My Library · Asthma, COPD,
+  Diabetes · 20 papers · 6 columns · Saved …" (the first three, then "+2 more" and so on).
+  If the collection no longer exists, its old name is shown with "(collection not found)". If its
   group library was removed from your Zotero, the library name is left out as well.
 - Saved tables of every library are kept together in one list. **All collections** shows
   them all, whichever library the chosen collection is in.
@@ -76,7 +83,8 @@ A saved table always opens as its **snapshot**: exactly what you saved. In the *
 table** panel:
 
 - **Show live** rebuilds the table from your library **now**, with the saved settings and the
-  current codebook. While it builds you see "Building the live table…". Then the line under
+  current codebook. A table saved from several collections is rebuilt from the same
+  collections, including subcollections added since under a ticked parent. While it builds you see "Building the live table…". Then the line under
   the heading reads "Live: built from your library now · *library* · *collection*".
 - **Show snapshot** goes back to the saved snapshot.
 - **Update snapshot** (only in the live view) replaces the saved snapshot with the live
@@ -91,9 +99,13 @@ Notes on the live view:
 
 - Columns come from the **current** codebook. Saved columns that are no longer in the
   codebook are named in a note: "Saved columns that are no longer in the codebook: …".
+- If some of a saved table's collections no longer exist, the live table is built from the
+  rest, with a note such as "1 saved collection is no longer available."
+- **Update snapshot** and **Save as new table** keep the saved table's collections, not what
+  the Tabellify tab shows now.
 - It is built once per click; to follow later changes, click **Show snapshot**, then **Show
   live** again.
-- **Show live** is not available when "This table's collection is no longer available (it
+- **Show live** is not available when none of its collections is left: "This table's collection is no longer available (it
   was deleted, is in the trash, or its group library was removed), so only the saved
   snapshot can be shown." or "The codebook could not be loaded, so the live
   table cannot be built." If reading fails you see "The live table could not be built. The
@@ -115,6 +127,9 @@ most 100 saved tables. Delete one first."
 ## Where saved tables are stored
 
 In `tables.json` in Tabellify's own folder, with the previous version as `tables.json.bak`.
+If you saved tables with Tabellify 0.2.x, the first save after updating also keeps a copy of
+the old file as `tables.v1.json`; see
+[Data Safety and Privacy](Data-Safety-and-Privacy#tabellifys-own-files).
 They are **not synced** by Zotero sync. See [Data Safety and Privacy](Data-Safety-and-Privacy).
 
 If the file cannot be read, the list shows "The saved tables file could not be read. Saving

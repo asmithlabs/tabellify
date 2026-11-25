@@ -9,13 +9,14 @@ You plan a list of tags (a codebook) and tag the highlights in your papers with 
 Zotero's reader. Tabellify then shows a table: one row per paper, one column per tag, and a ✓
 where the paper uses the tag. Tabellify never changes your Zotero library.
 
-Version **0.2.1** works with **Zotero 10.0.x**.
+Version **0.3.0** works with **Zotero 10.0.x**.
 
 ## What Tabellify can do
 
 - Open its own **Tabellify** tab in the main Zotero window from **Tools → Tabellify…**.
 - Show the papers of any collection in My Library or in a group library, including its
-  subcollections.
+  subcollections, or of several collections and subcollections together, with a
+  **Subcollection** column that says where each paper is filed.
 - Keep a codebook of planned tags, with optional groups, typed in one line.
 - Suggest your existing Zotero tags while you type.
 - Count which codebook tags each paper uses, in the Tabellify tab and in a

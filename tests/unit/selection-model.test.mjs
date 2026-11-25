@@ -404,3 +404,41 @@ test("shortList: first n names and how many more", () => {
   assert.deepEqual(plain(S.shortList(["a"], 5)), { shown: ["a"], more: 0 });
   assert.deepEqual(plain(S.shortList(null, 5)), { shown: [], more: 0 });
 });
+
+// ------------------------------------------------------------------------------------------
+// SEC-026: a pathologically deep chain (another group member can build one) must not throw
+// ------------------------------------------------------------------------------------------
+
+test("SEC-026: a 20,000-level chain: scope, fromTicks, tickStates, subtree and applyTick return without throwing", () => {
+  const DEPTH = 20000;
+  // 1 › 2 › 3 › … › 20000: each collection is the only child of the one before.
+  const chain = Array.from({ length: DEPTH }, (_, i) => ({ id: i + 1, parentID: i === 0 ? false : i, key: `1/DEEP${i + 1}` }));
+  const all = chain.map((c) => c.id);
+
+  const scope = S.scope(chain, { include: ["1/DEEP1"], exclude: ["1/DEEP10001"] });
+  assert.equal(scope.length, 10000);
+  assert.equal(scope[0], 1);
+  assert.equal(scope[9999], 10000);
+
+  assert.deepEqual(plain(S.fromTicks(chain, all.slice(0, 10000))), { include: ["1/DEEP1"], exclude: ["1/DEEP10001"] });
+
+  // The bottom half ticked: it is "checked", everything above it is mixed.
+  const states = S.tickStates(chain, all.slice(10000));
+  assert.equal(states.size, DEPTH);
+  assert.equal(states.get(1), "indeterminate");
+  assert.equal(states.get(10000), "indeterminate");
+  assert.equal(states.get(10001), "checked");
+  assert.equal(states.get(DEPTH), "checked");
+  assert.equal(S.tickStates(chain, []).get(1), "unchecked");
+  // Post-order: the deepest collection first, the top one last.
+  const keys = [...states.keys()];
+  assert.equal(keys[0], DEPTH);
+  assert.equal(keys[DEPTH - 1], 1);
+
+  const sub = S.subtree(chain, 2);
+  assert.equal(sub.length, DEPTH - 1);
+  assert.equal(sub[0], 2);
+  assert.equal(sub[DEPTH - 2], DEPTH);
+
+  assert.equal(S.applyTick(chain, [], 1).size, DEPTH);
+});

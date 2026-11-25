@@ -4,7 +4,31 @@ All notable changes to Tabellify, newest first. The repository's
 [CHANGELOG.md](https://github.com/asmithlabs/tabellify/blob/main/CHANGELOG.md) is the
 authoritative copy; this page follows it.
 
-## 0.2.0 (not released yet)
+## 0.3.0 (2026-11-25)
+
+### Added
+- **Several collections in one table.** Click **Choose several…** next to the **Collection**
+  list, tick collections or subcollections of one library (ticking a parent includes its
+  subcollections; untick one to leave it out) and click **Show table**. Each paper appears
+  once. See
+  [Workspace](Workspace#show-several-collections-or-subcollections-in-one-table).
+- **Subcollection column** whenever the table covers more than one collection: it says where
+  each paper is filed. Sort by it to see the papers grouped under header rows such as
+  "Asthma · 3 papers". See [Table Builder](Table-Builder#the-subcollection-column).
+- **View table**, saved tables and **Export CSV** include the Subcollection column. Saved
+  tables keep the collections you chose; the Saved tables filter is now called **Current
+  selection**. See [Saved Tables](Saved-Tables) and
+  [Export](Export#the-subcollection-column).
+- Saved tables use a new file format. Tables saved with 0.2.x open unchanged, and a copy of
+  the old file is kept as `tables.v1.json`; see
+  [Data Safety and Privacy](Data-Safety-and-Privacy#going-back-to-an-older-tabellify).
+
+## 0.2.1 (2026-11-18)
+
+### Added
+- Tabellify now has its own logo, shown as its icon in **Tools → Plugins**.
+
+## 0.2.0 (2026-11-18)
 
 First public release. Works with Zotero 10.0.x. It includes everything listed under 0.1.0
 below.

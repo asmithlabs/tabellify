@@ -645,13 +645,21 @@ var TabellifyWorkspace = {
     const libraries = this.libraryGroups.filter((g) => !g.empty).map((g) => g.libraryID);
     const fromSelection = TabellifySelection.libraryOfSelection(selection);
     this.pickerLibraryID = libraries.includes(fromSelection) ? fromSelection : libraries[0] ?? null;
-    this.pickerTicks = new Set(selection ? TabellifySelection.scope(this.pickerTree(), selection) : []);
+    // SEC-026: a tree that cannot be walked must not stop the picker from opening silently;
+    // pickerBuildFailed() shows the error inside the picker instead.
+    let ticksError = null;
+    try {
+      this.pickerTicks = new Set(selection ? TabellifySelection.scope(this.pickerTree(), selection) : []);
+    } catch (e) {
+      ticksError = e;
+    }
     // The Library dropdown (only with group libraries): names as plain text (new Option).
     const librarySelect = this.el("tabellify-picker-library");
     librarySelect.replaceChildren(...this.libraryGroups.filter((g) => !g.empty).map((g) => new Option(g.label, String(g.libraryID))));
     librarySelect.value = String(this.pickerLibraryID);
     this.el("tabellify-picker-library-row").hidden = libraries.length < 2;
-    this.renderPickerTree();
+    if (ticksError) this.pickerBuildFailed(ticksError);
+    else this.renderPickerTree();
     try {
       // As for the View table modal: showModal() makes the rest of this document inert.
       dialog.showModal();
@@ -673,30 +681,61 @@ var TabellifyWorkspace = {
    * as plain text (textContent).
    */
   renderPickerTree() {
-    const tree = this.pickerTree();
-    const { children, roots } = TabellifySelection.tree(tree);
-    const visited = new Set();
-    const item = (c) => {
-      visited.add(c.id);
-      const li = this.html("li", "tabellify-picker-item");
-      const box = this.html("input", "tabellify-picker-box");
-      box.setAttribute("type", "checkbox");
-      box.id = `tabellify-pick-${Number(c.id)}`;
-      box.dataset.collectionId = String(c.id);
-      const label = this.html("label");
-      label.setAttribute("for", box.id);
-      label.textContent = c.name; // collection names: plain text only (see SECURITY)
-      li.append(box, label);
-      const kids = (children.get(c.id) ?? []).filter((k) => !visited.has(k.id));
-      if (kids.length > 0) {
-        const ul = this.html("ul", "tabellify-picker-children");
-        ul.append(...kids.map(item));
-        li.append(ul);
+    try {
+      const tree = this.pickerTree();
+      const { children, roots } = TabellifySelection.tree(tree);
+      // SEC-026: built without recursion (TabellifySelection.depthFirst walks with its own
+      // stack), so a collection chain thousands of levels deep cannot overflow the
+      // JavaScript call stack. Pre-order means a parent's <li> exists before its children.
+      const items = new Map(); // collection ID -> its <li>
+      const lists = new Map(); // collection ID -> the <ul> of its subcollections
+      const top = [];
+      for (const [c, parentId] of TabellifySelection.depthFirst(children, roots)) {
+        const li = this.html("li", "tabellify-picker-item");
+        const box = this.html("input", "tabellify-picker-box");
+        box.setAttribute("type", "checkbox");
+        box.id = `tabellify-pick-${Number(c.id)}`;
+        box.dataset.collectionId = String(c.id);
+        const label = this.html("label");
+        label.setAttribute("for", box.id);
+        label.textContent = c.name; // collection names: plain text only (see SECURITY)
+        li.append(box, label);
+        items.set(c.id, li);
+        if (parentId === null) {
+          top.push(li);
+          continue;
+        }
+        // The parent's <ul> of subcollections, made when its first child arrives.
+        let ul = lists.get(parentId);
+        if (!ul) {
+          ul = this.html("ul", "tabellify-picker-children");
+          items.get(parentId).append(ul);
+          lists.set(parentId, ul);
+        }
+        ul.append(li);
       }
-      return li;
-    };
-    this.el("tabellify-picker-tree").replaceChildren(...roots.map(item));
-    this.updatePicker();
+      this.el("tabellify-picker-tree").replaceChildren(...top);
+      for (const id of ["tabellify-picker-select-all", "tabellify-picker-clear"]) this.el(id).disabled = false;
+      this.updatePicker();
+    } catch (e) {
+      this.pickerBuildFailed(e);
+    }
+  },
+
+  /**
+   * The picker's tree could not be built (SEC-026: e.g. a RangeError from a pathological
+   * collection tree). Say so in the picker's status line instead of failing silently: an
+   * empty tree, nothing ticked, only Cancel works. Debug Output gets a constant line with
+   * error.name only (SEC-011: never collection names or the error's message).
+   * @param {unknown} e
+   */
+  pickerBuildFailed(e) {
+    this.log(`picker: could not build the tree (${e?.name ?? "Error"})`);
+    Zotero.logError(e);
+    this.pickerTicks = new Set();
+    this.el("tabellify-picker-tree").replaceChildren();
+    this.el("tabellify-picker-status").textContent = this.text("tabellify-picker-error");
+    for (const id of ["tabellify-picker-select-all", "tabellify-picker-clear", "tabellify-picker-apply"]) this.el(id).disabled = true;
   },
 
   /** The picker's checkboxes in tree order. */
@@ -868,6 +907,8 @@ var TabellifyWorkspace = {
     // F011: the picker's status line when nothing (or too much) is ticked.
     "tabellify-picker-none",
     "tabellify-picker-too-many",
+    // SEC-026: the picker's status line when its tree could not be built.
+    "tabellify-picker-error",
   ],
 
   /** True once MONITOR_STRINGS are formatted; renderMonitor() waits for it. */
@@ -4750,6 +4791,17 @@ var TabellifyWorkspace = {
       result = { status: "error", error: e };
     }
     this.savedBusy = false;
+    if (result.v1Copy) {
+      // ADR-0027 §2: the one-time copy of the schema 1 file (same pattern as the codebook
+      // save). A failure (e.g. the copy already exists) does not stop the save; the .bak
+      // file holds the old data too. SEC-011: only the constant file name and error.name go
+      // to Debug Output, never the path or the error's message.
+      if (result.v1Copy.ok) this.log(`saved tables: kept the schema 1 data once in ${TabellifyTablesStore.V1_COPY_NAME}`);
+      else {
+        this.log(`saved tables: could not write the one-time copy ${TabellifyTablesStore.V1_COPY_NAME} (${result.v1Copy.error?.name ?? "Error"}); continuing (${TabellifyTablesStore.FILE_NAME}.bak keeps the old data)`);
+        Zotero.logError(result.v1Copy.error ?? new Error("Tabellify: one-time copy not written"));
+      }
+    }
     if (this.unloaded) {
       // The tab closed while saving: the file is complete (atomic write); only log.
       this.log(`saved tables: save finished after the tab closed (${result.status})`);

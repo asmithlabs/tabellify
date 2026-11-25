@@ -21,11 +21,13 @@ when Zotero is maximized or in full screen.
 
 1. **Heading: Tabellify Codebook.**
 2. **Collection row:** the **Collection** list ("Choose a collection"; collections of My
-   Library and of your group libraries, see below), the **Refresh**
-   button, the **Also count tags on the paper itself** checkbox, and, once a collection is
+   Library and of your group libraries, see below), the **Choose several…** button (see
+   [Show several collections or subcollections in one table](#show-several-collections-or-subcollections-in-one-table)),
+   the **Refresh** button, the **Also count tags on the paper itself** checkbox, and, once a collection is
    chosen and the codebook has tags, one summary line such as **Tags used 2/4 · Papers 3**.
    When every codebook tag is used somewhere in the collection, it adds **All codebook tags
-   are used.** See [Tag Monitor](Tag-Monitor).
+   are used.** See [Tag Monitor](Tag-Monitor). While several collections are shown, a
+   line under the row starts with **Showing:** and names them.
 3. **Saved tables** (closed by default; click it to open). Your saved tables with **Open**,
    **Export CSV** and **Delete**. See [Saved Tables](Saved-Tables).
 4. **Tags and groups** box, with its help line and suggestion list. This is where you build
@@ -37,7 +39,8 @@ when Zotero is maximized or in full screen.
 7. **Table toolbar:** **Reset columns**, and **Manual order** / **Clear manual order** once
    you have put papers in your own order. While you drag a column, a hint here says what the
    drop will do.
-8. **The table:** one row per paper; Title, one column per codebook tag, and **k/M**. See
+8. **The table:** one row per paper; Title, **Subcollection** (only when the table covers
+   more than one collection), one column per codebook tag, and **k/M**. See
    [Table Builder](Table-Builder).
 9. **View table** and **Export CSV** buttons under the table, shown only when the table has
    papers. See [Saved Tables](Saved-Tables) and [Export](Export).
@@ -55,6 +58,8 @@ when Zotero is maximized or in full screen.
   because Tabellify only reads.
 - Choosing a collection shows the papers in it **and in all its subcollections**. A paper
   that sits in several of them is shown once.
+- To show only some collections or subcollections, or several collections side by side, use
+  **Choose several…** (next section).
 - A collection shows only papers of its **own library**. If the same paper is in My Library
   and in a group library, these are two separate copies in Zotero, each with its own tags
   and highlights.
@@ -64,6 +69,48 @@ when Zotero is maximized or in full screen.
 - If no library has a collection yet, you see "Your libraries have no collections yet."
 - Papers in the trash, and highlights in the trash, are left out.
 - If the collection has no papers you see "No papers in this collection."
+
+## Show several collections or subcollections in one table
+
+Use this when your papers are split into subcollections (for example one per disease under
+**Phenotypes**) and you want some or all of them in one table.
+
+1. In the Tabellify tab, in the collection row, click **Choose several…**.
+   **What you should see:** a dialog titled **Choose collections** with the collections of
+   one library as a list of checkboxes, subcollections indented under their parent. What is
+   shown now is already ticked. If you have group libraries, a **Library** list at the top
+   switches to another library; one table always covers one library.
+2. Tick what you want:
+   - **Ticking a parent collection ticks all its subcollections.** Subcollections you create
+     under it later are included too.
+   - **Untick a subcollection to leave it out** (for example an "Archive" subcollection). Its
+     parent then shows a mixed box (neither ticked nor empty).
+   - To include only some subcollections but not the papers filed directly in the parent:
+     untick the parent, then tick the subcollections you want.
+   - **Select all** ticks everything in the library; **Clear** unticks everything. The line
+     above the buttons says how many collections are ticked, for example "4 collections
+     ticked".
+3. Click **Show table**. (**Cancel** or **Esc** closes the dialog without changing anything.
+   With nothing ticked, **Show table** is greyed out and the dialog says "Tick at least one
+   collection.")
+
+**What you should see:** one table with the papers of all ticked collections, each paper
+once. The **Collection** list reads, for example, "4 collections", and the line under the
+collection row reads "Showing:" followed by their names (the first five, then "+2 more" and
+so on). The table has a [**Subcollection** column](Table-Builder#the-subcollection-column)
+that says where each paper is filed.
+
+- Sort by **Subcollection** (click its header) to see the papers grouped, with a header row
+  such as "Asthma · 3 papers" above each group. A paper that is in two subcollections is
+  listed once, under the first of them, and its Subcollection cell names both.
+- Choosing a single collection from the **Collection** list again replaces your choice.
+- [Saved tables](Saved-Tables) keep the collections you chose, and the
+  [CSV export](Export#the-subcollection-column) has a Subcollection column.
+- Using **Choose several…** never changes your collections in Zotero or what is selected in
+  Zotero's left pane.
+
+Keyboard: **Tab** moves through the checkboxes and buttons, **Space** ticks or unticks,
+**Esc** closes the dialog. A screen reader reads a partly ticked parent as "mixed".
 
 ## Keeping it up to date
 
@@ -77,6 +124,12 @@ removed, or a collection changes, while the Tabellify tab is open (for example a
 syncs). If the collection you had chosen is gone (deleted, or its group library was
 removed), the table is cleared and you see "The chosen collection is no longer available.
 Choose another collection."
+
+With several collections chosen, the table also follows changes in Zotero by itself: a paper
+moved from one subcollection to another, a new subcollection under a ticked parent, a renamed
+subcollection. If some of the chosen collections are moved to the trash or deleted, the table
+goes on with the rest and the line under the collection row says, for example, "1 chosen
+collection is no longer available." When none is left, you see the message above.
 
 ## Light and dark mode
 
