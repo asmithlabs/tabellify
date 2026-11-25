@@ -15,7 +15,8 @@ Version **0.2.1** works with **Zotero 10.0.x**.
 
 - Open its own **Tabellify** tab in the main Zotero window from **Tools → Tabellify…**.
 - Show the papers of any collection in My Library or in a group library, including its
-  subcollections.
+  subcollections, or of several collections and subcollections together, with a
+  **Subcollection** column that says where each paper is filed.
 - Keep a codebook of planned tags, with optional groups, typed in one line.
 - Suggest your existing Zotero tags while you type.
 - Count which codebook tags each paper uses, in the Tabellify tab and in a

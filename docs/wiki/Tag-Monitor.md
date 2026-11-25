@@ -26,7 +26,8 @@ After you choose a collection (see [Workspace](Workspace)):
 
 - **Summary line:** **Tags used N/M · Papers P**. M is the number of tags in the codebook;
   N is how many of them are used on at least one paper in the collection (including its
-  subcollections); P is the number of papers. When N = M it adds **All codebook tags are
+  subcollections, or in all the collections you chose with **Choose several…**); P is the
+  number of papers, each counted once even if it is in several of them. When N = M it adds **All codebook tags are
   used.**
 - **k/M column** (last column of the [table](Table-Builder)): for each paper, **k** codebook
   tags used out of **M** in the codebook. Point at the header to see "Codebook tags used on

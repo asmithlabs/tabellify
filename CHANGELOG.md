@@ -9,6 +9,25 @@ are never published.
 
 ## [Unreleased]
 
+### Added
+- **Several collections in one table** (Feature 011). A **Choose several…** button next to
+  the collection list opens a **Choose collections** dialog with the collections of one
+  library as checkboxes: ticking a parent includes its subcollections (also ones created
+  later), unticking a subcollection leaves it out; **Show table** builds one table, each
+  paper once. Choosing one collection from the list works as before.
+- **Subcollection column** after Title whenever the table covers more than one collection: it
+  names where each paper is filed (a paper in two subcollections names both). Sorting by it
+  follows Zotero's collection order and adds a header row per group ("Asthma · 3 papers").
+  **View table** shows the same; **Export CSV** adds a `Subcollection` column (places joined
+  with "; ", formula guard applied, no group rows); a table without the column exports as
+  before.
+- Manual paper order is kept per choice of several collections. Saved tables keep the chosen
+  collections; **Show live** rebuilds from them and notes any that are gone. The Saved tables
+  filter **This collection** is now **Current selection**.
+- Saved tables use a new file format (`tables.json` schema 2, ADR-0027). Tables saved with
+  0.2.x open unchanged; the first save after updating keeps a one-time copy of the old file
+  as `tables.v1.json`. Nothing is written to any Zotero library.
+
 ## [0.2.1] - 2026-11-18
 
 ### Added

@@ -1,7 +1,7 @@
 # Feature 011: Collection selection: several collections and a Subcollection column
 
-- **Status:** Approved (owner, 2026-11-18, all recommendations Q1–Q15; drafted by the architect). Answers to the open questions
-  (Q1–Q15) are needed before development.
+- **Status:** Approved (owner, 2026-11-18, all recommendations Q1–Q15; drafted by the architect).
+  Implemented and merged (PR #33).
 - **Branch:** `feat/011-collection-selection` (from `main`). This spec was drafted on
   `docs/011-collection-selection`.
 - **Related ADRs:** **0027 (Accepted: collection selections, `tables.json` schema 2, `"sel:"`
