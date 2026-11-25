@@ -366,7 +366,7 @@ Proposed text, owner may change:
 - List: `tabellify-saved-heading` = Saved tables; `tabellify-saved-filter-label` = Show;
   `tabellify-saved-filter-all` = All collections; `tabellify-saved-filter-collection` = This
   collection; `tabellify-saved-empty` = No saved tables yet. Open "View table" and click
-  "Save table".; `tabellify-saved-empty-collection` = No saved tables for this collection.;
+  "Save table".; `tabellify-saved-empty-collection` = No saved tables for this selection. (wording changed in 0.3.0 by F011);
   `tabellify-saved-choose` = Choose a collection to see its saved tables.;
   `tabellify-saved-load-error` = The saved tables file could not be read. Saving is turned
   off so the file is not overwritten. File:; `tabellify-saved-newer` = The saved tables file

@@ -7,7 +7,7 @@ All notable changes to Tabellify are recorded here, following
 Security fixes are summarized here once fixed (see [SECURITY.md](SECURITY.md)); open findings
 are never published.
 
-## [Unreleased]
+## [0.3.0] - 2026-11-25
 
 ### Added
 - **Several collections in one table** (Feature 011). A **Choose several…** button next to
@@ -27,6 +27,16 @@ are never published.
 - Saved tables use a new file format (`tables.json` schema 2, ADR-0027). Tables saved with
   0.2.x open unchanged; the first save after updating keeps a one-time copy of the old file
   as `tables.v1.json`. Nothing is written to any Zotero library.
+
+### Fixed
+- **Choose several…** now opens with a clear message instead of failing silently when a
+  library's collection tree cannot be shown (for example, an extremely deep chain of
+  subcollections).
+- The empty Saved tables list now says "No saved tables for this selection."
+
+### Security
+- Hardened the collection picker against very deeply nested collections, and Debug Output now
+  records whether the one-time `tables.v1.json` backup copy was written.
 
 ## [0.2.1] - 2026-11-18
 

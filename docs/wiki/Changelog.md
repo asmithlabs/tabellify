@@ -4,7 +4,7 @@ All notable changes to Tabellify, newest first. The repository's
 [CHANGELOG.md](https://github.com/asmithlabs/tabellify/blob/main/CHANGELOG.md) is the
 authoritative copy; this page follows it.
 
-## Unreleased
+## 0.3.0 (2026-11-25)
 
 ### Added
 - **Several collections in one table.** Click **Choose several…** next to the **Collection**
