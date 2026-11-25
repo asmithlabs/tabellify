@@ -4750,6 +4750,17 @@ var TabellifyWorkspace = {
       result = { status: "error", error: e };
     }
     this.savedBusy = false;
+    if (result.v1Copy) {
+      // ADR-0027 §2: the one-time copy of the schema 1 file (same pattern as the codebook
+      // save). A failure (e.g. the copy already exists) does not stop the save; the .bak
+      // file holds the old data too. SEC-011: only the constant file name and error.name go
+      // to Debug Output, never the path or the error's message.
+      if (result.v1Copy.ok) this.log(`saved tables: kept the schema 1 data once in ${TabellifyTablesStore.V1_COPY_NAME}`);
+      else {
+        this.log(`saved tables: could not write the one-time copy ${TabellifyTablesStore.V1_COPY_NAME} (${result.v1Copy.error?.name ?? "Error"}); continuing (${TabellifyTablesStore.FILE_NAME}.bak keeps the old data)`);
+        Zotero.logError(result.v1Copy.error ?? new Error("Tabellify: one-time copy not written"));
+      }
+    }
     if (this.unloaded) {
       // The tab closed while saving: the file is complete (atomic write); only log.
       this.log(`saved tables: save finished after the tab closed (${result.status})`);

@@ -2567,6 +2567,34 @@ test("007b AC19: Delete is off while a save runs; a conflict reloads and says so
   assert.equal(listItems(failing.d).length, 2, "nothing removed");
 });
 
+test("SEC-024: saveTables logs the one-time tables.v1.json copy by file name and error.name only", async () => {
+  // Stub the store so the result carries a v1Copy outcome (the store itself is pinned in
+  // tests/unit/tables-store.test.mjs); this pins what the workspace does with it.
+  const V1 = `${SAVED_DIR}/tables.v1.json`;
+  for (const v1Copy of [
+    { path: V1, ok: true },
+    { path: V1, ok: false, error: Object.assign(new Error(`${V1} exists`), { name: "NoModificationAllowedError" }) },
+  ]) {
+    const { W, d, debug, sandbox, Zotero } = await savedSetup({ entries: TWO_TABLES() });
+    const errors = [];
+    Zotero.logError = (e) => errors.push(e);
+    const Store = vm.runInContext("TabellifyTablesStore", sandbox);
+    Store.saveData = async (fs, dir, data) => ({ status: "saved", data: { ...data, revision: 4 }, path: SAVED_FILE, v1Copy });
+    W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "delete")));
+    await W.onSavedClick(click(buttonOf(itemOf(d, "t1"), "confirm-delete")));
+    assert.equal(W.savedTables.revision, 4, "the save still counts");
+    if (v1Copy.ok) {
+      assert.ok(debug.includes("Tabellify: workspace: saved tables: kept the schema 1 data once in tables.v1.json"), debug.join("\n"));
+      assert.equal(errors.length, 0);
+    } else {
+      assert.ok(debug.includes("Tabellify: workspace: saved tables: could not write the one-time copy tables.v1.json " +
+        "(NoModificationAllowedError); continuing (tables.json.bak keeps the old data)"), debug.join("\n"));
+      assert.deepEqual(errors, [v1Copy.error]);
+    }
+    for (const line of debug) assert.ok(!line.includes(SAVED_DIR) && !line.includes("exists"), `private text in: ${line}`);
+  }
+});
+
 test("007b AC20: draft Save table with an empty Name writes nothing; the draft modal shows Save table first", async () => {
   const { W, d, fs } = await savedSetup();
   W.onViewTableClick();
