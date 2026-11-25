@@ -154,9 +154,9 @@ already take any `libraryID`; 003b uses them with group library IDs. Runtime che
 RT-G2, RT-G3 (end of this file; all read-only).
 
 The Feature 011 rows (collection selection, spec `docs/features/011-collection-selection.md`,
-Draft; ADR-0027 **Proposed**) were checked on 2026-11-18 against Zotero source at tag
+Approved; ADR-0027 Accepted) were checked on 2026-11-18 against Zotero source at tag
 **`10.0.9`** (`xpcom/data/collection.js`, `xpcom/data/dataObject.js`), MDN and the WHATWG HTML
-standard. **Candidate rows: not yet used in `src/`.** F011 adds **no** new `Zotero.*` call: it
+standard. Used in `src/` by F011 (`src/content/selection-model.js`, `src/content/workspace.js`). F011 adds **no** new `Zotero.*` call: it
 reuses the F003 / F003b / F005 rows (`getByLibrary`, `parentID`, `key`, `getChildItems`,
 `waitForDataLoad`, Notifier). The new rows make the `collection` Notifier events (UNVERIFIED in
 the F005 row) Verified (source), and record the standard tri-state checkbox. Line numbers are
