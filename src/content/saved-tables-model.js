@@ -20,8 +20,14 @@
  * tables.json can be edited by hand, so a key such as "__proto__" must stay an ordinary key
  * and never reach an object's prototype.
  *
- * Uses TabellifyTagMonitor and TabellifyTableLayout (pure models loaded before this file in
- * workspace.xhtml).
+ * Feature 011 (ADR-0027 §2): schema 2. A table's collection is now a SELECTION (include and
+ * exclude rules, TabellifySelection) in `definition.selection`, and the snapshot keeps the
+ * Subcollection column (`subcollectionColumn`, and `subcollections` per row). A schema 1
+ * file is migrated in memory when it is loaded (migrate below); it is only written as
+ * schema 2 at the next save, after tables-store.js has kept a one-time copy of it.
+ *
+ * Uses TabellifyTagMonitor, TabellifyTableLayout and TabellifySelection (pure models loaded
+ * before this file in workspace.xhtml).
  *
  * Why src/content/ and not src/modules/: only src/content/ has a chrome:// URL the
  * workspace document can load a script from (see the top of workspace.js).
@@ -34,11 +40,20 @@
  * tables-store.js and workspace.js.
  */
 var TabellifySavedTables = {
-  /** Version of the tables.json format this code reads and writes (ADR-0018 §1). */
-  SCHEMA_VERSION: 1,
+  /**
+   * Version of the tables.json format this code writes (ADR-0018 §1; ADR-0027 §2). It still
+   * READS version 1 (0.2.0) and migrates it in memory.
+   */
+  SCHEMA_VERSION: 2,
 
   /** Size limits (ADR-0018 §4). Lengths are counted in UTF-16 units, as `maxlength` does. */
   LIMITS: { tables: 100, rows: 5000, columns: 500, name: 200, description: 2000, title: 2000, fileChars: 20000000 },
+
+  /**
+   * Feature 011 (ADR-0027 §2): the Subcollection cell of one snapshot row keeps at most
+   * `parts` texts, each at most `chars` UTF-16 units (cut with "…" when saved).
+   */
+  PLACE_LIMITS: { parts: 50, chars: 500 },
 
   /** View id of a run of ungrouped tags (same value as TabellifyTableLayout.UNGROUPED_ID). */
   UNGROUPED_ID: "ungrouped",
@@ -149,6 +164,7 @@ var TabellifySavedTables = {
     const fail = (reason) => ({ ok: false, reason });
     if (!this.isObject(data)) return fail("top level is not an object");
     if (!Number.isInteger(data.schemaVersion) || data.schemaVersion < 1) return fail("schemaVersion is not a positive integer");
+    const version = data.schemaVersion;
     if (data.schemaVersion > this.SCHEMA_VERSION) {
       return { ok: false, newer: true, reason: `schemaVersion ${data.schemaVersion} is newer than ${this.SCHEMA_VERSION}` };
     }
@@ -161,7 +177,7 @@ var TabellifySavedTables = {
     if (data.tables.length > this.LIMITS.tables) return fail(`more than ${this.LIMITS.tables} tables`);
     const ids = new Set();
     for (let i = 0; i < data.tables.length; i++) {
-      const reason = this.tableProblem(data.tables[i], data.nextId);
+      const reason = this.tableProblem(data.tables[i], data.nextId, version);
       if (reason) return fail(`tables[${i}]: ${reason}`);
       if (ids.has(data.tables[i].id)) return fail(`tables[${i}]: duplicate id`);
       ids.add(data.tables[i].id);
@@ -173,9 +189,10 @@ var TabellifySavedTables = {
    * What is wrong with one saved table, or "" when it is valid.
    * @param {unknown} t
    * @param {number} nextId
+   * @param {number} [version]  The file's schemaVersion (1 or 2; default: the current one)
    * @returns {string}
    */
-  tableProblem(t, nextId) {
+  tableProblem(t, nextId, version = this.SCHEMA_VERSION) {
     if (!this.isObject(t)) return "not an object";
     if (!this.onlyKeys(t, ["id", "name", "description", "createdAt", "updatedAt", "definition", "snapshot"])) return "unknown key";
     if (typeof t.id !== "string" || !this.ID_PATTERN.test(t.id)) return "id is not t<number>";
@@ -188,18 +205,29 @@ var TabellifySavedTables = {
     }
     if (!this.isDate(t.createdAt)) return "createdAt is not a date";
     if (!this.isDate(t.updatedAt)) return "updatedAt is not a date";
-    const def = this.definitionProblem(t.definition);
+    const def = this.definitionProblem(t.definition, version);
     if (def) return `definition.${def}`;
-    const snap = this.snapshotProblem(t.snapshot);
+    const snap = this.snapshotProblem(t.snapshot, version);
     if (snap) return `snapshot.${snap}`;
     return "";
   },
 
-  /** What is wrong with a definition, or "". */
-  definitionProblem(d) {
+  /**
+   * What is wrong with a definition, or "". Version 1 has `collectionKey`; version 2 has
+   * `selection` instead (ADR-0027 §2), checked strictly by TabellifySelection.validate (one
+   * library, 1–1 000 rules, the key pattern, no repeats).
+   */
+  definitionProblem(d, version = this.SCHEMA_VERSION) {
     if (!this.isObject(d)) return "is not an object";
-    if (!this.onlyKeys(d, ["collectionKey", "codebookId", "columnLayout", "sort", "manualOrder", "countItemTags"])) return "unknown key";
-    if (typeof d.collectionKey !== "string" || !this.COLLECTION_KEY_PATTERN.test(d.collectionKey)) return "collectionKey is not <library>/<key>";
+    const scopeKey = version === 1 ? "collectionKey" : "selection";
+    if (!this.onlyKeys(d, [scopeKey, "codebookId", "columnLayout", "sort", "manualOrder", "countItemTags"])) return "unknown key";
+    if (version === 1) {
+      if (typeof d.collectionKey !== "string" || !this.COLLECTION_KEY_PATTERN.test(d.collectionKey)) return "collectionKey is not <library>/<key>";
+    } else {
+      const check = TabellifySelection.validate(d.selection);
+      // The reason names the problem, never a key (SEC-011).
+      if (!check.ok) return `selection ${check.reason}`;
+    }
     if (typeof d.codebookId !== "string" || d.codebookId === "") return "codebookId is not a non-empty text";
     const layout = d.columnLayout;
     if (!this.isObject(layout) || !this.onlyKeys(layout, ["topOrder", "tagOrder"])) return "columnLayout is not an object";
@@ -216,12 +244,19 @@ var TabellifySavedTables = {
     return "";
   },
 
-  /** What is wrong with a snapshot, or "". */
-  snapshotProblem(s) {
+  /**
+   * What is wrong with a snapshot, or "". Version 2 adds `subcollectionColumn` (required
+   * boolean) and `subcollections` on every row (required array of texts; empty when the
+   * column was not shown; PLACE_LIMITS).
+   */
+  snapshotProblem(s, version = this.SCHEMA_VERSION) {
     if (!this.isObject(s)) return "is not an object";
-    if (!this.onlyKeys(s, ["takenAt", "collectionName", "blocks", "rows"])) return "unknown key";
+    const v2 = version !== 1;
+    const snapshotKeys = ["takenAt", "collectionName", "blocks", "rows", ...(v2 ? ["subcollectionColumn"] : [])];
+    if (!this.onlyKeys(s, snapshotKeys)) return "unknown key";
     if (!this.isDate(s.takenAt)) return "takenAt is not a date";
     if (typeof s.collectionName !== "string") return "collectionName is not a text";
+    if (v2 && typeof s.subcollectionColumn !== "boolean") return "subcollectionColumn is not true or false";
     if (!Array.isArray(s.blocks)) return "blocks is not an array";
     const tags = new Set();
     let previousUngrouped = false;
@@ -244,7 +279,8 @@ var TabellifySavedTables = {
     if (s.rows.length > this.LIMITS.rows) return `more than ${this.LIMITS.rows} rows`;
     for (let i = 0; i < s.rows.length; i++) {
       const r = s.rows[i];
-      if (!this.isObject(r) || !this.onlyKeys(r, ["itemKey", "title", "untitled", "present"])) return `rows[${i}] is not an object`;
+      const rowKeys = ["itemKey", "title", "untitled", "present", ...(v2 ? ["subcollections"] : [])];
+      if (!this.isObject(r) || !this.onlyKeys(r, rowKeys)) return `rows[${i}] is not an object`;
       if (typeof r.itemKey !== "string" || r.itemKey === "" || r.itemKey.length > this.ITEM_KEY_MAX) return `rows[${i}].itemKey is not a key`;
       if (typeof r.title !== "string" || r.title.length > this.LIMITS.title) return `rows[${i}].title is not a text of at most ${this.LIMITS.title} characters`;
       if (typeof r.untitled !== "boolean") return `rows[${i}].untitled is not true or false`;
@@ -254,19 +290,33 @@ var TabellifySavedTables = {
         if (!Number.isInteger(n) || n < 0 || n >= columns) return `rows[${i}].present has an index out of range`;
         if (j > 0 && n <= r.present[j - 1]) return `rows[${i}].present is not strictly increasing`;
       }
+      if (v2) {
+        const places = r.subcollections;
+        if (!Array.isArray(places)) return `rows[${i}].subcollections is not an array`;
+        if (places.length > this.PLACE_LIMITS.parts) return `rows[${i}].subcollections has more than ${this.PLACE_LIMITS.parts} parts`;
+        if (!places.every((p) => typeof p === "string" && p.length <= this.PLACE_LIMITS.chars)) {
+          return `rows[${i}].subcollections is not a list of texts of at most ${this.PLACE_LIMITS.chars} characters`;
+        }
+        if (!s.subcollectionColumn && places.length > 0) return `rows[${i}].subcollections is not empty while the column is off`;
+      }
     }
     return "";
   },
 
   /**
    * Bring VALID data (validate first) up to SCHEMA_VERSION as a clean, separate copy.
-   * Version 1 is the first version, so this is a copy; later versions add steps here.
    * The column layout's entries are cleaned as in layout.json (ADR-0019 §3).
+   * Migration 1 → 2 (ADR-0027 §2), in memory only: `collectionKey` becomes the selection
+   * `{ include: [collectionKey], exclude: [] }` (exactly the same scope), the snapshot gets
+   * `subcollectionColumn: false` and every row `subcollections: []`. A saved table looks
+   * exactly as before.
    * @param {any} data
    * @returns {{ schemaVersion: number, revision: number, nextId: number, tables: object[] }}
    */
   migrate(data) {
-    if (data.schemaVersion !== this.SCHEMA_VERSION) throw new Error(`no migration from schemaVersion ${data.schemaVersion}`);
+    if (data.schemaVersion !== 1 && data.schemaVersion !== this.SCHEMA_VERSION) {
+      throw new Error(`no migration from schemaVersion ${data.schemaVersion}`);
+    }
     return {
       schemaVersion: this.SCHEMA_VERSION,
       revision: data.revision,
@@ -288,10 +338,13 @@ var TabellifySavedTables = {
     };
   },
 
-  /** A clean copy of a (valid) definition. */
+  /** A clean copy of a (valid) definition; a version 1 `collectionKey` becomes a selection. */
   copyDefinition(d) {
+    const selection = this.isObject(d.selection)
+      ? { include: [...d.selection.include], exclude: [...d.selection.exclude] }
+      : TabellifySelection.single(d.collectionKey);
     return {
-      collectionKey: d.collectionKey,
+      selection,
       codebookId: d.codebookId,
       columnLayout: {
         topOrder: TabellifyTableLayout.cleanTopOrder(d.columnLayout?.topOrder),
@@ -303,13 +356,20 @@ var TabellifySavedTables = {
     };
   },
 
-  /** A clean copy of a (valid) snapshot. */
+  /** A clean copy of a (valid) snapshot; a version 1 snapshot gets the empty column. */
   copySnapshot(s) {
     return {
       takenAt: s.takenAt,
       collectionName: s.collectionName,
+      subcollectionColumn: s.subcollectionColumn === true,
       blocks: s.blocks.map((b) => ({ group: b.group, tags: [...b.tags] })),
-      rows: s.rows.map((r) => ({ itemKey: r.itemKey, title: r.title, untitled: r.untitled, present: [...r.present] })),
+      rows: s.rows.map((r) => ({
+        itemKey: r.itemKey,
+        title: r.title,
+        untitled: r.untitled,
+        present: [...r.present],
+        subcollections: Array.isArray(r.subcollections) ? [...r.subcollections] : [],
+      })),
     };
   },
 
@@ -319,16 +379,21 @@ var TabellifySavedTables = {
 
   /**
    * The definition (recipe) of a table, from the workspace's current settings. The column
-   * layout is COPIED and cleaned, so later moves in the workspace do not change it.
-   * @param {{ collectionKey: string, codebookId: string,
-   *   columnLayout: { topOrder?: unknown, tagOrder?: unknown } | null,
+   * layout and the selection are COPIED (the selection's lists sorted by code-unit order,
+   * TabellifySelection), so later changes in the workspace do not change them.
+   * `collectionKey` (one collection, as before F011) is still accepted when no `selection`
+   * is given.
+   * @param {{ selection?: { include: string[], exclude: string[] }, collectionKey?: string,
+   *   codebookId: string, columnLayout: { topOrder?: unknown, tagOrder?: unknown } | null,
    *   sort: { key: string, direction: string }, manualOrder: string[] | null,
    *   countItemTags: boolean }} input
    */
-  buildDefinition({ collectionKey, codebookId, columnLayout, sort, manualOrder, countItemTags }) {
+  buildDefinition({ selection, collectionKey, codebookId, columnLayout, sort, manualOrder, countItemTags }) {
     const key = typeof sort?.key === "string" && sort.key !== "" ? sort.key : TabellifyTagMonitor.DEFAULT_SORT.key;
+    const rules = selection ?? TabellifySelection.single(String(collectionKey ?? ""));
+    const list = (l) => TabellifySelection.codeUnitSort(Array.isArray(l) ? l.map((k) => String(k)) : []);
     return {
-      collectionKey: String(collectionKey ?? ""),
+      selection: { include: list(rules?.include), exclude: list(rules?.exclude) },
       codebookId: String(codebookId ?? ""),
       columnLayout: {
         topOrder: TabellifyTableLayout.cleanTopOrder(columnLayout?.topOrder),
@@ -349,9 +414,15 @@ var TabellifySavedTables = {
    * - rows: the papers in the shown order: item key, title as shown ("" when untitled, cut
    *   to LIMITS.title), and `present` = indexes of the columns with ✓.
    * k, M and "counting" are not stored: snapshotView derives them (ADR-0018 §1).
+   * Feature 011: `subcollectionColumn` = was the Subcollection column shown; each row's
+   * `subcollections` = its cell's texts as shown (at most PLACE_LIMITS, cut with "…"),
+   * empty when the column was off. `collectionName` (the selection's names) is cut to
+   * LIMITS.title.
    * @param {{ groups?: Array<{ id: string, name?: string, tags?: string[], ungrouped?: boolean }>,
-   *   papers?: Array<{ title?: string, untitled?: boolean, groups?: Array<{ present?: string[] }> }>,
-   *   counting?: boolean }} view  The workspace's tableGroups / tableRows / tableCounting
+   *   papers?: Array<{ title?: string, untitled?: boolean, groups?: Array<{ present?: string[] }>,
+   *     subcollections?: string[] }>,
+   *   counting?: boolean, subcollectionColumn?: boolean }} view  The workspace's
+   *   tableGroups / tableRows / tableCounting / Subcollection column
    * @param {{ keyOf: (paper: object) => string, collectionName: string, takenAt: string }} options
    * @returns {{ ok: true, snapshot: object } | { ok: false, error: string, limit: "rows" | "columns" }}
    */
@@ -375,6 +446,10 @@ var TabellifySavedTables = {
     // Column name → index (a Map, so any tag name is safe as a key).
     const index = new Map();
     columns.forEach((tag, i) => { if (!index.has(tag)) index.set(tag, i); });
+    const placesShown = view?.subcollectionColumn === true;
+    const places = (paper) => (placesShown && Array.isArray(paper.subcollections) ? paper.subcollections : [])
+      .slice(0, this.PLACE_LIMITS.parts)
+      .map((p) => this.cut(p, this.PLACE_LIMITS.chars));
     const rows = papers.map((paper) => {
       const present = new Set();
       for (const g of paper.groups ?? []) {
@@ -386,11 +461,18 @@ var TabellifySavedTables = {
         title: untitled ? "" : this.cut(paper.title, this.LIMITS.title),
         untitled,
         present: [...present].sort((a, b) => a - b),
+        subcollections: places(paper),
       };
     });
     return {
       ok: true,
-      snapshot: { takenAt: String(takenAt ?? ""), collectionName: String(collectionName ?? ""), blocks, rows },
+      snapshot: {
+        takenAt: String(takenAt ?? ""),
+        collectionName: this.cut(collectionName, this.LIMITS.title),
+        subcollectionColumn: placesShown,
+        blocks,
+        rows,
+      },
     };
   },
 
@@ -402,8 +484,9 @@ var TabellifySavedTables = {
    * - Per paper: count = number of ✓, total = number of columns (M), and `groups` lists
    *   the ✓ tags per block.
    * - counting = at least one column (as F005: without tag columns k/M shows "–").
+   * - Feature 011: `subcollectionColumn` and each paper's `subcollections` as saved.
    * @param {object} snapshot
-   * @returns {{ groups: object[], papers: object[], counting: boolean }}
+   * @returns {{ groups: object[], papers: object[], counting: boolean, subcollectionColumn: boolean }}
    */
   snapshotView(snapshot) {
     let run = 0;
@@ -423,9 +506,10 @@ var TabellifySavedTables = {
         count: r.present.length,
         total,
         groups: groups.map((g) => ({ id: g.id, name: g.name, present: g.tags.filter((t) => present.has(t)) })),
+        subcollections: Array.isArray(r.subcollections) ? [...r.subcollections] : [],
       };
     });
-    return { groups, papers, counting: total > 0 };
+    return { groups, papers, counting: total > 0, subcollectionColumn: snapshot?.subcollectionColumn === true };
   },
 
   // ---------------------------------------------------------------------------------------
@@ -470,21 +554,36 @@ var TabellifySavedTables = {
    * which columns exist; the SAVED column layout decides their order (new tags go where
    * ADR-0019 puts unlisted tags); the saved sort or manual order and counting switch decide
    * the rest. Never changes the workspace.
-   * @param {{ codebook: object | null, monitorData: { collections: object[], rootId: number,
-   *   papers: object[], keys: Map<number, string> }, definition: object, snapshot?: object }} input
-   * @returns {{ view: { groups: object[], papers: object[], counting: boolean }, missing: string[] }}
+   * Feature 011: `monitorData.scopeIds` (the saved selection applied to today's tree) is the
+   * scope; without it, `rootId` and its subcollections (as before). The Subcollection column
+   * is shown when the scope has more than one collection (spec F011 Q5), with each paper's
+   * places (TabellifySelection.placeLabels).
+   * @param {{ codebook: object | null, monitorData: { collections: object[], rootId?: number,
+   *   scopeIds?: number[], papers: object[], keys: Map<number, string> }, definition: object,
+   *   snapshot?: object }} input
+   * @returns {{ view: { groups: object[], papers: object[], counting: boolean,
+   *   subcollectionColumn: boolean }, missing: string[] }}
    */
   liveView({ codebook, monitorData, definition, snapshot }) {
-    const result = TabellifyTagMonitor.summarize(codebook, monitorData.collections, monitorData.rootId, monitorData.papers, {
+    const scope = Array.isArray(monitorData.scopeIds)
+      ? monitorData.scopeIds
+      : TabellifyTagMonitor.descendantIds(monitorData.collections, monitorData.rootId);
+    const result = TabellifyTagMonitor.summarize(codebook, monitorData.collections, scope, monitorData.papers, {
       countItemTags: definition.countItemTags === true,
     });
+    const subcollectionColumn = scope.length > 1;
+    const labels = subcollectionColumn ? TabellifySelection.labelMap(monitorData.collections, scope) : null;
+    const withPlaces = result.papers.map((p) => ({
+      ...p,
+      subcollections: labels ? TabellifySelection.placeLabels(monitorData.collections, scope, p.collectionIds, labels) : [],
+    }));
     const counting = Boolean(codebook) && result.total > 0;
     const groups = counting
       ? TabellifyTableLayout.orderedGroups(TabellifyTagMonitor.codebookGroups(codebook), definition.columnLayout)
       : [];
     const keys = monitorData.keys;
-    const papers = this.orderPapers(result.papers, definition.sort, definition.manualOrder, (p) => keys?.get(p.id));
-    return { view: { groups, papers, counting }, missing: this.missingColumns(snapshot, groups) };
+    const papers = this.orderPapers(withPlaces, definition.sort, definition.manualOrder, (p) => keys?.get(p.id));
+    return { view: { groups, papers, counting, subcollectionColumn }, missing: this.missingColumns(snapshot, groups) };
   },
 
   /**
@@ -595,22 +694,29 @@ var TabellifySavedTables = {
 
   /**
    * The entries of the "Saved tables" list: newest `updatedAt` first, then by name.
+   * Feature 011 (spec Q13): the filter "Current selection" keeps the tables whose selection
+   * KEY (TabellifySelection.selectionKey) equals the given one; a single collection's key is
+   * its plain collection key, so a table of one collection matches when that collection is
+   * chosen alone.
    * @param {object} data
-   * @param {string | null} collectionKey  Only this collection's tables; null = all
-   * @returns {Array<{ id: string, name: string, collectionKey: string, collectionName: string,
-   *   papers: number, columns: number, updatedAt: string }>}
+   * @param {string | null} selectionKey  Only tables with this selection key; null = all
+   * @returns {Array<{ id: string, name: string, selection: { include: string[], exclude: string[] },
+   *   selectionKey: string | null, collectionName: string, papers: number, columns: number,
+   *   updatedAt: string }>}
    */
-  listTables(data, collectionKey) {
+  listTables(data, selectionKey) {
     const time = (iso) => {
       const n = Date.parse(iso);
       return Number.isFinite(n) ? n : 0;
     };
     return (data?.tables ?? [])
-      .filter((t) => collectionKey === null || t.definition.collectionKey === collectionKey)
-      .map((t) => ({
+      .map((t) => ({ t, key: TabellifySelection.selectionKey(t.definition.selection) }))
+      .filter(({ key }) => selectionKey === null || key === selectionKey)
+      .map(({ t, key }) => ({
         id: t.id,
         name: t.name,
-        collectionKey: t.definition.collectionKey,
+        selection: { include: [...t.definition.selection.include], exclude: [...t.definition.selection.exclude] },
+        selectionKey: key,
         collectionName: t.snapshot.collectionName,
         papers: t.snapshot.rows.length,
         columns: this.snapshotColumns(t.snapshot).length,

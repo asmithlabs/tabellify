@@ -613,3 +613,100 @@ test("SEC-014: layout limits on top-level order, tag orders and manual orders", 
     assert.match(r.reason, /more than/, name);
   }
 });
+
+// ------------------------------------------------------------------------------------------
+// Feature 011 AC17 (ADR-0027 §3): manual orders of a selection ("sel:" keys) and their pruning
+// ------------------------------------------------------------------------------------------
+
+test("F011 AC17: selectionKeyMembers splits a sel: key; plain keys give null", () => {
+  assert.deepEqual(plain(L.selectionKeyMembers("sel:1/ASTH0001,1/COPD0002")), ["1/ASTH0001", "1/COPD0002"]);
+  assert.deepEqual(plain(L.selectionKeyMembers("sel:1/PHEN0001|1/ARCH0002")), ["1/PHEN0001", "1/ARCH0002"]);
+  assert.equal(L.selectionKeyMembers("1/PHEN0001"), null);
+  assert.equal(L.selectionKeyMembers(""), null);
+  assert.equal(L.SEL_PREFIX, "sel:");
+});
+
+test("F011 AC17: a sel: entry is kept when all its keys are retained", () => {
+  const orders = new Map([
+    ["sel:1/ASTH0001,1/COPD0002", ["K1", "K2"]],
+    ["sel:1/PHEN0001|1/ARCH0002", ["K3"]],
+  ]);
+  const retained = new Set(["1/ASTH0001", "1/COPD0002", "1/PHEN0001", "1/ARCH0002"]);
+  assert.deepEqual(plain(L.cleanManualOrders(orders, retained, new Set([1]))), {
+    "sel:1/ASTH0001,1/COPD0002": ["K1", "K2"],
+    "sel:1/PHEN0001|1/ARCH0002": ["K3"],
+  });
+});
+
+test("F011 AC17: a sel: entry is dropped when one key of a listed library is gone (trash emptied)", () => {
+  const orders = new Map([
+    ["sel:1/ASTH0001,1/COPD0002", ["K1"]],
+    ["sel:1/PHEN0001|1/GONE0000", ["K2"]], // an EXCLUDED member gone counts too
+  ]);
+  const retained = new Set(["1/ASTH0001", "1/PHEN0001"]);
+  assert.deepEqual(plain(L.cleanManualOrders(orders, retained, new Set([1]))), {});
+});
+
+test("F011 AC17: a sel: entry whose member is only in the trash is kept (SEC-018)", () => {
+  // collectionKeySet of getByLibrary(…, true, true) holds trashed collections too.
+  const retained = L.collectionKeySet([{ libraryID: 1, key: "ASTH0001" }, { libraryID: 1, key: "COPD0002", deleted: true }]);
+  assert.deepEqual(plain(L.cleanManualOrders([["sel:1/ASTH0001,1/COPD0002", ["K1"]]], retained, new Set([1]))), {
+    "sel:1/ASTH0001,1/COPD0002": ["K1"],
+  });
+});
+
+test("F011 AC17: a sel: entry is kept when a key's library is not listed", () => {
+  const orders = new Map([["sel:7/ASTH0001,7/COPD0002", ["K1"]]]);
+  assert.deepEqual(plain(L.cleanManualOrders(orders, new Set(["1/OTHER000"]), new Set([1]))), {
+    "sel:7/ASTH0001,7/COPD0002": ["K1"],
+  });
+  // Without a library list every library counts as listed (same as plain keys).
+  assert.deepEqual(plain(L.cleanManualOrders(orders, new Set(["1/OTHER000"]))), {});
+  // Without a known set nothing is pruned; empty orders are still dropped.
+  assert.deepEqual(plain(L.cleanManualOrders([...orders, ["sel:1/A|1/B", []]])), { "sel:7/ASTH0001,7/COPD0002": ["K1"] });
+});
+
+test("F011 AC17: plain keys follow the 003b / SEC-018 rules unchanged next to sel: keys", () => {
+  const orders = new Map([
+    ["1/AAAA1111", ["K1"]],
+    ["1/GONE0000", ["K2"]],
+    ["9/CCCC3333", ["K3"]],
+    ["sel:1/AAAA1111,1/BBBB2222", ["K4"]],
+  ]);
+  const known = new Set(["1/AAAA1111", "1/BBBB2222"]);
+  assert.deepEqual(plain(L.layoutData(null, orders, known, new Set([1])).manualOrders), {
+    "1/AAAA1111": ["K1"],
+    "9/CCCC3333": ["K3"],
+    "sel:1/AAAA1111,1/BBBB2222": ["K4"],
+  });
+  // A sel: key is an ordinary text key for validateLayout (no schema change).
+  const data = { schemaVersion: 3, revision: 1, perPaperTable: { topOrder: [], tagOrder: {}, manualOrders: { "sel:1/A,1/B": ["K1"] } } };
+  assert.equal(L.validateLayout(data).ok, true);
+});
+
+test("F011 AC17 / ADR-0027 §3: a 0.2.0-style prune (no sel: support) keeps sel: entries", () => {
+  // The 0.2.0 body of cleanManualOrders, copied from tag v0.2.0 (`this` replaced by `L`),
+  // run with the arguments 0.2.0's saveLayout passes (known AND listed libraries). It documents
+  // why ADR-0027 needs no layout.json schema bump: "sel:…" has no "<number>/" prefix, so its
+  // library is "not listed" and 0.2.0 keeps the entry untouched.
+  function cleanManualOrders020(entries, knownCollectionKeys = null, listedLibraryIDs = null) {
+    const out = [];
+    for (const [collectionKey, order] of entries) {
+      if (typeof collectionKey !== "string" || collectionKey === "") continue;
+      if (knownCollectionKeys && !knownCollectionKeys.has(collectionKey)) {
+        const libraryID = L.libraryIdOfKey(collectionKey);
+        const listed = !listedLibraryIDs || (libraryID !== null && listedLibraryIDs.has(libraryID));
+        if (listed) continue;
+      }
+      const keys = L.cleanKeys(order);
+      if (keys.length > 0) out.push([collectionKey, keys]);
+    }
+    return Object.fromEntries(out);
+  }
+  const orders = [["sel:1/ASTH0001,1/COPD0002", ["K1"]], ["sel:1/GONE0000|1/ARCH0002", ["K2"]]];
+  assert.equal(L.libraryIdOfKey("sel:1/ASTH0001"), null);
+  assert.deepEqual(plain(cleanManualOrders020(orders, new Set(["1/ASTH0001"]), new Set([1]))), {
+    "sel:1/ASTH0001,1/COPD0002": ["K1"],
+    "sel:1/GONE0000|1/ARCH0002": ["K2"],
+  });
+});

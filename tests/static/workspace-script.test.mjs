@@ -227,8 +227,12 @@ test("F005: every MONITOR_STRINGS ID exists in tabellify.ftl and starts with tab
 });
 
 test("F005: Fluent is used without arguments (no formatValue(id, args), no setAttributes)", () => {
-  assert.doesNotMatch(js, /formatValue\(\s*[^)]*,/);
+  // F011: one exception, a number through numericArgs in setCountText (plural texts such as
+  // "3 papers"); no other formatValue call has arguments.
+  const withArgs = [...js.matchAll(/formatValue\(\s*[^)]*,[^\n]*/g)].map((m) => m[0]);
+  assert.deepEqual(withArgs, ["formatValue(id, this.numericArgs({ count }));"]);
   assert.doesNotMatch(js, /\bsetAttributes\s*\(/);
+  assert.doesNotMatch(js, /data-l10n-args/);
 });
 
 test("F005: Notifier observer symmetry (one register, unregister on unload, debounce cleared)", () => {
@@ -385,15 +389,18 @@ test("Owner 2026-11-13: old summary columns and detail rows are gone (markup, co
 test("Owner 2026-11-13: header = grip, Title, (tag groups), k/M; tag row and <colgroup> exist", () => {
   const groupRow = /<html:tr id="tabellify-items-group-row"[^>]*>([\s\S]*?)<\/html:tr>/.exec(xhtml)?.[1] ?? "";
   const order = [...groupRow.matchAll(/class="(tabellify-col-[\w-]+)/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["tabellify-col-grip", "tabellify-col-title", "tabellify-col-count"]);
+  // F011: the Subcollection header (hidden unless shown) sits right after Title.
+  assert.deepEqual(order, ["tabellify-col-grip", "tabellify-col-title", "tabellify-col-place", "tabellify-col-count"]);
   assert.match(groupRow, /id="tabellify-items-count-header"/);
+  assert.match(groupRow, /id="tabellify-items-place-header"[^>]*hidden="hidden"/);
+  assert.match(groupRow, /data-sort="subcollection"/);
   assert.match(groupRow, /data-sort="title"/);
   assert.match(groupRow, /data-sort="count"/);
   assert.match(xhtml, /<html:tr id="tabellify-items-tag-row"/);
   assert.match(xhtml, /<html:colgroup id="tabellify-items-cols">/);
   // Group headers are inserted before k/M, so k/M stays last.
   assert.match(js, /groupRow\.insertBefore\(th, countHeader\)/);
-  assert.match(js, /tr\.append\(this\.rowGripCell\(paper\), title, \.\.\.tagCells, count\)/);
+  assert.match(js, /tr\.append\(this\.rowGripCell\(paper\), title, \.\.\.\(place \? \[place\] : \[\]\), \.\.\.tagCells, count\)/);
 });
 
 test("Owner 2026-11-13: only numeric paper IDs are put into CSS selectors (never tag names)", () => {
@@ -417,6 +424,8 @@ test("F006a AC17 / F006b AC12 / F006c AC15 / F008 AC17 / F007b AC22: script orde
     "tag-script-model.js",
     "script-suggest-model.js",
     "tag-monitor-model.js",
+    // F011 (ADR-0027 §5): the selection model, after the tag monitor model.
+    "selection-model.js",
     "table-layout-model.js",
     "regroup-model.js",
     "layout-store.js",
@@ -622,7 +631,8 @@ test("F003b AC17: library list, observer types, strings and plain-text names", (
   // COLLECTION_STRINGS exist, start with tabellify-, and are formatted in init().
   const list = /COLLECTION_STRINGS:\s*\[([\s\S]*?)\]/.exec(js)?.[1] ?? "";
   const ids = [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(ids, ["tabellify-collection-none-in-library", "tabellify-collection-gone"]);
+  // F011 adds the picker's two status texts.
+  assert.deepEqual(ids, ["tabellify-collection-none-in-library", "tabellify-collection-gone", "tabellify-picker-none", "tabellify-picker-too-many"]);
   for (const id of ids) assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
   assert.match(js, /await this\.formatStrings\(this\.COLLECTION_STRINGS\);/);
   // Library headings: names only through the optgroup's `label` property or new Option.
@@ -925,4 +935,109 @@ test("F007b AC22: table IDs are never put into a selector; saved-mode texts go i
   assert.match(js, /name\.textContent = entry\.name;/);
   // The clock is read only in workspace.js (the model gets `now`).
   assert.match(js, /new Date\(\)\.toISOString\(\)/);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 AC26 (T6): selection model, Subcollection column, group rows, Fluent plurals
+// ---------------------------------------------------------------------------------------
+
+const selectionJs = code("content/selection-model.js");
+
+test("F011 AC26: selection-model.js uses no Zotero / DOM / IOUtils / file globals and never writes", () => {
+  assert.match(selectionJs, /var TabellifySelection = \{/);
+  assert.doesNotMatch(selectionJs, /\b(?:Zotero|window|document|IOUtils|PathUtils|Services|ChromeUtils)\b/);
+  assert.doesNotMatch(selectionJs, /\bwrite\w*\(|\blocalStorage\b/);
+});
+
+test("F011 AC26: the Subcollection header, its sort key and the new Fluent IDs exist; plurals take only $count", () => {
+  const ftl = read("locale/en-US/tabellify.ftl");
+  assert.match(monitorJs, /SORT_KEYS: \["title", "count", "subcollection"\]/);
+  assert.ok(ftlIds.has("tabellify-column-subcollection"));
+  assert.ok(js.includes('"tabellify-column-subcollection"'), "formatted with the export strings");
+  // Every message filled by setCountText exists and uses only the variable $count.
+  const counted = [...js.matchAll(/setCountText\([^,]+,\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(counted.length >= 3, "setCountText calls found (check is vacuous)");
+  for (const id of counted) {
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+    const block = new RegExp(`^${id}\\s*=([^\\n]*(?:\\n\\s+[^\\n]*)*)`, "m").exec(ftl)?.[1] ?? "";
+    const vars = new Set([...block.matchAll(/\$(\w+)/g)].map((m) => m[1]));
+    assert.deepEqual([...vars], ["count"], `${id} uses ${[...vars]}`);
+  }
+  assert.match(ftl, /^tabellify-saved-filter-collection = Current selection$/m);
+});
+
+test("F011 AC26: collection names reach the table, group rows and list only as text", () => {
+  // Subcollection cells: one <span> per place, filled with textContent.
+  assert.match(js, /const line = this\.html\("span", "tabellify-place"\);\n\s*line\.textContent = text;/);
+  // Group header rows: the name with textContent; the count through setCountText.
+  assert.match(js, /name\.textContent = run\.label;/);
+  assert.match(js, /this\.setCountText\(count, "tabellify-place-group-papers", run\.count\)/);
+  // setCountText sets text, never markup, and passes numbers only.
+  const body = /setCountText\(el, id, count\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(body, /el\.textContent = String\(count\);/);
+  assert.match(body, /formatValue\(id, this\.numericArgs\(\{ count \}\)\)/);
+  assert.match(body, /el\.textContent = text;/);
+});
+
+test("F011 AC26: no new listener, observer or timer in T6; the Zotero allow-list test above is unchanged", () => {
+  // The observer types stay the F005/F003b list (collection events were already included).
+  assert.match(js, /\["item-tag", "collection-item", "item", "collection", "group"\]/);
+  assert.equal((js.match(/\bregisterObserver\s*\(/g) ?? []).length, 1);
+  // The same window timers as before F011: the recompute debounce and the layout save.
+  assert.equal((js.match(/\bsetTimeout\s*\(/g) ?? []).length, 2);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 AC26 (T7): "Choose several…", the picker dialog, the dropdown entry and the
+// line under the collection row
+// ---------------------------------------------------------------------------------------
+
+test("F011 AC26: picker markup: button after the dropdown, an html:dialog with heading, group tree, status and four buttons", () => {
+  const row = /<html:div id="tabellify-collection-row">([\s\S]*?)<\/html:div>/.exec(xhtml)?.[1] ?? "";
+  assert.ok(row.indexOf('id="tabellify-collection-select"') < row.indexOf('id="tabellify-choose-several"'), "button after the dropdown");
+  assert.match(row, /<html:button id="tabellify-choose-several" disabled="disabled" aria-haspopup="dialog"\s+data-l10n-id="tabellify-collection-choose-several">/);
+  assert.match(xhtml, /<html:p id="tabellify-selection-summary" hidden="hidden">/);
+  const dialog = /<html:dialog id="tabellify-picker-dialog" aria-labelledby="tabellify-picker-heading">([\s\S]*?)<\/html:dialog>/.exec(xhtml)?.[1] ?? "";
+  assert.ok(dialog, "picker dialog found");
+  assert.match(dialog, /<html:h2 id="tabellify-picker-heading" data-l10n-id="tabellify-picker-heading">/);
+  assert.match(dialog, /<html:div id="tabellify-picker-scroll" role="group" data-l10n-id="tabellify-picker-tree">/);
+  assert.match(dialog, /<html:p id="tabellify-picker-status" role="status">/);
+  const actions = [...dialog.matchAll(/data-action="([\w-]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(actions, ["select-all", "clear", "apply", "cancel"]);
+  assert.doesNotMatch(dialog, /method="dialog"/);
+  const ftl = read("locale/en-US/tabellify.ftl");
+  assert.match(ftl, /^tabellify-picker-tree =\n\s+\.aria-label = Collections$/m);
+  for (const id of ["tabellify-collection-choose-several", "tabellify-collection-several", "tabellify-selection-showing",
+    "tabellify-selection-more", "tabellify-selection-partly-gone", "tabellify-picker-heading", "tabellify-picker-library-label",
+    "tabellify-picker-help", "tabellify-picker-tree", "tabellify-picker-count", "tabellify-picker-none", "tabellify-picker-too-many",
+    "tabellify-picker-select-all", "tabellify-picker-clear", "tabellify-picker-apply", "tabellify-picker-cancel",
+    "tabellify-column-subcollection", "tabellify-place-group-papers", "tabellify-view-live-partly-gone"]) {
+    assert.ok(ftlIds.has(id), `${id} missing from tabellify.ftl`);
+  }
+});
+
+test("F011 AC26: the five picker listeners are added in init and removed in onUnload", () => {
+  const init = /async init\(\) \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  const unload = /onUnload: \(\) => \{([\s\S]*?)\n  \},/.exec(js)?.[1] ?? "";
+  assert.match(init, /this\.el\("tabellify-choose-several"\)\.addEventListener\("click", this\.onChooseSeveralClick\)/);
+  assert.match(unload, /\.el\("tabellify-choose-several"\)\s*\?\.removeEventListener\("click", TabellifyWorkspace\.onChooseSeveralClick\)/);
+  for (const [type, fn] of [["click", "onPickerClick"], ["change", "onPickerChange"], ["keydown", "onPickerKeydown"], ["close", "onPickerClose"]]) {
+    assert.match(init, new RegExp(`picker\\.addEventListener\\("${type}", this\\.${fn}\\)`), `${type} added`);
+    assert.match(unload, new RegExp(`picker\\?\\.removeEventListener\\("${type}", TabellifyWorkspace\\.${fn}\\)`), `${type} removed`);
+  }
+  // showModal only for the two dialogs, both in workspace.js.
+  assert.equal((js.match(/\.showModal\(\)/g) ?? []).length, 2);
+});
+
+test("F011 AC26: picker names go in as text (label textContent, new Option); checkbox IDs are numeric; the mixed look is set from state", () => {
+  assert.match(js, /label\.textContent = c\.name;/);
+  assert.match(js, /box\.id = `tabellify-pick-\$\{Number\(c\.id\)\}`;/);
+  assert.match(js, /new Option\(g\.label, String\(g\.libraryID\)\)/);
+  assert.match(js, /names\.textContent = list\.shown\.join\(", "\);/);
+  assert.match(js, /box\.indeterminate = state === "indeterminate";/);
+  assert.match(js, /box\.checked = state === "checked";/);
+  // The picker only reads the in-memory index: no Zotero call inside its code.
+  const pickerCode = /SUMMARY_NAMES_SHOWN:([\s\S]*?)MONITOR_STRINGS:/.exec(js)?.[1] ?? "";
+  assert.ok(pickerCode.length > 1000, "picker section found");
+  assert.doesNotMatch(pickerCode, /\bZotero\.(?!logError\b)\w+/);
 });

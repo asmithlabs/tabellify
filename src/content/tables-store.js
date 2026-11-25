@@ -13,6 +13,10 @@
  *   tables.json      the data
  *   tables.json.tmp  short-lived: written first, then moved over tables.json
  *   tables.json.bak  the previous version (a one-step manual undo, e.g. after a delete)
+ *   tables.v1.json   once only (Feature 011, ADR-0027 §2): the schema 1 file 0.2.0 wrote,
+ *                    kept as it was read, before the first save writes schema 2. Written
+ *                    with `mode: "create"`, so it is never overwritten. Going back to
+ *                    0.2.0: copy tables.v1.json over tables.json.
  * Nothing is created until the first save (loading a missing file creates nothing), and a
  * file that cannot be read, fails the strict check, or was made by a newer Tabellify is
  * NEVER overwritten (ADR-0018 §3). Deleting a table is a normal save of the list without
@@ -37,6 +41,9 @@
 var TabellifyTablesStore = {
   FILE_NAME: "tables.json",
 
+  /** Feature 011: the one-time copy of a schema 1 file (ADR-0027 §2). */
+  V1_COPY_NAME: "tables.v1.json",
+
   /**
    * SEC-014: the largest tables.json Tabellify reads, in bytes. A save is refused above
    * TabellifySavedTables.LIMITS.fileChars (20,000,000 UTF-16 units of JSON); one unit is at
@@ -57,6 +64,7 @@ var TabellifyTablesStore = {
       // SEC-014: the file size, checked before readJSON parses the file. Read-only.
       stat: (path) => IOUtils.stat(path),
       // tmpPath + backupFile: an atomic write that keeps the previous version (ADR-0012 §2).
+      // { mode: "create" } (the v1 copy only): write only if the file does not exist yet.
       writeJSON: (path, value, options) => IOUtils.writeJSON(path, value, options),
       // Creates the folder (and missing parents); succeeds if it already exists.
       makeDirectory: (path) => IOUtils.makeDirectory(path),
@@ -118,7 +126,15 @@ var TabellifyTablesStore = {
    * Tabellify tab may have saved meanwhile, ADR-0012 §5); check the new data (strict check
    * and file size); create the folder; write atomically with a backup. The saved data gets
    * `revision = loadedRevision + 1`.
-   * - `{ status: "saved", data, path }`: `data` is what was written (new revision).
+   *
+   * One-time schema 1 copy (Feature 011, ADR-0027 §2): when the file on disk is a valid
+   * schema 1 file (written by 0.2.0), exactly the data read from it is first written to
+   * tables.v1.json with `{ mode: "create" }` (refuses to overwrite). A failed copy (for
+   * example, it already exists) does not block the save: tables.json.bak keeps the schema 1
+   * data too. The result reports the attempt (same pattern as codebook-store.js).
+   * - `{ status: "saved", data, path, v1Copy? }`: `data` is what was written (new revision).
+   *   `v1Copy` is present only when a copy was attempted: `{ path, ok: true }` or
+   *   `{ path, ok: false, error }`.
    * - `{ status: "conflict", path, reason }`: nothing written; the caller should reload.
    *   Also used when the file on disk has become unreadable or invalid, or was made by a
    *   newer Tabellify, so such a file is never overwritten.
@@ -135,11 +151,13 @@ var TabellifyTablesStore = {
 
     // 1. Has someone else saved since we loaded? A missing file counts as revision 0.
     let diskRevision;
+    let onDiskV1 = null;
     try {
       const onDisk = await this.readJSONCapped(fs, path);
       const check = TabellifySavedTables.validate(onDisk);
       if (!check.ok) return { status: "conflict", path, reason: `file on disk is not valid: ${check.reason}` };
       diskRevision = onDisk.revision;
+      if (onDisk.schemaVersion === 1) onDiskV1 = onDisk;
     } catch (e) {
       if (e?.name !== "NotFoundError") {
         return { status: "conflict", path, reason: `could not re-read: ${e?.name ?? "error"}` };
@@ -163,15 +181,34 @@ var TabellifyTablesStore = {
     const size = TabellifySavedTables.checkFileSize(clean);
     if (!size.ok) return { status: "error", path, error: new Error("refusing to save: the file would be too large"), limit: size.error };
 
-    // 3. Folder first, then an atomic write: the data goes to the .tmp file and is then
-    //    moved over tables.json; the old file is kept as .bak.
+    // 3. Folder first (the writes need their parent to exist).
     try {
       await fs.makeDirectory(dir);
-      await fs.writeJSON(path, clean, { tmpPath: path + ".tmp", backupFile: path + ".bak" });
     } catch (e) {
       return { status: "error", path, error: e };
     }
-    return { status: "saved", data: clean, path };
+
+    // 4. Schema 1 on disk: keep one copy forever (never overwritten: mode "create"). A
+    //    failure here must not block the save, so it has its own try/catch.
+    let v1Copy;
+    if (onDiskV1) {
+      const copyPath = fs.join(dir, this.V1_COPY_NAME);
+      try {
+        await fs.writeJSON(copyPath, onDiskV1, { mode: "create" });
+        v1Copy = { path: copyPath, ok: true };
+      } catch (e) {
+        v1Copy = { path: copyPath, ok: false, error: e };
+      }
+    }
+
+    // 5. Atomic write: the data goes to the .tmp file and is then moved over tables.json;
+    //    the old file is kept as .bak.
+    try {
+      await fs.writeJSON(path, clean, { tmpPath: path + ".tmp", backupFile: path + ".bak" });
+    } catch (e) {
+      return { status: "error", path, error: e, ...(v1Copy ? { v1Copy } : {}) };
+    }
+    return { status: "saved", data: clean, path, ...(v1Copy ? { v1Copy } : {}) };
   },
 };
 
@@ -179,7 +216,8 @@ var TabellifyTablesStore = {
  * @typedef {{
  *   readJSON: (path: string) => Promise<any>,
  *   stat: (path: string) => Promise<{ size: number }>,
- *   writeJSON: (path: string, value: any, options: { tmpPath: string, backupFile: string }) => Promise<any>,
+ *   writeJSON: (path: string, value: any,
+ *     options: { tmpPath: string, backupFile: string } | { mode: "create" }) => Promise<any>,
  *   makeDirectory: (path: string) => Promise<any>,
  *   join: (...parts: string[]) => string,
  * }} TablesFs

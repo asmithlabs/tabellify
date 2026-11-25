@@ -70,6 +70,13 @@
  *   (TabellifySavedTables). A "Saved tables" list under the collection row opens, exports
  *   and deletes them; the modal shows a saved table's snapshot and can rename it. Saved
  *   tables never change the workspace (collection, column order, paper order, counting).
+ * - F011 (ADR-0027): the table can cover a SELECTION of collections of one library
+ *   (include/exclude rules, pure logic in selection-model.js, TabellifySelection). A single
+ *   collection chosen in the dropdown is the selection "this collection and everything below
+ *   it", exactly as before. When the table covers more than one collection, a Subcollection
+ *   column after Title says where each paper sits; sorted by it, a header row starts each
+ *   group ("Asthma · 3 papers"). A selection's manual order is kept under its selection key
+ *   ("sel:…" in layout.json); saved tables store the selection (tables.json schema 2).
  *
  * THE LIBRARY IS READ-ONLY. Every Zotero call here only reads (see the "Read-only
  * guarantee" row in docs/zotero-api-notes.md). Nothing is saved, changed or deleted in the
@@ -102,6 +109,8 @@
  * closed only logs (the `unloaded` check).
  * F003b adds no listener, observer or timer: the same observer also gets the "group" type,
  * and library-list rebuilds run on the same debounce timer (both ended in onUnload).
+ * F011 adds one click listener on "Choose several…" and four on the picker <dialog> (click,
+ * change, keydown, close), all removed in onUnload; no observer, timer or pref.
  * Nothing is added to the main window, so bootstrap.js has nothing to undo. When the
  * plugin shuts down, tabellify.js closes this tab/window, which runs onUnload.
  *
@@ -191,6 +200,44 @@ var TabellifyWorkspace = {
   libraryOfKey(collectionKey) {
     const match = /^(\d+)\//.exec(typeof collectionKey === "string" ? collectionKey : "");
     return match ? Number(match[1]) : null;
+  },
+
+  /**
+   * F011: only finite numbers, for a Fluent message's arguments (the same rule as
+   * TabellifyReaderTags.numericArgs, SEC-013). A Fluent argument is text inserted into a
+   * translated message, so it must never carry library text; anything that is not a finite
+   * number is dropped. tests/static/no-html-sinks.test.mjs requires every Fluent argument in
+   * src/ to go through a numericArgs function.
+   * @param {Record<string, unknown>} args
+   * @returns {Record<string, number>}
+   */
+  numericArgs(args) {
+    /** @type {Record<string, number>} */
+    const out = {};
+    for (const [key, value] of Object.entries(args ?? {})) {
+      if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
+    }
+    return out;
+  },
+
+  /**
+   * F011: the runs of papers that share their first place (the group header rows shown
+   * while the table is sorted by Subcollection). Papers from summarize() carry `firstPlace`
+   * (an index in the scope); a saved snapshot only has the texts, so its runs follow the
+   * first text. Neighbouring papers only: the papers are already sorted.
+   * @param {Array<{ firstPlace?: number, subcollections?: string[] }>} papers
+   * @returns {Array<{ label: string, start: number, count: number }>}
+   */
+  placeRuns(papers) {
+    const runs = [];
+    const keyOf = (p) => (Number.isInteger(p?.firstPlace) ? `#${p.firstPlace}` : `=${p?.subcollections?.[0] ?? ""}`);
+    (papers ?? []).forEach((paper, i) => {
+      const key = keyOf(paper);
+      const last = runs[runs.length - 1];
+      if (last && last.key === key) last.count++;
+      else runs.push({ key, label: String(paper?.subcollections?.[0] ?? ""), start: i, count: 1 });
+    });
+    return runs.map(({ label, start, count }) => ({ label, start, count }));
   },
 
   /**
@@ -317,6 +364,15 @@ var TabellifyWorkspace = {
     saved.addEventListener("click", this.onSavedClick);
     saved.addEventListener("keydown", this.onSavedKeydown);
     this.el("tabellify-saved-filter").addEventListener("change", this.onSavedFilterChange);
+    // F011: "Choose several…" and the collection picker <dialog>: clicks (its buttons), changes
+    // (a checkbox or the Library dropdown), keys (Tab wrap, Esc) and the "close" event.
+    // Removed in onUnload.
+    this.el("tabellify-choose-several").addEventListener("click", this.onChooseSeveralClick);
+    const picker = this.el("tabellify-picker-dialog");
+    picker.addEventListener("click", this.onPickerClick);
+    picker.addEventListener("change", this.onPickerChange);
+    picker.addEventListener("keydown", this.onPickerKeydown);
+    picker.addEventListener("close", this.onPickerClose);
     this.columnLayout = TabellifyTableLayout.emptyColumnLayout();
     // Owner decision 2026-11-13: the "count item tags" checkbox (removed in onUnload).
     const countBox = this.el("tabellify-monitor-count-item-tags");
@@ -379,20 +435,61 @@ var TabellifyWorkspace = {
    */
   onCollectionChange: (event) => {
     const W = TabellifyWorkspace;
-    // A newly chosen collection starts in its manual order if it has one (F005c, spec Q2),
-    // otherwise in the default order.
-    const key = W.collectionKeys.get(Number(event.target.value));
-    if (key && W.manualOrders.has(key)) {
-      W.sortKey = TabellifyTableLayout.MANUAL;
-      W.sortDirection = "asc";
-    } else {
-      W.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
-      W.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
-    }
-    W.collectionGone = false;
-    W.showCollection(event.target.value, "collection chosen");
+    const value = event.target.value;
+    // F011: the "N collections" entry stands for the selection already shown.
+    if (value === W.SELECTION_VALUE) return;
+    // F011: choosing a single collection replaces any selection of several.
+    W.multiSelection = null;
+    W.startSelection(W.collectionKeys.get(Number(value)) ?? null);
+    W.showCollection(value, "collection chosen");
     // F003b: the suggestions follow the chosen collection's library.
     W.checkSuggestionLibrary();
+  },
+
+  /**
+   * The sort a newly chosen collection or selection starts with: its manual order if it has
+   * one (F005c, spec Q2; F011: looked up by its selection key), otherwise the default order.
+   * @param {string | null} key  Selection key (a plain collection key for one collection)
+   */
+  startSelection(key) {
+    if (key && this.manualOrders.has(key)) {
+      this.sortKey = TabellifyTableLayout.MANUAL;
+      this.sortDirection = "asc";
+    } else {
+      this.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
+      this.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
+    }
+    this.collectionGone = false;
+  },
+
+  /**
+   * F011: show a selection of collections (from the picker, T7). A selection of exactly one
+   * collection (one include, no exclude) is shown like a dropdown choice of that collection;
+   * anything else becomes the dropdown's "N collections" entry. Nothing is read or written
+   * in the library here; showCollection() reads (read-only).
+   * @param {{ include: string[], exclude: string[] }} selection  Canonical (fromTicks)
+   * @returns {Promise<void> | null}  showCollection's Promise, or null when refused
+   */
+  applySelection(selection) {
+    if (!TabellifySelection.validate(selection).ok) return null;
+    const key = TabellifySelection.selectionKey(selection);
+    this.startSelection(key);
+    let value;
+    if (TabellifySelection.isSingle(selection)) {
+      const id = [...this.collectionKeys].find(([, k]) => k === key)?.[0];
+      if (id === undefined) return null;
+      this.multiSelection = null;
+      value = String(id);
+    } else {
+      this.multiSelection = { include: [...selection.include], exclude: [...selection.exclude] };
+      value = this.SELECTION_VALUE;
+    }
+    // The dropdown follows the new choice (set first: renderCollectionSelect reads it).
+    this.currentCollection = value;
+    this.renderCollectionSelect();
+    const shown = this.showCollection(value, "collection chosen");
+    this.checkSuggestionLibrary();
+    return shown;
   },
 
   /**
@@ -410,6 +507,9 @@ var TabellifyWorkspace = {
     const request = ++this.requestCounter;
     const recompute = reason !== "collection chosen";
     this.currentCollection = value;
+    // F011: no choice (or a single collection) means no selection of several.
+    if (value !== this.SELECTION_VALUE) this.multiSelection = null;
+    this.renderSelectionSummary();
     // F007b: the filter "This collection" follows the chosen collection.
     if (!recompute) {
       this.confirmDeleteId = null;
@@ -431,7 +531,9 @@ var TabellifyWorkspace = {
     }
     if (!recompute) this.showStatus("tabellify-loading-items");
     try {
-      const data = await this.gatherMonitorData(Number(value));
+      // F011: a selection of several collections, or (as before) one collection by its ID.
+      const target = value === this.SELECTION_VALUE ? this.multiSelection : Number(value);
+      const data = await this.gatherMonitorData(target);
       if (request !== this.requestCounter) return; // a newer choice or recompute started
       this.monitorData = data;
       // F007b / F003b: names may have changed (renamed, deleted or restored collections).
@@ -446,11 +548,15 @@ var TabellifyWorkspace = {
       }
       this.renderSavedList();
       const result = this.renderMonitor();
+      // F011: rule and collection counts only, never names or keys (SEC-011).
+      const rules = (data.selection?.include?.length ?? 1) + (data.selection?.exclude?.length ?? 0);
       this.log(
-        `tag monitor: recomputed for collection ${data.rootId} (${reason}): ` +
+        `tag monitor: recomputed for ${value === this.SELECTION_VALUE ? "a selection" : `collection ${data.rootId}`} (${reason}): ` +
         `${result?.used ?? 0}/${result?.total ?? 0} codebook tag(s) used, ` +
         `${result?.paperCount ?? 0} paper(s) in ${data.scopeSize} collection(s), ` +
-        `${this.countItemTags ? "highlight and item tags" : "highlight tags only"}` +
+        `${this.countItemTags ? "highlight and item tags" : "highlight tags only"}, ` +
+        `selection: ${rules} rule(s)` +
+        (data.gone > 0 ? `, ${data.gone} chosen collection(s) no longer available` : "") +
         (data.annotationErrors > 0 ? `, highlights unreadable for ${data.annotationErrors} paper(s)` : ""),
       );
     } catch (e) {
@@ -460,9 +566,273 @@ var TabellifyWorkspace = {
       this.el("tabellify-items-body").replaceChildren();
       this.renderMonitor();
       this.showStatus("tabellify-load-error");
-      this.log(`tag monitor: could not read collection ${value} (${reason})`);
+      this.log(`tag monitor: could not read ${value === this.SELECTION_VALUE ? "the selection" : `collection ${value}`} (${reason})`);
       Zotero.logError(e);
     }
+  },
+
+  // ---------------------------------------------------------------------------------------
+  // Feature 011: selection line and the collection picker ("Choose several…"). The rules
+  // (scope, ticks, canonical form) are pure logic in selection-model.js (TabellifySelection,
+  // unit-tested). The picker only reads the in-memory collection index; it never changes the
+  // library or Zotero's own collection selection. Debug Output: counts only (SEC-011).
+  // ---------------------------------------------------------------------------------------
+
+  /** How many collection names the line under the collection row shows before "+N more". */
+  SUMMARY_NAMES_SHOWN: 5,
+
+  /**
+   * The collection IDs `selection` covers today, from the collection index (no library read).
+   * @param {{ include: string[], exclude: string[] } | null} selection
+   * @returns {number[]}
+   */
+  selectionScope(selection) {
+    const tree = this.libraryTrees.get(TabellifySelection.libraryOfSelection(selection)) ?? [];
+    return TabellifySelection.scope(tree, selection);
+  },
+
+  /**
+   * The muted line under the collection row (spec F011): hidden for a single collection;
+   * for a selection of several, "Showing:" and the included collections' names in tree order
+   * (first SUMMARY_NAMES_SHOWN, then "+N more"), and "N chosen collections are no longer
+   * available." when some included ones are gone (trashed, erased, library removed).
+   */
+  renderSelectionSummary() {
+    const line = this.el("tabellify-selection-summary");
+    const selection = this.currentCollection === this.SELECTION_VALUE ? this.multiSelection : null;
+    line.hidden = selection === null;
+    const names = this.el("tabellify-selection-names");
+    const more = this.el("tabellify-selection-more");
+    const gone = this.el("tabellify-selection-gone");
+    if (selection === null) {
+      names.textContent = "";
+      more.hidden = true;
+      gone.hidden = true;
+      return;
+    }
+    const tree = this.libraryTrees.get(TabellifySelection.libraryOfSelection(selection)) ?? [];
+    const list = TabellifySelection.shortList(TabellifySelection.includedNames(tree, selection), this.SUMMARY_NAMES_SHOWN);
+    names.textContent = list.shown.join(", "); // collection names: plain text only
+    more.hidden = list.more === 0;
+    if (list.more > 0) this.setCountText(more, "tabellify-selection-more", list.more);
+    const goneCount = selection.include.filter((k) => !this.collectionNames.has(k)).length;
+    gone.hidden = goneCount === 0;
+    if (goneCount > 0) this.setCountText(gone, "tabellify-selection-partly-gone", goneCount);
+  },
+
+  /** The library whose tree the open picker shows, or null. */
+  pickerLibraryID: null,
+
+  /** The ticked collection IDs while the picker is open (its only state). */
+  pickerTicks: new Set(),
+
+  /** "click" handler of "Choose several…" (an arrow function, so onUnload can remove it). */
+  onChooseSeveralClick: () => TabellifyWorkspace.openPicker(),
+
+  /** The collections of the picker's library (plain objects, tree order). */
+  pickerTree() {
+    return this.libraryTrees.get(this.pickerLibraryID) ?? [];
+  },
+
+  /**
+   * Open the picker on the shown selection's library (or the first listed library), with the
+   * shown selection already ticked. Does nothing when it is open or there are no collections.
+   */
+  openPicker() {
+    const dialog = this.el("tabellify-picker-dialog");
+    if (dialog.open || this.collectionKeys.size === 0) return;
+    const selection = this.currentSelection();
+    const libraries = this.libraryGroups.filter((g) => !g.empty).map((g) => g.libraryID);
+    const fromSelection = TabellifySelection.libraryOfSelection(selection);
+    this.pickerLibraryID = libraries.includes(fromSelection) ? fromSelection : libraries[0] ?? null;
+    this.pickerTicks = new Set(selection ? TabellifySelection.scope(this.pickerTree(), selection) : []);
+    // The Library dropdown (only with group libraries): names as plain text (new Option).
+    const librarySelect = this.el("tabellify-picker-library");
+    librarySelect.replaceChildren(...this.libraryGroups.filter((g) => !g.empty).map((g) => new Option(g.label, String(g.libraryID))));
+    librarySelect.value = String(this.pickerLibraryID);
+    this.el("tabellify-picker-library-row").hidden = libraries.length < 2;
+    this.renderPickerTree();
+    try {
+      // As for the View table modal: showModal() makes the rest of this document inert.
+      dialog.showModal();
+    } catch (e) {
+      this.log("picker: could not open the dialog");
+      Zotero.logError(e);
+      return;
+    }
+    // Focus: the first ticked box, else the first box.
+    const boxes = this.pickerBoxes();
+    (boxes.find((b) => this.pickerTicks.has(Number(b.dataset.collectionId))) ?? boxes[0] ?? this.el("tabellify-picker-cancel")).focus();
+    this.log(`picker: opened with ${this.pickerTree().length} collection(s), ${this.pickerTicks.size} ticked`);
+  },
+
+  /**
+   * Build the checkbox tree of the picker's library: a nested list (each collection's
+   * subcollections in a <ul> inside its <li>), so the indentation comes from the nesting.
+   * Each box has an ID made from the numeric collection ID, and its <label> holds the name
+   * as plain text (textContent).
+   */
+  renderPickerTree() {
+    const tree = this.pickerTree();
+    const { children, roots } = TabellifySelection.tree(tree);
+    const visited = new Set();
+    const item = (c) => {
+      visited.add(c.id);
+      const li = this.html("li", "tabellify-picker-item");
+      const box = this.html("input", "tabellify-picker-box");
+      box.setAttribute("type", "checkbox");
+      box.id = `tabellify-pick-${Number(c.id)}`;
+      box.dataset.collectionId = String(c.id);
+      const label = this.html("label");
+      label.setAttribute("for", box.id);
+      label.textContent = c.name; // collection names: plain text only (see SECURITY)
+      li.append(box, label);
+      const kids = (children.get(c.id) ?? []).filter((k) => !visited.has(k.id));
+      if (kids.length > 0) {
+        const ul = this.html("ul", "tabellify-picker-children");
+        ul.append(...kids.map(item));
+        li.append(ul);
+      }
+      return li;
+    };
+    this.el("tabellify-picker-tree").replaceChildren(...roots.map(item));
+    this.updatePicker();
+  },
+
+  /** The picker's checkboxes in tree order. */
+  pickerBoxes() {
+    return [...this.el("tabellify-picker-tree").querySelectorAll("input.tabellify-picker-box")];
+  },
+
+  /**
+   * Set every box from `pickerTicks` (a user click changes `checked` and clears
+   * `indeterminate` by itself, so both are always set from our own state), the status line
+   * and "Show table".
+   * @returns {{ include: string[], exclude: string[] }}  The canonical rules of the ticks
+   */
+  updatePicker() {
+    const tree = this.pickerTree();
+    const states = TabellifySelection.tickStates(tree, this.pickerTicks);
+    for (const box of this.pickerBoxes()) {
+      const state = states.get(Number(box.dataset.collectionId));
+      box.checked = state === "checked";
+      // The "mixed" look of a partly ticked parent (HTMLInputElement.indeterminate; standard
+      // DOM, docs/zotero-api-notes.md F011 row): screen readers announce it as "mixed".
+      box.indeterminate = state === "indeterminate";
+    }
+    const rules = TabellifySelection.fromTicks(tree, this.pickerTicks);
+    const count = TabellifySelection.scope(tree, rules).length;
+    const tooMany = rules.include.length + rules.exclude.length > TabellifySelection.MAX_RULES;
+    const status = this.el("tabellify-picker-status");
+    if (count === 0) status.textContent = this.text("tabellify-picker-none");
+    else if (tooMany) status.textContent = this.text("tabellify-picker-too-many");
+    else this.setCountText(status, "tabellify-picker-count", count);
+    this.el("tabellify-picker-apply").disabled = count === 0 || tooMany;
+    return rules;
+  },
+
+  /**
+   * "change" inside the picker: a checkbox (TabellifySelection.applyTick: a ticked box
+   * unticks itself and everything below; an empty or mixed one ticks them all) or the
+   * Library dropdown (a selection is one library, so the other library starts empty).
+   */
+  onPickerChange: (event) => {
+    const W = TabellifyWorkspace;
+    const target = event.target;
+    if (target?.id === "tabellify-picker-library") {
+      W.pickerLibraryID = Number(target.value);
+      W.pickerTicks = new Set();
+      W.renderPickerTree();
+      W.pickerBoxes()[0]?.focus();
+      return;
+    }
+    if (!target?.classList?.contains("tabellify-picker-box")) return;
+    W.pickerTicks = TabellifySelection.applyTick(W.pickerTree(), W.pickerTicks, Number(target.dataset.collectionId));
+    W.updatePicker();
+  },
+
+  /**
+   * Clicks on the picker's buttons. "Show table" turns the ticks into canonical rules
+   * (fromTicks), closes the picker and shows the table (applySelection). Returns that
+   * Promise (the tests wait for it), else null.
+   */
+  onPickerClick: (event) => {
+    const W = TabellifyWorkspace;
+    const button = event.target?.closest?.("button[data-action]");
+    if (!button || button.disabled) return null;
+    switch (button.dataset.action) {
+      case "select-all":
+        W.pickerTicks = new Set(W.pickerTree().map((c) => c.id));
+        W.updatePicker();
+        return null;
+      case "clear":
+        W.pickerTicks = new Set();
+        W.updatePicker();
+        return null;
+      case "cancel":
+        W.closePicker();
+        return null;
+      case "apply": {
+        const rules = W.updatePicker();
+        if (W.el("tabellify-picker-apply").disabled) return null;
+        W.closePicker();
+        W.log(`picker: show table for ${rules.include.length + rules.exclude.length} rule(s)`);
+        return W.applySelection(rules);
+      }
+      default:
+        return null;
+    }
+  },
+
+  /** Close the picker (close() on a closed dialog does nothing; onPickerClose runs after). */
+  closePicker() {
+    const dialog = this.el("tabellify-picker-dialog");
+    if (dialog.open) dialog.close();
+  },
+
+  /** The picker's controls in Tab order (hidden and disabled ones skipped). */
+  pickerFocusOrder() {
+    const library = this.el("tabellify-picker-library-row").hidden ? [] : [this.el("tabellify-picker-library")];
+    const buttons = ["tabellify-picker-select-all", "tabellify-picker-clear", "tabellify-picker-apply", "tabellify-picker-cancel"]
+      .map((id) => this.el(id))
+      .filter((el) => !el.disabled && !el.hidden);
+    return [...library, ...this.pickerBoxes(), ...buttons];
+  },
+
+  /**
+   * Keys in the picker: Esc closes it like Cancel; Tab from the last control goes to the
+   * first and Shift+Tab from the first to the last (the dialog makes only THIS document
+   * inert, so without this Tab could leave into Zotero's window; as in onViewKeydown).
+   * Space on a checkbox is the browser's own toggle (then a "change" event).
+   */
+  onPickerKeydown: (event) => {
+    const W = TabellifyWorkspace;
+    if (event.isComposing) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      W.closePicker();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const order = W.pickerFocusOrder();
+    const first = order[0];
+    const last = order[order.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  },
+
+  /** The picker's "close" event (however it closed): focus back on "Choose several…". */
+  onPickerClose: () => {
+    const W = TabellifyWorkspace;
+    W.pickerTicks = new Set();
+    W.el("tabellify-choose-several").focus();
+    W.log("picker: closed");
   },
 
   // ---------------------------------------------------------------------------------------
@@ -495,13 +865,30 @@ var TabellifyWorkspace = {
   COLLECTION_STRINGS: [
     "tabellify-collection-none-in-library",
     "tabellify-collection-gone",
+    // F011: the picker's status line when nothing (or too much) is ticked.
+    "tabellify-picker-none",
+    "tabellify-picker-too-many",
   ],
 
   /** True once MONITOR_STRINGS are formatted; renderMonitor() waits for it. */
   monitorReady: false,
 
-  /** The dropdown's current value (collection ID as text), "" when none is chosen. */
+  /**
+   * The dropdown's current value: a collection ID as text, "" when none is chosen, or (F011)
+   * SELECTION_VALUE while a selection of several collections is shown (`multiSelection`).
+   */
   currentCollection: "",
+
+  /** F011: the dropdown value of the "N collections" entry. Never a collection ID. */
+  SELECTION_VALUE: "selection",
+
+  /**
+   * F011: the selection shown while `currentCollection` is SELECTION_VALUE (canonical rules,
+   * keys "<libraryID>/<collectionKey>"), else null. For a single collection the selection is
+   * derived from the dropdown (currentSelection()).
+   * @type {{ include: string[], exclude: string[] } | null}
+   */
+  multiSelection: null,
 
   /**
    * What gatherMonitorData() read for the current collection (plain objects), or null.
@@ -573,30 +960,50 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * Read, without changing anything, what the tag monitor needs for one collection:
-   * the library's collection tree, and every regular item ("paper") in the chosen
-   * collection and its subcollections with its item tags and the tags of its highlights.
+   * Read, without changing anything, what the tag monitor needs for one collection or
+   * (F011) a selection of collections: the library's collection tree, and every regular item
+   * ("paper") in the collections in scope with its item tags and the tags of its highlights.
    * Returns plain objects only (the shape TabellifyTagMonitor.summarize expects).
-   * @param {number} rootId
+   *
+   * F011: the scope comes from the selection's rules applied to TODAY's tree
+   * (TabellifySelection.scope): a subcollection created since under an included collection
+   * joins, a trashed or erased one drops out. A number is one collection and all its
+   * subcollections, as before (it becomes the selection "include this collection").
+   * @param {number | { include: string[], exclude: string[] }} target
    */
-  async gatherMonitorData(rootId) {
-    const root = Zotero.Collections.get(rootId);
-    if (!root) throw new Error(`collection ${rootId} not found`);
+  async gatherMonitorData(target) {
+    let libraryID;
+    let selection;
+    if (typeof target === "number") {
+      const root = Zotero.Collections.get(target);
+      if (!root) throw new Error(`collection ${target} not found`);
+      libraryID = root.libraryID;
+      selection = TabellifySelection.single(`${root.libraryID}/${root.key}`);
+    } else {
+      selection = target;
+      libraryID = TabellifySelection.libraryOfSelection(selection);
+    }
+    // Numeric ID only in the error (SEC-011: never a key or a name).
+    const library = libraryID === null ? null : Zotero.Libraries.get(libraryID);
+    if (!library) throw new Error(`library ${libraryID} not found`);
 
     // Why waitForDataLoad: at start-up Zotero loads collections but NOT item data
     // (titles, tags, creators, attachments, annotations). Reading an item before that
     // throws "… not loaded for item …". This call loads the library's items into memory
     // once (it only reads the database), and returns at once if they are already loaded.
     // Annotations are items too, so this also covers highlights and their tags.
-    await Zotero.Libraries.get(root.libraryID).waitForDataLoad("item");
+    await library.waitForDataLoad("item");
 
     // A fresh snapshot of the collection tree (synchronous, in memory, no trashed
     // collections), so subcollections created since the last read are included.
-    const snapshot = Zotero.Collections.getByLibrary(root.libraryID, true);
-    const collections = snapshot.map((c) => ({ id: c.id, parentID: c.parentID, name: c.name }));
+    const snapshot = Zotero.Collections.getByLibrary(libraryID, true);
+    // F011: `key` = "<libraryID>/<collectionKey>", the form the selection's rules use.
+    const collections = snapshot.map((c) => ({ id: c.id, parentID: c.parentID, name: c.name, key: `${c.libraryID}/${c.key}` }));
     // F005c: stable collection keys, for the manual orders (they survive a restart).
     const collectionKeys = this.collectionKeyMap(snapshot);
-    const scope = TabellifyTagMonitor.descendantIds(collections, rootId);
+    const scope = TabellifySelection.scope(collections, selection);
+    // F011: included collections that are gone (trashed, erased): only counted.
+    const gone = TabellifySelection.goneIncludes(collections, selection).length;
 
     const papers = [];
     const read = new Map(); // item ID → what we read, so a paper in two collections is read once
@@ -630,7 +1037,12 @@ var TabellifyWorkspace = {
         papers.push({ id: item.id, title: entry.title, collectionId, itemTags: entry.itemTags, annotationTags: entry.annotationTags });
       }
     }
-    return { rootId, collections, collectionKeys, papers, keys, annotationErrors, scopeSize: scope.length };
+    // `rootId`: the first collection in scope (the chosen collection for a single choice),
+    // kept for the callers that name one collection; null when nothing is in scope.
+    return {
+      rootId: scope[0] ?? null, selection, scopeIds: scope, gone,
+      collections, collectionKeys, papers, keys, annotationErrors, scopeSize: scope.length,
+    };
   },
 
   /**
@@ -678,14 +1090,27 @@ var TabellifyWorkspace = {
     if (!data) {
       summary.hidden = true;
       warning.hidden = true;
+      this.tablePlaces = false; // F011: no table, no Subcollection column
       this.renderPills();
       return null;
     }
 
     // The counting rule (highlights only, unless the checkbox is ticked) is in the model.
-    const result = TabellifyTagMonitor.summarize(this.codebook, data.collections, data.rootId, data.papers, {
+    // F011: the scope is the list of collections the selection covers.
+    const scope = this.monitorScope(data);
+    const result = TabellifyTagMonitor.summarize(this.codebook, data.collections, scope, data.papers, {
       countItemTags: this.countItemTags,
     });
+    // F011 (spec Q4–Q7): the Subcollection column, shown when the table covers more than one
+    // collection. Each paper gets its places as texts (TabellifySelection.placeLabels).
+    this.tablePlaces = scope.length > 1;
+    if (this.tablePlaces) {
+      const labels = TabellifySelection.labelMap(data.collections, scope);
+      result.papers = result.papers.map((p) => ({
+        ...p,
+        subcollections: TabellifySelection.placeLabels(data.collections, scope, p.collectionIds, labels),
+      }));
+    }
     // Counts make sense only with a loaded codebook that has tags.
     const counting = Boolean(this.codebook) && result.total > 0;
     if (this.codebook && result.total === 0) setMessage("tabellify-monitor-codebook-empty");
@@ -716,6 +1141,25 @@ var TabellifyWorkspace = {
   },
 
   /**
+   * F011: the collection IDs the shown table covers, in tree order: the selection's scope
+   * from gatherMonitorData, or (data made before F011, e.g. in tests) the root and all its
+   * subcollections.
+   * @param {{ scopeIds?: number[], collections: object[], rootId?: number }} data
+   * @returns {number[]}
+   */
+  monitorScope(data) {
+    return Array.isArray(data?.scopeIds) ? data.scopeIds : TabellifyTagMonitor.descendantIds(data?.collections ?? [], data?.rootId);
+  },
+
+  /** F011: true while the per-paper table shows the Subcollection column. */
+  tablePlaces: false,
+
+  /** F011: group header rows are drawn while the table is sorted by Subcollection. */
+  placeGroupsShown() {
+    return this.tablePlaces && this.sortKey === TabellifyTagMonitor.SUBCOLLECTION_SORT;
+  },
+
+  /**
    * Rebuild the per-paper table body (and the header's columns and sort state).
    *
    * Columns (owner decision 2026-11-13): row grip, Title, one column per codebook tag
@@ -730,11 +1174,19 @@ var TabellifyWorkspace = {
   renderPaperTable(result, counting) {
     const body = this.el("tabellify-items-body");
     body.replaceChildren();
+    // F011: the extra <tbody> elements of earlier group header rows go too.
+    for (const extra of this.el("tabellify-items-table").querySelectorAll("tbody.tabellify-place-group")) extra.remove();
     const groups = counting ? TabellifyTableLayout.orderedGroups(this.codebookGroups(), this.columnLayout) : [];
     this.tableGroups = groups;
     // Sorted by a tag column whose tag has left the codebook: back to the default sort.
     const sortTag = TabellifyTagMonitor.sortKeyTag(this.sortKey);
     if (sortTag !== null && !groups.some((g) => g.tags.includes(sortTag))) {
+      this.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
+      this.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
+    }
+    // F011: sorted by Subcollection while the column is gone (one collection chosen): the
+    // default sort, as for a tag column that left the codebook.
+    if (this.sortKey === TabellifyTagMonitor.SUBCOLLECTION_SORT && !this.tablePlaces) {
       this.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
       this.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
     }
@@ -763,15 +1215,31 @@ var TabellifyWorkspace = {
       cell.dataset.groupId = group.id;
       cell.dataset.tag = tag;
     };
-    shown.forEach((paper, index) => {
+    const rows = shown.map((paper, index) => {
       const tr = this.html("tr");
       tr.dataset.paperId = String(paper.id);
       tr.classList.toggle("tabellify-row-alt", stripes[index]);
-      // Title, tag cells and k/M come from paperCells (shared with the F007a copy).
-      const { title, tagCells, count } = this.paperCells(paper, groups, counting, nameColumn);
-      tr.append(this.rowGripCell(paper), title, ...tagCells, count);
-      body.append(tr);
+      // Title, (F011) Subcollection, tag cells and k/M come from paperCells (shared with the
+      // F007a copy).
+      const { title, place, tagCells, count } = this.paperCells(paper, groups, counting, nameColumn, this.tablePlaces);
+      tr.append(this.rowGripCell(paper), title, ...(place ? [place] : []), ...tagCells, count);
+      return tr;
     });
+    if (this.placeGroupsShown()) {
+      // F011 (spec Q8): one <tbody> per group with a header row first. The first group uses
+      // the page's own <tbody>; the others are added after it (and removed above on the next
+      // render). The header rows are not papers: no grip, no data-paper-id, so drags and
+      // Alt+Up/Down skip them.
+      const columns = 2 + (this.tablePlaces ? 1 : 0) + this.headerShape(groups).tagCount + 1;
+      const table = this.el("tabellify-items-table");
+      this.placeRuns(shown).forEach((run, i) => {
+        const section = i === 0 ? body : this.html("tbody", "tabellify-place-group");
+        section.append(this.placeGroupRow(run, columns), ...rows.slice(run.start, run.start + run.count));
+        if (i > 0) table.append(section);
+      });
+    } else {
+      body.append(...rows);
+    }
     // F007a (spec Q7): the library can change while the modal is open (other Zotero tabs
     // stay usable), so its copy follows the new snapshot; its "Export CSV" then matches.
     // F007b: only in draft mode; a saved table does not show the page table.
@@ -931,6 +1399,13 @@ var TabellifyWorkspace = {
   /** IDs of the libraries listed in the dropdown now (My Library and the groups). */
   listedLibraryIDs: new Set(),
 
+  /**
+   * F011: library ID → that library's collections as plain objects
+   * `{ id, parentID, name, key }` in tree order (from buildCollectionIndex; no extra read).
+   * @type {Map<number, Array<{ id: number, parentID: number | false | null, name: string, key: string }>>}
+   */
+  libraryTrees: new Map(),
+
   /** The dropdown's groups, from libraryOptionGroups(), as last built. */
   libraryGroups: [],
 
@@ -961,6 +1436,8 @@ var TabellifyWorkspace = {
     const retained = new Set();
     const names = new Map();
     const libraryNames = new Map();
+    // F011: each library's tree as plain objects, for the picker and the selection lines.
+    const trees = new Map();
     let collectionCount = 0;
     for (const library of found) {
       if (!library) continue;
@@ -979,6 +1456,7 @@ var TabellifyWorkspace = {
         for (const k of withTrashed) retained.add(k);
         for (const [id, key] of this.collectionKeyMap(collections)) keys.set(id, key);
         for (const c of collections) names.set(`${c.libraryID}/${c.key}`, String(c.name ?? ""));
+        trees.set(entry.libraryID, collections.map((c) => ({ id: c.id, parentID: c.parentID, name: String(c.name ?? ""), key: `${c.libraryID}/${c.key}` })));
         byLibrary.set(entry.libraryID, collections);
         libraryNames.set(entry.libraryID, entry.name);
         libraries.push(entry);
@@ -998,6 +1476,7 @@ var TabellifyWorkspace = {
     this.collectionKeys = keys;
     this.retainedCollectionKeys = retained;
     this.collectionNames = names;
+    this.libraryTrees = trees;
     this.libraryNames = libraryNames;
     this.listedLibraryIDs = new Set(libraries.map((l) => l.libraryID));
     this.libraryGroups = this.libraryOptionGroups(libraries, byLibrary, this.text("tabellify-collection-none-in-library"));
@@ -1038,10 +1517,33 @@ var TabellifyWorkspace = {
         nodes.push(heading, ...options);
       }
     }
-    select.replaceChildren(...(placeholder ? [placeholder] : []), ...nodes);
-
+    // F011: while a selection of several collections is shown, one extra entry right after
+    // the placeholder reads "N collections" (N = collections in scope) and is chosen.
+    // Choosing any other entry replaces the selection (onCollectionChange).
     const chosen = this.currentCollection;
-    if (chosen !== "" && this.collectionKeys.has(Number(chosen))) {
+    const listed = chosen === this.SELECTION_VALUE && (this.multiSelection?.include ?? []).some((k) => this.collectionNames.has(k));
+    const extra = [];
+    if (listed) {
+      const several = new Option("", this.SELECTION_VALUE);
+      this.setCountText(several, "tabellify-collection-several", this.selectionScope(this.multiSelection).length);
+      extra.push(several);
+    }
+    select.replaceChildren(...(placeholder ? [placeholder] : []), ...extra, ...nodes);
+
+    if (chosen === this.SELECTION_VALUE) {
+      // F011: a selection of several collections stays while at least one of its included
+      // collections is listed (the rest are reported as no longer available); with none
+      // left it is gone like a single collection.
+      if (listed) {
+        select.value = this.SELECTION_VALUE;
+      } else {
+        select.value = "";
+        this.log("the chosen selection has no listed collection any more; table cleared");
+        this.collectionGone = true;
+        this.showCollection("", "collection gone");
+        this.checkSuggestionLibrary();
+      }
+    } else if (chosen !== "" && this.collectionKeys.has(Number(chosen))) {
       select.value = chosen;
     } else {
       select.value = "";
@@ -1058,6 +1560,9 @@ var TabellifyWorkspace = {
 
     const any = this.collectionKeys.size > 0;
     select.disabled = !any;
+    // F011: "Choose several…" needs collections too; the line under the row follows.
+    this.el("tabellify-choose-several").disabled = !any;
+    this.renderSelectionSummary();
     if (!any) this.showStatus("tabellify-no-collections");
     else this.el("tabellify-no-collections").hidden = true;
   },
@@ -1090,7 +1595,8 @@ var TabellifyWorkspace = {
    * @returns {number}
    */
   suggestLibraryID() {
-    return this.libraryOfKey(this.currentCollectionKey()) ?? Zotero.Libraries.userLibraryID;
+    // F011: a selection is always inside one library (ADR-0027 §1).
+    return TabellifySelection.libraryOfSelection(this.currentSelection()) ?? Zotero.Libraries.userLibraryID;
   },
 
   /**
@@ -1121,14 +1627,31 @@ var TabellifyWorkspace = {
     return new Map(collections.map((c) => [c.id, `${c.libraryID}/${c.key}`]));
   },
 
-  /** @returns {string | null} key of the chosen collection */
-  currentCollectionKey() {
-    return this.collectionKeys.get(Number(this.currentCollection)) ?? null;
+  /**
+   * F011: the selection the table shows: the selection of several collections, or the
+   * dropdown's collection as `{ include: [its key], exclude: [] }`; null when none is chosen.
+   * @returns {{ include: string[], exclude: string[] } | null}
+   */
+  currentSelection() {
+    if (this.currentCollection === this.SELECTION_VALUE) return this.multiSelection;
+    const key = this.collectionKeys.get(Number(this.currentCollection));
+    return key ? TabellifySelection.single(key) : null;
   },
 
-  /** @returns {string[] | null} the chosen collection's manual order, if it has one */
+  /**
+   * F011: the text key of the shown selection (ADR-0027 §3): the plain collection key for
+   * one collection (as before F011, so every manual order and saved table still matches),
+   * "sel:…" for several. Used for manual orders, the saved-tables filter and View drafts.
+   * @returns {string | null}
+   */
+  currentSelectionKey() {
+    const selection = this.currentSelection();
+    return selection ? TabellifySelection.selectionKey(selection) : null;
+  },
+
+  /** @returns {string[] | null} the shown selection's manual order, if it has one */
   currentManualOrder() {
-    const key = this.currentCollectionKey();
+    const key = this.currentSelectionKey();
     return key ? this.manualOrders.get(key) ?? null : null;
   },
 
@@ -1197,9 +1720,10 @@ var TabellifyWorkspace = {
    * @param {boolean} counting
    * @param {(cell: Element, group: object, tag: string) => void} [decorate]  Extra
    *   attributes for a tag cell (the page table adds data-group-id and data-tag)
-   * @returns {{ title: Element, tagCells: Element[], count: Element }}
+   * @param {boolean} [places]  F011: also the Subcollection cell (`paper.subcollections`)
+   * @returns {{ title: Element, place: Element | null, tagCells: Element[], count: Element }}
    */
-  paperCells(paper, groups, counting, decorate = null) {
+  paperCells(paper, groups, counting, decorate = null, places = false) {
     const usedText = this.text("tabellify-table-tag-used");
     const notUsedText = this.text("tabellify-table-tag-not-used");
     // F005c: each cell carries its column class (tabellify-col-<kind>), which sets its
@@ -1208,6 +1732,16 @@ var TabellifyWorkspace = {
     // `textContent` puts the string in as text, never as markup (see SECURITY above).
     title.textContent = paper.untitled ? this.untitledText : paper.title;
     if (paper.untitled) title.classList.add("tabellify-untitled");
+    // F011: one line per place (collection names are untrusted: textContent only).
+    let place = null;
+    if (places) {
+      place = this.html("td", "tabellify-col-place");
+      for (const text of Array.isArray(paper.subcollections) ? paper.subcollections : []) {
+        const line = this.html("span", "tabellify-place");
+        line.textContent = text;
+        place.append(line);
+      }
+    }
     const present = new Set(paper.groups.flatMap((g) => g.present));
     const tagCells = groups.flatMap((group) => group.tags.map((tag, i) => {
       const has = present.has(tag);
@@ -1227,7 +1761,57 @@ var TabellifyWorkspace = {
     // F005d (spec Q6): a paper with every codebook tag gets the "complete" look (green
     // plus a CSS ✓ in workspace.css). Only a class: no text or data changes.
     count.classList.toggle("tabellify-count-complete", counting && paper.total > 0 && paper.count === paper.total);
-    return { title, tagCells, count };
+    return { title, place, tagCells, count };
+  },
+
+  /**
+   * F011: the header row of one group while the table is sorted by Subcollection:
+   * "Asthma · 3 papers" across the whole table. `scope="rowgroup"` (standard HTML) tells
+   * screen readers that this header covers the rows of its <tbody>. The place name is plain
+   * text; the count is a Fluent plural (setCountText). The "·" is drawn by workspace.css.
+   * @param {{ label: string, count: number }} run  From placeRuns()
+   * @param {number} columns  How many columns the row spans
+   * @returns {Element}
+   */
+  placeGroupRow(run, columns) {
+    const tr = this.html("tr", "tabellify-place-row");
+    const th = this.html("th");
+    th.setAttribute("scope", "rowgroup");
+    th.colSpan = columns;
+    const name = this.html("span", "tabellify-place-name");
+    name.textContent = run.label; // collection names: plain text only (see SECURITY)
+    const count = this.html("span", "tabellify-place-count");
+    this.setCountText(count, "tabellify-place-group-papers", run.count);
+    th.append(name, count);
+    tr.append(th);
+    return tr;
+  },
+
+  /**
+   * F011: the latest Fluent request per element (setCountText), so an older answer that
+   * arrives late cannot overwrite a newer one. A WeakMap: an element that leaves the page
+   * drops out by itself.
+   */
+  countTextRequests: new WeakMap(),
+
+  /**
+   * F011: put a Fluent message with one number (`$count`) into `el` as plain text, e.g.
+   * "3 papers" or "4 collections" (plural forms are Fluent's job). Until Fluent answers
+   * (formatValue is asynchronous), the bare number is shown. The argument goes through
+   * numericArgs, so only a number can reach the message (SEC-013).
+   * @param {Element} el
+   * @param {string} id  Fluent ID with a `$count` variable
+   * @param {number} count
+   * @returns {Promise<void>}
+   */
+  setCountText(el, id, count) {
+    el.textContent = String(count);
+    const request = {};
+    this.countTextRequests.set(el, request);
+    const pending = document.l10n?.formatValue(id, this.numericArgs({ count }));
+    return Promise.resolve(pending).then((text) => {
+      if (text != null && this.countTextRequests.get(el) === request) el.textContent = text;
+    }, (e) => Zotero.logError(e));
   },
 
   /**
@@ -1237,11 +1821,16 @@ var TabellifyWorkspace = {
    * copy and the CSV always show the same table. A CLEAN copy, not a clone of the page
    * table: plain-text header cells (no sort buttons, no grips), no grip column, and no
    * id, draggable, tabindex, role or data-* attributes anywhere.
+   * F011: with `subcollectionColumn`, a Subcollection column after Title; with `groupRows`
+   * (sorted by Subcollection), the rows come in groups, each a <tbody> starting with a
+   * header row (placeGroupRow), as on the page.
    * @param {{ groups: Array<{ id: string, name: string, tags: string[] }>, papers: object[],
-   *   counting: boolean }} view
+   *   counting: boolean, subcollectionColumn?: boolean, groupRows?: boolean }} view
    * @param {{ count: string, countLabel: string }} texts  The k/M header text ("k/M") and
    *   its longer tooltip / screen-reader name
-   * @returns {{ head: Element[], body: Element[] }}  <tr> elements for <thead> and <tbody>
+   * @returns {{ head: Element[], body: Element[], sections: Element[] | null }}  <tr>
+   *   elements for <thead> and <tbody>; with group rows, `sections` = one <tbody> per group
+   *   (then `body` holds the paper rows only, for counting)
    */
   viewTableRows(view, texts) {
     const groups = view.groups;
@@ -1256,6 +1845,8 @@ var TabellifyWorkspace = {
       return th;
     };
     top.append(fixed("tabellify-col-title", this.text("tabellify-column-title")));
+    const places = view.subcollectionColumn === true;
+    if (places) top.append(fixed("tabellify-col-place", this.text("tabellify-column-subcollection")));
     for (const group of groups) {
       if (!oneRow) {
         // Group header over its tags; a run of ungrouped tags shows the muted "Ungrouped"
@@ -1289,11 +1880,20 @@ var TabellifyWorkspace = {
     const body = view.papers.map((paper, index) => {
       const tr = this.html("tr");
       tr.classList.toggle("tabellify-row-alt", stripes[index]);
-      const { title, tagCells, count: countCell } = this.paperCells(paper, groups, view.counting);
-      tr.append(title, ...tagCells, countCell);
+      const { title, place, tagCells, count: countCell } = this.paperCells(paper, groups, view.counting, null, places);
+      tr.append(title, ...(place ? [place] : []), ...tagCells, countCell);
       return tr;
     });
-    return { head: twoRows ? [top, second] : [top], body };
+    let sections = null;
+    if (places && view.groupRows === true) {
+      const columns = 1 + 1 + this.headerShape(groups).tagCount + 1;
+      sections = this.placeRuns(view.papers).map((run) => {
+        const section = this.html("tbody", "tabellify-place-group");
+        section.append(this.placeGroupRow(run, columns), ...body.slice(run.start, run.start + run.count));
+        return section;
+      });
+    }
+    return { head: twoRows ? [top, second] : [top], body, sections };
   },
 
   /**
@@ -1312,7 +1912,8 @@ var TabellifyWorkspace = {
    * @param {Array<{ id: string, name: string, tags: string[], run?: number }>} groups
    */
   renderTableHeader(groups) {
-    const signature = JSON.stringify(groups.map((g) => [g.id, g.run ?? null, g.name, g.tags]));
+    // F011: the Subcollection column is part of the shape too.
+    const signature = JSON.stringify([this.tablePlaces, groups.map((g) => [g.id, g.run ?? null, g.name, g.tags])]);
     if (signature === this.headerSignature) return;
     this.headerSignature = signature;
     const groupRow = this.el("tabellify-items-group-row");
@@ -1325,6 +1926,9 @@ var TabellifyWorkspace = {
     // <col> elements: with `table-layout: fixed` the column widths come from them
     // (workspace.css), because the first header row has cells that span several columns.
     const cols = [this.html("col", "tabellify-col-grip"), this.html("col", "tabellify-col-title")];
+    // F011: the fixed Subcollection header (in workspace.xhtml) is shown only with the column.
+    this.el("tabellify-items-place-header").hidden = !this.tablePlaces;
+    if (this.tablePlaces) cols.push(this.html("col", "tabellify-col-place"));
     for (const group of groups) {
       const ungrouped = this.isUngrouped(group);
       if (!oneRow) {
@@ -1509,6 +2113,14 @@ var TabellifyWorkspace = {
   },
 
   /**
+   * F011: "collection <ID>" or "a selection" for Debug Output (never a key or a name, SEC-011).
+   * @returns {string}
+   */
+  collectionForLog() {
+    return this.currentCollection === this.SELECTION_VALUE ? "a selection" : `collection ${this.currentCollection}`;
+  },
+
+  /**
    * Use a new column layout (if it changes what is shown), re-render and log the move.
    * @param {{ topOrder: Array<object>, tagOrder: Record<string, string[]> }} next
    * @param {string} groupId  The moved group, or the block of the moved tag ("ungrouped")
@@ -1553,7 +2165,8 @@ var TabellifyWorkspace = {
    * @returns {boolean} true if something changed
    */
   movePaper(paperId, computeOrder, how) {
-    const collectionKey = this.currentCollectionKey();
+    // F011: the order belongs to the selection's key (plain key for one collection).
+    const collectionKey = this.currentSelectionKey();
     const keys = this.monitorData?.keys;
     const key = keys?.get(paperId);
     if (!collectionKey || !key) return false;
@@ -1566,7 +2179,7 @@ var TabellifyWorkspace = {
     this.renderMonitor();
     this.log(
       `layout: paper ${paperId} moved to position ${next.indexOf(key) + 1} of ${next.length} ` +
-      `in collection ${this.currentCollection} (${how}); showing manual order`,
+      `in ${this.collectionForLog()} (${how}); showing manual order`,
     );
     this.layoutChanged();
     return true;
@@ -1748,7 +2361,8 @@ var TabellifyWorkspace = {
         add(th, "tabellify-drop-below");
         const index = this.columnIndex(r.groupId, r.tag);
         if (index >= 0) {
-          for (const row of this.el("tabellify-items-body").children) add(row.cells[index], "tabellify-drop-nest");
+          // F011: paper rows only (group header rows have one wide cell), in every <tbody>.
+          for (const row of this.el("tabellify-items-table").querySelectorAll("tbody tr[data-paper-id]")) add(row.cells[index], "tabellify-drop-nest");
         }
       } else {
         add(th, sideClass);
@@ -1780,7 +2394,8 @@ var TabellifyWorkspace = {
    * Counted from the shown blocks: grip and Title come first.
    */
   columnIndex(groupId, tag) {
-    let index = 2;
+    // Grip and Title come first; F011: then the Subcollection column, when shown.
+    let index = this.tablePlaces ? 3 : 2;
     for (const g of this.tableGroups) {
       const i = g.tags.indexOf(tag);
       if (i >= 0 && g.id === groupId) return index + i;
@@ -1847,7 +2462,8 @@ var TabellifyWorkspace = {
 
   /** Put the keyboard focus on a paper's grip (after the body was rebuilt). */
   focusRowGrip(paperId) {
-    this.el("tabellify-items-body").querySelector(`.tabellify-grip[data-paper-id="${Number(paperId)}"]`)?.focus();
+    // F011: in any <tbody> (group header rows split the body while sorted by Subcollection).
+    this.el("tabellify-items-table").querySelector(`tbody .tabellify-grip[data-paper-id="${Number(paperId)}"]`)?.focus();
   },
 
   /** A grip in this table started a drag: remember what is dragged. */
@@ -2083,8 +2699,8 @@ var TabellifyWorkspace = {
       event.preventDefault();
       const id = Number(grip.dataset.paperId);
       if (W.movePaper(id, (seed, key) => TabellifyTableLayout.moveRowBy(seed, key, delta), "keyboard")) {
-        const title = W.el("tabellify-items-body")
-          .querySelector(`tr[data-paper-id="${id}"] td.tabellify-col-title`)?.textContent ?? "";
+        const title = W.el("tabellify-items-table")
+          .querySelector(`tbody tr[data-paper-id="${id}"] td.tabellify-col-title`)?.textContent ?? "";
         W.announce(title, W.displayedPaperIds.indexOf(id) + 1, W.displayedPaperIds.length);
       }
       W.focusRowGrip(id);
@@ -2102,17 +2718,17 @@ var TabellifyWorkspace = {
         W.sortKey = TabellifyTableLayout.MANUAL;
         W.sortDirection = "asc";
         W.renderMonitor();
-        W.log(`layout: manual order shown for collection ${W.currentCollection}`);
+        W.log(`layout: manual order shown for ${W.collectionForLog()}`);
         break;
       case "clear-manual": {
-        const key = W.currentCollectionKey();
+        const key = W.currentSelectionKey();
         if (!key || !W.manualOrders.delete(key)) return;
         W.sortKey = TabellifyTagMonitor.DEFAULT_SORT.key;
         W.sortDirection = TabellifyTagMonitor.DEFAULT_SORT.direction;
         W.renderMonitor();
         // The two manual-order buttons are now hidden: keep the focus in the toolbar.
         W.el("tabellify-table-reset-columns").focus();
-        W.log(`layout: manual order cleared for collection ${W.currentCollection}`);
+        W.log(`layout: manual order cleared for ${W.collectionForLog()}`);
         W.layoutChanged();
         break;
       }
@@ -3311,6 +3927,8 @@ var TabellifyWorkspace = {
     "tabellify-export-file-fallback",
     "tabellify-csv-header-k",
     "tabellify-csv-header-m",
+    // F011: the Subcollection column (CSV header and the View table copy's header).
+    "tabellify-column-subcollection",
   ],
 
   /** True while an export runs (dialog open or writing): one click = one dialog. */
@@ -3364,6 +3982,8 @@ var TabellifyWorkspace = {
           untitled: this.untitledText,
           k: this.text("tabellify-csv-header-k"),
           m: this.text("tabellify-csv-header-m"),
+          // F011: the Subcollection column's header (used only when the view shows it).
+          subcollection: this.text("tabellify-column-subcollection"),
         },
       );
       const stats = csv.stats;
@@ -3412,13 +4032,33 @@ var TabellifyWorkspace = {
    * CSV" under the table and the draft "View table" modal use (F008, F007a).
    */
   pageView() {
-    return { groups: this.tableGroups, papers: this.tableRows, counting: this.tableCounting };
+    // F011: the Subcollection column and (sorted by it, not manual) the group header rows.
+    return {
+      groups: this.tableGroups, papers: this.tableRows, counting: this.tableCounting,
+      subcollectionColumn: this.tablePlaces, groupRows: this.placeGroupsShown(),
+    };
   },
 
-  /** The chosen (top) collection's own name, from the data already read; "" if unknown. */
+  /**
+   * The chosen collection's own name, from the data already read; "" if unknown. F011: for a
+   * selection, the included collections' names joined with ", " (selectionName).
+   */
   exportBaseName() {
-    const data = this.monitorData;
-    return data?.collections?.find((c) => c.id === data.rootId)?.name ?? "";
+    return this.selectionName(this.monitorData);
+  },
+
+  /**
+   * F011: the name of what `data` covers: one collection's name, or the included
+   * collections' names in tree order joined with ", " (the export file name, the View
+   * table Name and a saved table's `collectionName`, ADR-0027 §2). Data made before F011
+   * (no selection) gives the root's name.
+   * @param {{ selection?: object, collections?: object[], rootId?: number } | null} data
+   * @returns {string}
+   */
+  selectionName(data) {
+    if (!data) return "";
+    if (data.selection) return TabellifySelection.includedNames(data.collections ?? [], data.selection).join(", ");
+    return data.collections?.find((c) => c.id === data.rootId)?.name ?? "";
   },
 
   /**
@@ -3544,8 +4184,11 @@ var TabellifyWorkspace = {
    */
   viewSource() {
     if (this.viewMode === "saved") {
-      if (this.viewShowingLive && this.viewLive) return this.viewLive.view;
-      return TabellifySavedTables.snapshotView(this.viewSnapshot);
+      // F011: group header rows when the saved table is sorted by Subcollection.
+      const groupRows = this.viewTable()?.definition.sort.key === TabellifyTagMonitor.SUBCOLLECTION_SORT;
+      if (this.viewShowingLive && this.viewLive) return { ...this.viewLive.view, groupRows: groupRows && this.viewLive.view.subcollectionColumn };
+      const snapshot = TabellifySavedTables.snapshotView(this.viewSnapshot);
+      return { ...snapshot, groupRows: groupRows && snapshot.subcollectionColumn };
     }
     return this.pageView();
   },
@@ -3556,12 +4199,21 @@ var TabellifyWorkspace = {
    */
   renderViewTable() {
     const view = this.viewSource();
-    const { head, body } = this.viewTableRows(view, {
+    const { head, body, sections } = this.viewTableRows(view, {
       count: this.text("tabellify-column-count"),
       countLabel: this.text("tabellify-view-count-label"),
     });
     this.el("tabellify-view-head").replaceChildren(...head);
-    this.el("tabellify-view-body").replaceChildren(...body);
+    // F011: with group header rows, the first group goes into the dialog's own <tbody> and
+    // each further group into its own <tbody> after it (removed again on the next render).
+    const viewBody = this.el("tabellify-view-body");
+    for (const extra of this.el("tabellify-view-grid").querySelectorAll("tbody.tabellify-place-group")) extra.remove();
+    if (sections && sections.length > 0) {
+      viewBody.replaceChildren(...sections[0].children);
+      for (const section of sections.slice(1)) this.el("tabellify-view-grid").append(section);
+    } else {
+      viewBody.replaceChildren(...body);
+    }
     return { papers: body.length, tagColumns: this.headerShape(view.groups).tagCount, headerRows: head.length };
   },
 
@@ -3576,7 +4228,8 @@ var TabellifyWorkspace = {
     this.viewTableId = null;
     this.viewSnapshot = null;
     // The remembered values for this collection, else the collection's name (spec Q3).
-    this.viewKey = this.currentCollectionKey();
+    // F011: per selection key.
+    this.viewKey = this.currentSelectionKey();
     this.viewDefaultName = this.exportBaseName();
     this.viewDefaultDescription = "";
     const draft = this.viewKey ? this.viewDrafts.get(this.viewKey) : undefined;
@@ -3677,11 +4330,11 @@ var TabellifyWorkspace = {
       meta.textContent = "";
       return;
     }
-    const key = table?.definition.collectionKey ?? null;
     // F003b: "<library> · <collection>"; the library part is left out when that library
     // is no longer listed (e.g. a removed group) or the collection is not found.
-    const library = this.libraryLabel(key);
-    const collection = (library === null ? "" : `${library} · `) + this.collectionLabel(key, this.viewSnapshot.collectionName);
+    // F011: every included collection's current name (the snapshot keeps its own list).
+    const label = this.selectionLabel(table?.definition.selection, this.viewSnapshot.collectionName, Infinity);
+    const collection = (label.library === null ? "" : `${label.library} · `) + label.names;
     meta.hidden = false;
     meta.textContent = this.viewShowingLive && this.viewLive
       ? `${this.text("tabellify-view-meta-live")} · ${collection}`
@@ -3735,6 +4388,7 @@ var TabellifyWorkspace = {
   liveBlocker() {
     const table = this.viewTable();
     if (!table) return "";
+    // F011: Show live needs at least one included collection that is listed now.
     if (this.liveCollectionId(table) === null) return "tabellify-view-live-no-collection";
     const codebooks = this.codebook?.codebooks ?? [];
     if (!codebooks.some((c) => c?.id === table.definition.codebookId)) return "tabellify-view-live-no-codebook";
@@ -3742,12 +4396,14 @@ var TabellifyWorkspace = {
   },
 
   /**
-   * The numeric ID of the saved table's collection (by its key), or null when not found.
+   * The numeric ID of the saved table's first included collection that is listed now (by
+   * its key), or null when none is found (F011: then Show live is off).
    * F003b: `collectionKeys` covers every listed library, so a group table is found while
    * a My Library collection is chosen (and the other way round).
    */
   liveCollectionId(table) {
-    for (const [id, key] of this.collectionKeys) if (key === table.definition.collectionKey) return id;
+    const include = table.definition.selection?.include ?? [];
+    for (const [id, key] of this.collectionKeys) if (include.includes(key)) return id;
     return null;
   },
 
@@ -3764,8 +4420,16 @@ var TabellifyWorkspace = {
     else if (this.viewShowingLive && this.viewLive?.missing.length > 0) {
       text = `${this.text("tabellify-view-live-missing")} ${this.viewLive.missing.join(", ")}`;
     }
-    note.hidden = text === "";
+    // F011: "1 saved collection is no longer available." after the rest (a Fluent plural).
+    const gone = blocker || this.viewLiveError || !this.viewShowingLive ? 0 : this.viewLive?.gone ?? 0;
+    note.hidden = text === "" && gone === 0;
     note.textContent = text;
+    if (gone > 0) {
+      const part = this.html("span", "tabellify-view-live-gone");
+      this.setCountText(part, "tabellify-view-live-partly-gone", gone);
+      if (text !== "") note.append(" ");
+      note.append(part);
+    }
   },
 
   /** True after a live read failed (until the next try or another table). */
@@ -3803,7 +4467,8 @@ var TabellifyWorkspace = {
     this.showExportStatus("tabellify-view-loading", null, false, "view");
     let data;
     try {
-      data = await this.gatherMonitorData(this.liveCollectionId(table));
+      // F011: the SAVED selection's rules on today's tree (gone collections are ignored).
+      data = await this.gatherMonitorData(table.definition.selection);
     } catch (e) {
       if (request !== this.viewLiveRequest || this.unloaded) return null;
       this.viewLiveLoading = false;
@@ -3826,7 +4491,9 @@ var TabellifyWorkspace = {
       view: live.view,
       missing: live.missing,
       keyOf: (p) => keys?.get(p.id),
-      collectionName: data.collections.find((c) => c.id === data.rootId)?.name ?? "",
+      collectionName: this.selectionName(data),
+      // F011: included collections of the saved selection that are gone (a count only).
+      gone: data.gone ?? 0,
     };
     this.viewShowingLive = true;
     const shown = this.renderViewTable();
@@ -3834,7 +4501,8 @@ var TabellifyWorkspace = {
     this.showExportStatus(null, null, false, "view");
     this.updateViewControls();
     this.log(`view: live table for ${id}: ${shown.papers} paper(s), ${shown.tagColumns} tag column(s), ` +
-      `${live.missing.length} saved column(s) missing`);
+      `${live.missing.length} saved column(s) missing` +
+      (this.viewLive.gone > 0 ? `, ${this.viewLive.gone} saved collection(s) no longer available` : ""));
     return this.viewLive;
   },
 
@@ -4135,6 +4803,29 @@ var TabellifyWorkspace = {
     }
   },
 
+  /** F011: how many collection names a saved table's entry and meta line show. */
+  SAVED_NAMES_SHOWN: 3,
+
+  /**
+   * F011: the library and collection part of a saved table's line: the library's name (or
+   * null, as libraryLabel), the CURRENT names of the selection's included collections in
+   * tree order joined with ", " (first `max`; `more` = how many more), or, when none is
+   * found, the saved name followed by "(collection not found)" (as before F011).
+   * @param {{ include: string[], exclude: string[] }} selection
+   * @param {string} savedName  The snapshot's collectionName
+   * @param {number} max
+   * @returns {{ library: string | null, names: string, more: number }}
+   */
+  selectionLabel(selection, savedName, max) {
+    const found = (selection?.include ?? []).filter((k) => this.collectionNames.has(k));
+    if (found.length === 0) return { library: null, names: this.collectionLabel(null, savedName), more: 0 };
+    // Tree order: the order of the collection index (each library depth-first, as listed).
+    const order = [...this.collectionNames.keys()];
+    found.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const { shown, more } = TabellifySelection.shortList(found.map((k) => this.collectionNames.get(k)), max);
+    return { library: this.libraryLabel(found[0]), names: shown.join(", "), more };
+  },
+
   /**
    * The collection's current name, or (deleted, or in the trash) the name saved in the
    * snapshot followed by "(collection not found)".
@@ -4184,7 +4875,8 @@ var TabellifyWorkspace = {
       return;
     }
     const total = this.savedTables.tables.length;
-    const key = this.savedFilter === "collection" ? this.currentCollectionKey() : null;
+    // F011 (spec Q13): "Current selection" = tables with the same selection key.
+    const key = this.savedFilter === "collection" ? this.currentSelectionKey() : null;
     const noCollection = this.savedFilter === "collection" && key === null;
     const entries = noCollection ? [] : TabellifySavedTables.listTables(this.savedTables, key);
     count.hidden = false;
@@ -4230,10 +4922,12 @@ var TabellifyWorkspace = {
     const meta = this.html("span", "tabellify-saved-meta");
     // F003b: the library name comes first ("Lab Group · Shared papers · …"); left out when
     // the library is no longer listed or the collection is not found.
-    const library = this.libraryLabel(entry.collectionKey);
+    // F011: the selection's included collections ("Asthma, COPD, Diabetes"), first 3 then
+    // "+N more".
+    const label = this.selectionLabel(entry.selection, entry.collectionName, this.SAVED_NAMES_SHOWN);
     for (const part of [
-      ...(library === null ? [] : [library]),
-      this.collectionLabel(entry.collectionKey, entry.collectionName),
+      ...(label.library === null ? [] : [label.library]),
+      label.names,
       `${entry.papers} ${this.text("tabellify-saved-papers")}`,
       `${entry.columns} ${this.text("tabellify-saved-columns")}`,
       `${this.text("tabellify-saved-on")} ${this.formatDate(entry.updatedAt)}`,
@@ -4241,6 +4935,12 @@ var TabellifyWorkspace = {
       const span = this.html("span");
       span.textContent = part;
       meta.append(span);
+      // F011: "+N more" right after the names (a Fluent text with a number).
+      if (part === label.names && label.more > 0) {
+        const more = this.html("span", "tabellify-saved-more");
+        this.setCountText(more, "tabellify-selection-more", label.more);
+        span.append(" ", more);
+      }
     }
     textBox.append(name, meta);
     const actions = this.html("span", "tabellify-saved-actions");
@@ -4431,7 +5131,8 @@ var TabellifyWorkspace = {
     const keyOf = (p) => keys?.get(p.id);
     const manual = this.sortKey === TabellifyTableLayout.MANUAL;
     const definition = TabellifySavedTables.buildDefinition({
-      collectionKey: this.currentCollectionKey(),
+      // F011: the selection the page shows (canonical rules).
+      selection: this.currentSelection(),
       codebookId: this.codebook?.codebooks?.[0]?.id ?? "c1",
       columnLayout: this.columnLayout,
       sort: { key: this.sortKey, direction: this.sortDirection },
@@ -4620,6 +5321,13 @@ var TabellifyWorkspace = {
     saved?.removeEventListener("keydown", TabellifyWorkspace.onSavedKeydown);
     TabellifyWorkspace.el("tabellify-saved-filter")
       ?.removeEventListener("change", TabellifyWorkspace.onSavedFilterChange);
+    TabellifyWorkspace.el("tabellify-choose-several")
+      ?.removeEventListener("click", TabellifyWorkspace.onChooseSeveralClick);
+    const picker = TabellifyWorkspace.el("tabellify-picker-dialog");
+    picker?.removeEventListener("click", TabellifyWorkspace.onPickerClick);
+    picker?.removeEventListener("change", TabellifyWorkspace.onPickerChange);
+    picker?.removeEventListener("keydown", TabellifyWorkspace.onPickerKeydown);
+    picker?.removeEventListener("close", TabellifyWorkspace.onPickerClose);
     TabellifyWorkspace.el("tabellify-monitor-count-item-tags")
       ?.removeEventListener("change", TabellifyWorkspace.onCountItemTagsChange);
     const section = TabellifyWorkspace.el("tabellify-codebook");

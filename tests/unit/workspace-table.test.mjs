@@ -198,6 +198,8 @@ function makeDocument() {
       el("tr", { id: "tabellify-items-group-row", class: "tabellify-group-row" },
         el("th", { rowspan: "2", class: "tabellify-col-grip tabellify-fixed-header" }),
         el("th", { rowspan: "2", class: "tabellify-col-title tabellify-fixed-header" }, sortButton("title")),
+        // F011: the Subcollection header, hidden unless the table covers several collections.
+        el("th", { id: "tabellify-items-place-header", rowspan: "2", hidden: "", class: "tabellify-col-place tabellify-fixed-header" }, sortButton("subcollection")),
         el("th", { id: "tabellify-items-count-header", rowspan: "2", class: "tabellify-col-count tabellify-fixed-header" }, sortButton("count")),
       ),
       el("tr", { id: "tabellify-items-tag-row", class: "tabellify-tag-row" }),
@@ -229,7 +231,7 @@ function load() {
   const Zotero = { debug: (m) => debug.push(m), logError: () => {} };
   const sandbox = vm.createContext({ document, Zotero });
   for (const name of ["codebook-model.js", "codebook-store.js", "tag-script-model.js", "script-suggest-model.js",
-    "tag-monitor-model.js", "table-layout-model.js", "regroup-model.js", "saved-tables-model.js", "tables-store.js",
+    "tag-monitor-model.js", "selection-model.js", "table-layout-model.js", "regroup-model.js", "saved-tables-model.js", "tables-store.js",
     "csv-model.js", "csv-export.js", "workspace.js"]) {
     const file = join(contentDir, name);
     vm.runInContext(readFileSync(file, "utf8"), sandbox, { filename: file });
@@ -315,9 +317,11 @@ function setup({ groups = GROUPS(), ungrouped = [], countItemTags = false, colum
 const headerRow = (doc, id) => doc.byId.get(id).children;
 /** Short names of the first header row: "grip", "title", "count", "group:<id>/<span>", "tag:<name>". */
 function groupHeaders(doc) {
-  return headerRow(doc, "tabellify-items-group-row").map((th) => {
+  // F011: the fixed Subcollection header is listed ("place") only while it is shown.
+  return headerRow(doc, "tabellify-items-group-row").filter((th) => !(th.classList.contains("tabellify-col-place") && th.hidden)).map((th) => {
     if (th.classList.contains("tabellify-col-grip")) return "grip";
     if (th.classList.contains("tabellify-col-title")) return "title";
+    if (th.classList.contains("tabellify-col-place")) return "place";
     if (th.classList.contains("tabellify-col-count")) return "count";
     if (th.hasAttribute("data-tag")) return `tag:${th.dataset.tag}`;
     return `group:${th.dataset.groupId}/${th.colSpan}`;
@@ -343,7 +347,7 @@ test("render: header = grip, Title, one group header per super-tag (spanning its
   assert.deepEqual(groupHeaders(document), ["grip", "title", "group:g2/2", "group:g3/1", "count"]);
   assert.deepEqual(tagHeaders(document), ["Heat index", "Temperature", "Mortality"]);
   // A group without tags has no column. The fixed cells span both header rows.
-  const fixed = headerRow(document, "tabellify-items-group-row").filter((th) => th.classList.contains("tabellify-fixed-header"));
+  const fixed = headerRow(document, "tabellify-items-group-row").filter((th) => th.classList.contains("tabellify-fixed-header") && !th.hidden);
   assert.deepEqual(fixed.map((th) => th.rowSpan), [2, 2, 2]);
   assert.equal(document.byId.get("tabellify-items-tag-row").hidden, false);
   // One <col> per column (for the widths) and the tag count for the table width.
@@ -410,7 +414,7 @@ test("render: without codebook tags only Title and k/M show; the tag header row 
   const { document } = setup({ groups: [{ id: "g2", name: "Exposure", tags: [] }] });
   assert.deepEqual(groupHeaders(document), ["grip", "title", "count"]);
   assert.equal(document.byId.get("tabellify-items-tag-row").hidden, true);
-  const fixed = headerRow(document, "tabellify-items-group-row").filter((th) => th.classList.contains("tabellify-fixed-header"));
+  const fixed = headerRow(document, "tabellify-items-group-row").filter((th) => th.classList.contains("tabellify-fixed-header") && !th.hidden);
   assert.deepEqual(fixed.map((th) => th.rowSpan), [1, 1, 1]);
   assert.deepEqual(bodyRows(document).map((tr) => tr.children.at(-1).textContent), ["–", "–", "–"]);
 });
@@ -601,7 +605,7 @@ test("AC16: only ungrouped tags → one header row (tag headers in the first row
   assert.deepEqual(groupHeaders(document), ["grip", "title", "tag:age", "tag:sex", "count"]);
   assert.equal(document.byId.get("tabellify-items-tag-row").hidden, true);
   assert.deepEqual(tagHeaders(document), []);
-  const fixed = headerRow(document, "tabellify-items-group-row").filter((th) => th.classList.contains("tabellify-fixed-header"));
+  const fixed = headerRow(document, "tabellify-items-group-row").filter((th) => th.classList.contains("tabellify-fixed-header") && !th.hidden);
   assert.deepEqual(fixed.map((th) => th.rowSpan), [1, 1, 1]);
   assert.equal(document.byId.get("tabellify-items-cols").children.length, 2 + 2 + 1);
   assert.deepEqual(bodyRows(document).map((tr) => tr.children.length), [5, 5, 5]);
@@ -2446,7 +2450,8 @@ test("007b AC19: entries newest first with name, collection, counts and date as 
   assert.equal(d("tabellify-saved-count").textContent, "2");
   assert.equal(d("tabellify-saved-count").hidden, false);
   assert.equal(d("tabellify-saved-message").hidden, true);
-  assert.ok(debug.includes("Tabellify: workspace: saved tables: loaded 2 table(s) (file schema 1)"), debug.join("\n"));
+  // F011: the model writes schema 2, so the fixture file is schema 2.
+  assert.ok(debug.includes("Tabellify: workspace: saved tables: loaded 2 table(s) (file schema 2)"), debug.join("\n"));
 });
 
 test("007b AC19: the filter and the three messages; the summary count follows the filter", async () => {
@@ -2480,7 +2485,8 @@ test("007b AC19: the filter and the three messages; the summary count follows th
 });
 
 test("007b AC19: a damaged or newer file shows its message and path; no entries; Save off; nothing written", async () => {
-  for (const [fileText, message] of [["{ broken", "could not be read"], [JSON.stringify({ schemaVersion: 2, revision: 1 }), "newer version"]]) {
+  // F011: schema 2 is current now, so "newer" is schema 3.
+  for (const [fileText, message] of [["{ broken", "could not be read"], [JSON.stringify({ schemaVersion: 3, revision: 1 }), "newer version"]]) {
     const { W, d, fs, debug } = await savedSetup({ fileText });
     assert.equal(listItems(d).length, 0);
     assert.match(d("tabellify-saved-message-text").textContent, new RegExp(message));
@@ -2598,8 +2604,9 @@ test("007b AC20: Save table saves the definition and the shown snapshot once, th
   assert.equal(t.id, "t1");
   assert.equal(t.name, "Heat test A");
   assert.equal(t.description, "First pass");
+  // F011: the definition holds the selection (one collection: include it, exclude nothing).
   assert.deepEqual(t.definition, {
-    collectionKey: "1/COLL0001", codebookId: "c1",
+    selection: { include: ["1/COLL0001"], exclude: [] }, codebookId: "c1",
     columnLayout: { topOrder: [{ group: "g3" }, { group: "g2" }], tagOrder: {} },
     sort: { key: "tag:Mortality", direction: "desc" }, manualOrder: null, countItemTags: true,
   });
@@ -2817,7 +2824,8 @@ test("007b AC20: Show live reads once, renders the live table with the note; Sho
   assert.equal(d("tabellify-view-save-new").hidden, true);
   assert.equal(d("tabellify-view-live-note").hidden, true);
   await W.onViewClick(click(d("tabellify-view-live")));
-  assert.deepEqual(reads, [1], "one read of the saved collection");
+  // F011: the live read gets the saved selection (its rules), not a collection ID.
+  assert.deepEqual(JSON.parse(JSON.stringify(reads)), [{ include: ["1/COLL0001"], exclude: [] }], "one read of the saved selection");
   assert.equal(W.viewShowingLive, true);
   // Live columns: today's codebook (age, Heat index, Temperature), not the saved Mortality.
   const heads = d("tabellify-view-head").children.flatMap((tr) => tr.children.map((th) => th.textContent));
@@ -3205,4 +3213,481 @@ test("003b AC14: a saved group table shows its library and current collection na
   assert.equal(d("tabellify-view-meta").textContent, `Snapshot from ${fmt(T2_TIME)} · Left group coll (collection not found)`);
   assert.equal(W.liveBlocker(), "tabellify-view-live-no-collection");
   W.closeView();
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 (T6): selections, the Subcollection column, group header rows, the manual
+// order of a selection, saved tables of a selection and the live view of a partly gone one
+// ---------------------------------------------------------------------------------------
+
+const PHEN = "1/PHEN0001";
+const ASTH = "1/ASTH0002";
+const COPD = "1/COPD0003";
+const RESP = "1/RESP0004";
+const BRON = "1/BRON0005";
+const METH = "1/METH0009";
+/** Phenotypes (1) › Asthma (2), COPD (3), Respiratory (4) › Bronchitis (5); Methods (9). */
+const PLACE_TREE = () => [
+  { id: 1, parentID: false, name: "Phenotypes", key: PHEN },
+  { id: 2, parentID: 1, name: "Asthma", key: ASTH },
+  { id: 3, parentID: 1, name: "COPD", key: COPD },
+  { id: 4, parentID: 1, name: "Respiratory", key: RESP },
+  { id: 5, parentID: 4, name: "Bronchitis", key: BRON },
+  { id: 9, parentID: null, name: "Methods", key: METH },
+];
+
+/** What gatherMonitorData() returns for `selection` on PLACE_TREE (scope by the real model). */
+function placeData(sandbox, selection) {
+  const collections = PLACE_TREE();
+  const Sel = sandbox.TabellifySelection;
+  const scope = Sel.scope(collections, selection);
+  const all = [
+    { id: 201, title: "Alpha", collectionId: 2, itemTags: [], annotationTags: [{ tag: "Heat index" }] },
+    { id: 202, title: "Beta", collectionId: 2, itemTags: [], annotationTags: [{ tag: "Mortality" }] },
+    { id: 202, title: "Beta", collectionId: 3, itemTags: [], annotationTags: [{ tag: "Mortality" }] },
+    { id: 203, title: "Gamma", collectionId: 1, itemTags: [], annotationTags: [] },
+    { id: 204, title: "Delta", collectionId: 5, itemTags: [], annotationTags: [{ tag: "Temperature" }] },
+    { id: 209, title: "Elsewhere", collectionId: 9, itemTags: [], annotationTags: [] },
+  ];
+  return {
+    rootId: scope[0] ?? null,
+    selection,
+    scopeIds: scope,
+    gone: Sel.goneIncludes(collections, selection).length,
+    collections,
+    collectionKeys: new Map(collections.map((c) => [c.id, c.key])),
+    papers: all.filter((p) => scope.includes(p.collectionId)),
+    keys: new Map([[201, "ITEM0201"], [202, "ITEM0202"], [203, "ITEM0203"], [204, "ITEM0204"], [209, "ITEM0209"]]),
+    annotationErrors: 0,
+    scopeSize: scope.length,
+  };
+}
+
+/** setup() switched to PLACE_TREE: `selection` shown through applySelection with a fake read. */
+async function placeSetup(selection, setupFn = setup) {
+  const env = await setupFn();
+  const { W, sandbox } = env;
+  env.reads = [];
+  W.gatherMonitorData = async (target) => {
+    env.reads.push(JSON.parse(JSON.stringify(target)));
+    return placeData(sandbox, typeof target === "number" ? { include: [PLACE_TREE().find((c) => c.id === target).key], exclude: [] } : target);
+  };
+  W.collectionKeys = new Map(PLACE_TREE().map((c) => [c.id, c.key]));
+  W.collectionNames = new Map(PLACE_TREE().map((c) => [c.key, c.name]));
+  W.libraryTrees = new Map([[1, PLACE_TREE()]]);
+  W.libraryGroups = [{ libraryID: 1, label: "My Library", options: [], empty: false }];
+  // `new Option(text, value)` as in a browser (the dropdown's "N collections" entry).
+  sandbox.Option = function Option(text, value) {
+    const option = new FakeElement("option");
+    option.textContent = text;
+    option.value = value;
+    return option;
+  };
+  W.listedLibraryIDs = new Set([1]);
+  W.libraryNames = new Map([[1, "My Library"]]);
+  W.strings["tabellify-column-subcollection"] = "Subcollection";
+  await W.applySelection(selection);
+  return env;
+}
+
+/** Every <tbody> of the page table, as [header text or null, paper titles]. */
+function placeSections(doc) {
+  return doc.byId.get("tabellify-items-table").children.filter((c) => c.localName === "tbody").map((tb) => {
+    const head = tb.children.find((tr) => tr.classList.contains("tabellify-place-row"));
+    const titles = tb.children.filter((tr) => tr.dataset.paperId).map((tr) => tr.querySelector("td.tabellify-col-title").textContent);
+    return [head ? head.textContent : null, titles];
+  });
+}
+const placeCell = (doc, title) => [...doc.byId.get("tabellify-items-table").querySelectorAll("tbody tr[data-paper-id]")]
+  .find((tr) => tr.querySelector("td.tabellify-col-title").textContent === title)
+  .querySelector("td.tabellify-col-place");
+
+test("F011 AC11 (as data): Phenotypes with subcollections shows a Subcollection column after Title", async () => {
+  const { W, document, reads } = await placeSetup({ include: [PHEN], exclude: [] });
+  // A single collection: the dropdown shows it (no selection entry) and it is read by ID.
+  assert.equal(W.currentCollection, "1");
+  assert.deepEqual(reads, [1]);
+  assert.equal(W.currentSelectionKey(), PHEN);
+  assert.deepEqual(groupHeaders(document).slice(0, 3), ["grip", "title", "place"]);
+  assert.deepEqual(placeCell(document, "Alpha").children.map((s) => s.textContent), ["Asthma"]);
+  assert.deepEqual(placeCell(document, "Beta").children.map((s) => s.textContent), ["Asthma", "COPD"], "two places, two lines");
+  assert.deepEqual(placeCell(document, "Gamma").children.map((s) => s.textContent), ["Phenotypes"], "directly in the anchor");
+  assert.deepEqual(placeCell(document, "Delta").children.map((s) => s.textContent), ["Respiratory › Bronchitis"]);
+  // Every paper row has one more cell than before (grip, Title, Subcollection, tags, k/M).
+  const cols = document.byId.get("tabellify-items-cols").children.map((c) => c.className);
+  assert.deepEqual(cols.slice(0, 3), ["tabellify-col-grip", "tabellify-col-title", "tabellify-col-place"]);
+  for (const tr of document.byId.get("tabellify-items-table").querySelectorAll("tbody tr[data-paper-id]")) assert.equal(tr.children.length, cols.length);
+});
+
+test("F011 AC11 (as data): one collection without subcollections shows no Subcollection column", () => {
+  const { document, W } = setup();
+  assert.equal(W.tablePlaces, false);
+  assert.equal(document.byId.get("tabellify-items-place-header").hidden, true);
+  assert.equal(groupHeaders(document).includes("place"), false);
+  assert.equal(document.byId.get("tabellify-items-table").querySelectorAll("td.tabellify-col-place").length, 0);
+});
+
+test("F011 AC12 (as data): sorting by Subcollection draws one group per first place; other sorts remove them", async () => {
+  const { W, document } = await placeSetup({ include: [PHEN], exclude: [] });
+  const button = clickSort(W, document, "subcollection");
+  assert.equal(button.closest("th").getAttribute("aria-sort"), "ascending");
+  // No Fluent in the fake document: the count shows as a bare number.
+  assert.deepEqual(placeSections(document), [
+    ["Phenotypes1", ["Gamma"]],
+    ["Asthma2", ["Alpha", "Beta"]],
+    ["Respiratory › Bronchitis1", ["Delta"]],
+  ]);
+  const head = document.byId.get("tabellify-items-body").children[0].children[0];
+  assert.equal(head.localName, "th");
+  assert.equal(head.getAttribute("scope"), "rowgroup");
+  assert.equal(head.colSpan, 2 + 1 + 3 + 1, "grip, Title, Subcollection, three tag columns, k/M");
+  assert.equal(head.querySelector(".tabellify-place-count").textContent, "1");
+  // Reversed: the place order turns round; titles stay A→Z inside a group.
+  clickSort(W, document, "subcollection");
+  assert.deepEqual(placeSections(document).map((s) => s[1]), [["Delta"], ["Alpha", "Beta"], ["Gamma"]]);
+  // Another sort: one <tbody>, no header rows.
+  clickSort(W, document, "title");
+  assert.deepEqual(placeSections(document), [[null, ["Alpha", "Beta", "Delta", "Gamma"]]]);
+  // Alt+Down on a grip still moves papers (header rows are skipped) and ends the grouping.
+  clickSort(W, document, "subcollection");
+  const grip = document.byId.get("tabellify-items-table").querySelector('tbody .tabellify-grip[data-paper-id="201"]');
+  assert.equal(altKey(W, grip, "ArrowDown"), true);
+  assert.equal(W.sortKey, "manual");
+  assert.deepEqual(placeSections(document), [[null, ["Gamma", "Beta", "Alpha", "Delta"]]]);
+});
+
+test("F011 AC12: group row counts come from Fluent with a number only (numericArgs)", async () => {
+  const env = await placeSetup({ include: [ASTH, COPD], exclude: [] });
+  const calls = [];
+  env.document.l10n = { formatValue: async (id, args) => { calls.push([id, JSON.parse(JSON.stringify(args))]); return `${args.count} papers`; } };
+  clickSort(env.W, env.document, "subcollection");
+  await new Promise((r) => setTimeout(r, 0));
+  // Asthma and COPD: both papers sit first in Asthma, so one group of 2.
+  assert.deepEqual(calls, [["tabellify-place-group-papers", { count: 2 }]]);
+  assert.deepEqual(placeSections(env.document), [["Asthma2 papers", ["Alpha", "Beta"]]]);
+  // A non-number never reaches Fluent.
+  assert.deepEqual(JSON.parse(JSON.stringify(env.W.numericArgs({ count: "<b>x</b>", n: 2, bad: NaN }))), { n: 2 });
+});
+
+test("F011: a selection of several collections: sel: key, scope read, column, manual order per selection", async () => {
+  const { W, document, reads, debug } = await placeSetup({ include: [COPD, ASTH], exclude: [] });
+  assert.equal(W.currentCollection, "selection");
+  assert.deepEqual(reads, [{ include: [COPD, ASTH], exclude: [] }]);
+  assert.equal(W.currentSelectionKey(), `sel:${ASTH},${COPD}`);
+  assert.deepEqual(rowTitles(document).sort(), ["Alpha", "Beta"], "a paper in two collections is one row");
+  assert.deepEqual(placeCell(document, "Beta").children.map((s) => s.textContent), ["Asthma", "COPD"]);
+  // Alt+Up on Beta: the manual order is kept under the selection's key.
+  const before = W.displayedPaperIds.slice();
+  const grip = document.byId.get("tabellify-items-table").querySelector(`tbody .tabellify-grip[data-paper-id="${before[1]}"]`);
+  altKey(W, grip, "ArrowUp");
+  assert.deepEqual([...W.manualOrders.keys()], [`sel:${ASTH},${COPD}`]);
+  assert.equal(W.manualOrders.has(ASTH), false);
+  // A single collection chosen afterwards replaces the selection; its order is separate.
+  W.onCollectionChange({ target: { value: "2" } });
+  assert.equal(W.multiSelection, null);
+  assert.equal(W.currentSelectionKey(), ASTH);
+  assert.equal(W.currentManualOrder(), null);
+  // Choosing the selection again starts in its manual order.
+  await W.applySelection({ include: [ASTH, COPD], exclude: [] });
+  assert.equal(W.sortKey, "manual");
+  // Debug Output: counts and IDs only, never a collection name or a key.
+  for (const line of debug) {
+    for (const secret of ["Asthma", "COPD", "Phenotypes", "ASTH0002", "COPD0003", "sel:"]) assert.ok(!line.includes(secret), `"${secret}" in: ${line}`);
+  }
+  assert.ok(debug.some((l) => /recomputed for a selection \(collection chosen\): .* selection: 2 rule\(s\)/.test(l)), debug.join("\n"));
+});
+
+test("F011: applySelection refuses an invalid selection; a one-collection selection is a dropdown choice", async () => {
+  const { W } = await placeSetup({ include: [PHEN], exclude: [ASTH] });
+  assert.equal(W.currentCollection, "selection", "an exclude makes it a selection");
+  assert.equal(W.currentSelectionKey(), `sel:${PHEN}|${ASTH}`);
+  assert.equal(W.applySelection({ include: [], exclude: [] }), null);
+  assert.equal(W.applySelection({ include: [ASTH, "2/OTHER001"], exclude: [] }), null);
+  assert.equal(W.currentSelectionKey(), `sel:${PHEN}|${ASTH}`, "unchanged");
+  await W.applySelection({ include: [COPD], exclude: [] });
+  assert.equal(W.currentCollection, "3");
+  assert.equal(W.multiSelection, null);
+});
+
+test("F011 AC14/AC15 (as data): Export CSV of the page carries the Subcollection column", async () => {
+  const env = await placeSetup({ include: [ASTH, COPD], exclude: [] }, () => setupExport(fakeExportIo()));
+  await env.W.onExportClick();
+  const [{ text }] = env.io ? env.io.writes : env.W.exportIo.writes;
+  const lines = csvLines(text);
+  assert.equal(lines[1].split(",").slice(0, 2).join(","), "Title,Subcollection");
+  assert.equal(lines[0].split(",")[1], "", "blank cell above it");
+  assert.ok(lines.some((l) => l.startsWith("Beta,Asthma; COPD,")), lines.join("\n"));
+  // The suggested file name is the selection's names.
+  assert.match(env.W.exportIo.picks[0].defaultName, /^Asthma, COPD \d{4}-\d{2}-\d{2}\.csv$/);
+});
+
+test("F011 AC20/AC21 (as data): Save table stores the selection and the column; list and filter use the selection", async () => {
+  const env = await placeSetup({ include: [ASTH, COPD], exclude: [] }, () => savedSetup({ entries: TWO_TABLES() }));
+  const { W, d, fs } = env;
+  clickSort(W, env.document, "subcollection");
+  W.onViewTableClick();
+  // The modal copy shows the column and the group rows (one <tbody> per group).
+  assert.ok(d("tabellify-view-head").children[0].children.some((th) => th.textContent === "Subcollection"));
+  assert.equal(d("tabellify-view-body").children[0].classList.contains("tabellify-place-row"), true);
+  assert.equal(d("tabellify-view-name").value, "Asthma, COPD");
+  d("tabellify-view-name").value = "Two diseases";
+  await W.onViewClick(click(d("tabellify-view-save")));
+  const file = JSON.parse(fs.files.get(SAVED_FILE));
+  const t = file.tables.find((x) => x.name === "Two diseases");
+  assert.equal(file.schemaVersion, 2);
+  assert.deepEqual(t.definition.selection, { include: [ASTH, COPD], exclude: [] });
+  assert.equal(t.definition.sort.key, "subcollection");
+  assert.equal(t.snapshot.collectionName, "Asthma, COPD");
+  assert.equal(t.snapshot.subcollectionColumn, true);
+  assert.deepEqual(t.snapshot.rows.map((r) => [r.title, r.subcollections]), [["Alpha", ["Asthma"]], ["Beta", ["Asthma", "COPD"]]]);
+  // The list entry names the library and the live names.
+  W.closeView();
+  const entry = listItems(d).find((li) => li.querySelector(".tabellify-saved-name").textContent === "Two diseases");
+  assert.deepEqual(entry.querySelector(".tabellify-saved-meta").children.slice(0, 2).map((c) => c.textContent), ["My Library", "Asthma, COPD"]);
+  // "Current selection": only the table of this selection.
+  W.onSavedFilterChange({ target: { value: "collection" } });
+  assert.deepEqual(listItems(d).map((li) => li.querySelector(".tabellify-saved-name").textContent), ["Two diseases"]);
+  // A single-collection table matches when that collection is chosen alone (1/COLL0001 = t1, t2 gone).
+  W.collectionKeys.set(1, "1/COLL0001");
+  W.onCollectionChange({ target: { value: "1" } });
+  W.renderSavedList();
+  assert.deepEqual(listItems(d).map((li) => li.dataset.tableId), ["t1"]);
+});
+
+test("F011 AC22 (as data): Show live with a partly gone saved selection adds the gone note", async () => {
+  const env = await placeSetup({ include: [ASTH, COPD], exclude: [] }, () => savedSetup({ entries: TWO_TABLES() }));
+  const { W, d, sandbox } = env;
+  // A saved table of Asthma, COPD and a collection that is gone (trash emptied).
+  const S = sandbox.TabellifySavedTables;
+  const definition = S.buildDefinition({ selection: { include: [ASTH, COPD, "1/GONE0007"], exclude: [] }, codebookId: "c1", columnLayout: null,
+    sort: { key: "count", direction: "asc" }, manualOrder: null, countItemTags: false });
+  const snapshot = { takenAt: T2_TIME, collectionName: "Asthma, COPD, Gone", subcollectionColumn: false, blocks: [], rows: [] };
+  W.savedTables = S.addTable(W.savedTables, { name: "Three", description: "", definition, snapshot }, T2_TIME).data;
+  W.renderSavedList();
+  W.openSaved("t3");
+  assert.equal(W.liveBlocker(), null, "two of three are listed: Show live is possible");
+  await W.showLive();
+  assert.deepEqual(env.reads.at(-1), { include: [ASTH, COPD, "1/GONE0007"], exclude: [] });
+  assert.equal(W.viewLive.gone, 1);
+  assert.equal(W.viewLive.view.subcollectionColumn, true);
+  const gone = d("tabellify-view-live-note").querySelector(".tabellify-view-live-gone");
+  assert.equal(gone.textContent, "1");
+  assert.equal(d("tabellify-view-live-note").hidden, false);
+  W.closeView();
+  // All gone: Show live is off with the existing reason.
+  const allGone = S.buildDefinition({ selection: { include: ["1/GONE0007", "1/GONE0008"], exclude: [] }, codebookId: "c1", columnLayout: null,
+    sort: { key: "count", direction: "asc" }, manualOrder: null, countItemTags: false });
+  W.savedTables = S.addTable(W.savedTables, { name: "Gone", description: "", definition: allGone, snapshot }, T2_TIME).data;
+  W.openSaved("t4");
+  assert.equal(W.liveBlocker(), "tabellify-view-live-no-collection");
+  W.closeView();
+});
+
+test("F011 AC25 (as data): a selection whose collections are all gone clears the table; partly gone keeps it", async () => {
+  const { W, Zotero } = await placeSetup({ include: [ASTH, COPD], exclude: [] });
+  Zotero.Libraries = { userLibraryID: 1 }; // the suggestions fall back to My Library
+  W.showCollection = (value, reason) => { W.currentCollection = value; W.lastShow = [value, reason]; };
+  // COPD gone from the index: the selection stays.
+  W.collectionNames.delete(COPD);
+  W.renderCollectionSelect();
+  assert.equal(W.currentCollection, "selection");
+  assert.equal(W.collectionGone, false);
+  // Asthma gone too: cleared with the existing "collection gone" path.
+  W.collectionNames.delete(ASTH);
+  W.renderCollectionSelect();
+  assert.deepEqual(W.lastShow, ["", "collection gone"]);
+  assert.equal(W.collectionGone, true);
+});
+
+// ---------------------------------------------------------------------------------------
+// Feature 011 (T7): "Choose several…", the picker dialog, the dropdown entry and the line
+// under the collection row
+// ---------------------------------------------------------------------------------------
+
+/** placeSetup() plus the picker's buttons as real <button>s and its strings. */
+async function pickerSetup(selection = { include: [PHEN], exclude: [] }) {
+  const env = await placeSetup(selection);
+  const d = (id) => env.document.getElementById(id);
+  for (const [id, action] of [["tabellify-picker-select-all", "select-all"], ["tabellify-picker-clear", "clear"],
+    ["tabellify-picker-apply", "apply"], ["tabellify-picker-cancel", "cancel"]]) {
+    d(id).localName = "button";
+    d(id).dataset.action = action;
+    d(id).disabled = false;
+  }
+  d("tabellify-picker-library").id = "tabellify-picker-library";
+  d("tabellify-picker-library-row").hidden = true;
+  d("tabellify-picker-dialog").addEventListener("close", env.W.onPickerClose);
+  Object.assign(env.W.strings, {
+    "tabellify-picker-none": "Tick at least one collection.",
+    "tabellify-picker-too-many": "Too many separate choices.",
+  });
+  const boxes = () => env.W.pickerBoxes();
+  const box = (name) => boxes().find((b) => b.parentNode.querySelector("label").textContent === name);
+  // [...] copies into a Node array (arrays made in the sandbox are another realm's).
+  const ticked = () => [...boxes().filter((b) => b.checked).map((b) => b.parentNode.querySelector("label").textContent)];
+  const mixed = () => [...boxes().filter((b) => b.indeterminate).map((b) => b.parentNode.querySelector("label").textContent)];
+  const tick = (name) => env.W.onPickerChange({ target: box(name) });
+  const press = (id) => env.W.onPickerClick({ target: d(id) });
+  return { ...env, d, boxes, box, ticked, mixed, tick, press };
+}
+
+test("F011 AC7 (as data): the picker shows the library's tree as nested checkboxes, the current selection ticked", async () => {
+  const { W, d, boxes, ticked, mixed, debug } = await pickerSetup();
+  W.onChooseSeveralClick();
+  assert.equal(d("tabellify-picker-dialog").open, true);
+  // Nesting: top level Phenotypes and Methods; Bronchitis inside Respiratory inside Phenotypes.
+  const top = d("tabellify-picker-tree").children;
+  assert.deepEqual(top.map((li) => li.querySelector("label").textContent), ["Phenotypes", "Methods"]);
+  const phenKids = top[0].querySelector("ul.tabellify-picker-children").children.map((li) => li.children[1].textContent);
+  assert.deepEqual(phenKids, ["Asthma", "COPD", "Respiratory"]);
+  // Each box: a checkbox with a numeric ID, its label points at it.
+  for (const b of boxes()) {
+    assert.equal(b.getAttribute("type"), "checkbox");
+    assert.match(b.id, /^tabellify-pick-\d+$/);
+    assert.equal(b.parentNode.querySelector("label").getAttribute("for"), b.id);
+  }
+  // Phenotypes was chosen: it and all its subcollections are ticked; Methods is not.
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis"]);
+  assert.deepEqual(mixed(), []);
+  assert.equal(d("tabellify-picker-library-row").hidden, true, "one library: no Library dropdown");
+  assert.equal(boxes()[0].focused, true, "focus on the first ticked box");
+  assert.equal(d("tabellify-picker-status").textContent, "5", "count (Fluent fills the words)");
+  assert.equal(d("tabellify-picker-apply").disabled, false);
+  assert.ok(debug.includes("Tabellify: workspace: picker: opened with 6 collection(s), 5 ticked"), debug.join("\n"));
+});
+
+test("F011 AC8 (as data): ticking a parent ticks its subcollections; unticking one makes it mixed; a mixed click ticks all", async () => {
+  const { W, d, ticked, mixed, tick, press, document } = await pickerSetup({ include: [METH], exclude: [] });
+  W.onChooseSeveralClick();
+  assert.deepEqual(ticked(), ["Methods"]);
+  tick("Methods"); // untick
+  tick("Phenotypes");
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis"]);
+  tick("COPD");
+  assert.deepEqual(mixed(), ["Phenotypes"]);
+  assert.equal(document.getElementById("tabellify-picker-status").textContent, "4");
+  tick("Phenotypes"); // the mixed parent: everything again
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis"]);
+  assert.deepEqual(mixed(), []);
+  tick("COPD");
+  // Show table: canonical rules, the dropdown entry and the line under the row.
+  await press("tabellify-picker-apply");
+  assert.equal(d("tabellify-picker-dialog").open, false);
+  assert.equal(W.currentCollection, "selection");
+  assert.deepEqual(JSON.parse(JSON.stringify(W.multiSelection)), { include: [PHEN], exclude: [COPD] });
+  const select = d("tabellify-collection-select");
+  const entry = select.children.find((o) => o.value === "selection");
+  assert.equal(entry.textContent, "4", "N = collections in scope");
+  assert.equal(select.value, "selection");
+  assert.equal(d("tabellify-selection-summary").hidden, false);
+  assert.equal(d("tabellify-selection-names").textContent, "Phenotypes");
+  assert.equal(d("tabellify-selection-more").hidden, true);
+  assert.equal(d("tabellify-selection-gone").hidden, true);
+  assert.deepEqual(rowTitles(document).sort(), ["Alpha", "Beta", "Delta", "Gamma"], "Beta stays through Asthma");
+  // Focus goes back to "Choose several…".
+  assert.equal(d("tabellify-choose-several").focused, true);
+});
+
+test("F011 AC8 (as data): three children without their parent; the line lists their names", async () => {
+  const { W, d, tick, press } = await pickerSetup({ include: [METH], exclude: [] });
+  W.onChooseSeveralClick();
+  tick("Methods");
+  tick("Asthma");
+  tick("COPD");
+  tick("Bronchitis");
+  await press("tabellify-picker-apply");
+  assert.deepEqual(JSON.parse(JSON.stringify(W.multiSelection)), { include: [ASTH, BRON, COPD].sort(), exclude: [] });
+  assert.equal(d("tabellify-selection-names").textContent, "Asthma, COPD, Bronchitis", "tree order");
+  // More than five names: "+N more".
+  W.multiSelection = { include: [PHEN, ASTH, COPD, RESP, BRON, METH].sort(), exclude: [] };
+  W.renderSelectionSummary();
+  assert.equal(d("tabellify-selection-names").textContent, "Phenotypes, Asthma, COPD, Respiratory, Bronchitis");
+  assert.equal(d("tabellify-selection-more").hidden, false);
+  assert.equal(d("tabellify-selection-more").textContent, "1");
+  // One included collection gone: the line says so.
+  W.collectionNames.delete(METH);
+  W.renderSelectionSummary();
+  assert.equal(d("tabellify-selection-gone").hidden, false);
+  assert.equal(d("tabellify-selection-gone").textContent, "1");
+});
+
+test("F011 AC10 (as data): nothing ticked → Show table off with the help line; Select all and Clear; Cancel changes nothing", async () => {
+  const { W, d, ticked, press } = await pickerSetup();
+  W.onChooseSeveralClick();
+  press("tabellify-picker-clear");
+  assert.deepEqual(ticked(), []);
+  assert.equal(d("tabellify-picker-apply").disabled, true);
+  assert.equal(d("tabellify-picker-status").textContent, "Tick at least one collection.");
+  assert.equal(press("tabellify-picker-apply"), null, "a disabled Show table does nothing");
+  press("tabellify-picker-select-all");
+  assert.deepEqual(ticked(), ["Phenotypes", "Asthma", "COPD", "Respiratory", "Bronchitis", "Methods"]);
+  press("tabellify-picker-cancel");
+  assert.equal(d("tabellify-picker-dialog").open, false);
+  assert.equal(W.currentCollection, "1", "Cancel keeps the shown collection");
+  assert.equal(d("tabellify-choose-several").focused, true);
+  // A single collection ticked with all its subcollections is a dropdown choice.
+  W.onChooseSeveralClick();
+  press("tabellify-picker-clear");
+  W.onPickerChange({ target: W.pickerBoxes().find((b) => b.dataset.collectionId === "4") }); // Respiratory (and Bronchitis)
+  await press("tabellify-picker-apply");
+  assert.equal(W.currentCollection, "4");
+  assert.equal(d("tabellify-selection-summary").hidden, true);
+  assert.equal(d("tabellify-collection-select").children.some((o) => o.value === "selection"), false);
+});
+
+test("F011 AC9 (as data): Tab wraps inside the picker, Esc closes it like Cancel, keys while composing are ignored", async () => {
+  const { W, d, boxes } = await pickerSetup();
+  W.onChooseSeveralClick();
+  const order = W.pickerFocusOrder();
+  assert.deepEqual([...order.slice(-4).map((el) => el.dataset.action)], ["select-all", "clear", "apply", "cancel"]);
+  assert.equal(order[0], boxes()[0], "no Library dropdown with one library: the first box starts");
+  order.at(-1).focus();
+  const tab = key("Tab");
+  W.onPickerKeydown(tab);
+  assert.equal(tab.prevented, true);
+  assert.equal(boxes()[0].focused, true);
+  boxes()[0].focus();
+  const back = key("Tab", { shiftKey: true });
+  W.onPickerKeydown(back);
+  assert.equal(back.prevented, true);
+  assert.equal(order.at(-1).focused, true);
+  const composing = key("Escape", { isComposing: true });
+  W.onPickerKeydown(composing);
+  assert.equal(d("tabellify-picker-dialog").open, true);
+  const esc = key("Escape");
+  W.onPickerKeydown(esc);
+  assert.equal(esc.prevented, true);
+  assert.equal(d("tabellify-picker-dialog").open, false);
+  assert.equal(W.currentCollection, "1");
+});
+
+test("F011 AC7 (as data): with a group library the Library dropdown shows; switching starts empty", async () => {
+  const { W, d, ticked, sandbox } = await pickerSetup();
+  W.libraryTrees.set(5, [{ id: 50, parentID: false, name: "Shared <b>papers</b>", key: "5/GRP00001" }]);
+  W.libraryGroups = [
+    { libraryID: 1, label: "My Library", options: [], empty: false },
+    { libraryID: 5, label: "Lab <b>Group</b>", options: [], empty: false },
+    { libraryID: 7, label: "Empty Group", options: [], empty: true },
+  ];
+  W.onChooseSeveralClick();
+  assert.equal(d("tabellify-picker-library-row").hidden, false);
+  const options = d("tabellify-picker-library").children;
+  assert.deepEqual(options.map((o) => [o.value, o.textContent]), [["1", "My Library"], ["5", "Lab <b>Group</b>"]], "names as text; empty library left out");
+  assert.equal(W.pickerFocusOrder()[0], d("tabellify-picker-library"));
+  d("tabellify-picker-library").value = "5";
+  W.onPickerChange({ target: d("tabellify-picker-library") });
+  assert.deepEqual(ticked(), [], "the other library starts with nothing ticked");
+  assert.deepEqual([...W.pickerBoxes().map((b) => b.parentNode.querySelector("label").textContent)], ["Shared <b>papers</b>"]);
+  assert.equal(sandbox.TabellifySelection.libraryOfSelection({ include: ["5/GRP00001"] }), 5);
+});
+
+test("F011: choosing the \"N collections\" entry again changes nothing; another entry replaces the selection", async () => {
+  const { W, d } = await pickerSetup({ include: [ASTH, COPD], exclude: [] });
+  assert.equal(W.currentCollection, "selection");
+  W.onCollectionChange({ target: { value: "selection" } });
+  assert.equal(W.currentCollection, "selection");
+  W.onCollectionChange({ target: { value: "9" } });
+  assert.equal(W.currentCollection, "9");
+  assert.equal(W.multiSelection, null);
+  assert.equal(d("tabellify-selection-summary").hidden, true);
 });

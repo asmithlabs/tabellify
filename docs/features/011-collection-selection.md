@@ -4,8 +4,8 @@
   (Q1–Q15) are needed before development.
 - **Branch:** `feat/011-collection-selection` (from `main`). This spec was drafted on
   `docs/011-collection-selection`.
-- **Related ADRs:** **0021 (Proposed: collection selections, `tables.json` schema 2, `"sel:"`
-  manual-order keys; must be accepted before development)**; 0018 (Accepted: saved tables);
+- **Related ADRs:** **0027 (Accepted: collection selections, `tables.json` schema 2, `"sel:"`
+  manual-order keys)**; 0018 (Accepted: saved tables);
   0012 (Accepted: storage rules); 0014 / 0019 (Accepted: `layout.json`, manual orders); 0016
   (codebook, unchanged); 0017 (CSV export path, unchanged); 0011 (security review).
 - **Specs it builds on:** 003b (grouped dropdown, all-library index, pruning per listed

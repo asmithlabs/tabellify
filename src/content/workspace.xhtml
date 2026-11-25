@@ -65,6 +65,7 @@
   <script src="chrome://tabellify/content/tag-script-model.js"/>
   <script src="chrome://tabellify/content/script-suggest-model.js"/>
   <script src="chrome://tabellify/content/tag-monitor-model.js"/>
+  <script src="chrome://tabellify/content/selection-model.js"/>
   <script src="chrome://tabellify/content/table-layout-model.js"/>
   <script src="chrome://tabellify/content/regroup-model.js"/>
   <script src="chrome://tabellify/content/layout-store.js"/>
@@ -92,6 +93,11 @@
       <html:select id="tabellify-collection-select" disabled="disabled">
         <html:option value="" data-l10n-id="tabellify-collection-placeholder"></html:option>
       </html:select>
+      <!-- Feature 011: opens the collection picker below (tick several collections of one
+           library). Starts disabled like the dropdown; aria-haspopup="dialog" tells screen
+           readers that it opens a dialog. -->
+      <html:button id="tabellify-choose-several" disabled="disabled" aria-haspopup="dialog"
+                   data-l10n-id="tabellify-collection-choose-several"></html:button>
       <html:button id="tabellify-monitor-refresh"
                    data-l10n-id="tabellify-monitor-refresh"></html:button>
       <html:label id="tabellify-monitor-count-item-tags-label">
@@ -104,6 +110,16 @@
         <html:span id="tabellify-monitor-all-used" hidden="hidden"></html:span>
       </html:p>
     </html:div>
+    <!-- Feature 011: the muted line under the collection row while a selection of several
+         collections is shown: "Showing:" and the included collections' names (first 5,
+         then "+N more"), and how many chosen collections are no longer available. The
+         names are set by workspace.js as plain text. -->
+    <html:p id="tabellify-selection-summary" hidden="hidden">
+      <html:span data-l10n-id="tabellify-selection-showing"></html:span>
+      <html:span id="tabellify-selection-names"></html:span>
+      <html:span id="tabellify-selection-more" hidden="hidden"></html:span>
+      <html:span id="tabellify-selection-gone" hidden="hidden"></html:span>
+    </html:p>
     <html:p id="tabellify-monitor-message"></html:p>
     <html:p id="tabellify-monitor-warning" hidden="hidden"></html:p>
 
@@ -248,7 +264,12 @@
          Feature 006a (ADR-0016): tags without a group form one block whose group header
          is blank (it still spans its tags and has a grip). When no real group has
          columns, the header is a single row: the tag headers go into the first row and
-         the second row is hidden. -->
+         the second row is hidden.
+
+         Feature 011: the Subcollection header after Title is shown only when the table
+         covers more than one collection (workspace.js). Sorted by it, each group of papers
+         gets its own tbody with a header row first; the first group uses the tbody below,
+         workspace.js adds the others after it. -->
     <html:table id="tabellify-items-table" class="tabellify-grid" hidden="hidden">
       <html:colgroup id="tabellify-items-cols"></html:colgroup>
       <html:thead>
@@ -258,6 +279,11 @@
           <html:th scope="col" rowspan="2" class="tabellify-col-title tabellify-fixed-header">
             <html:button class="tabellify-sort" data-sort="title"
                          data-l10n-id="tabellify-column-title"></html:button>
+          </html:th>
+          <html:th id="tabellify-items-place-header" scope="col" rowspan="2" hidden="hidden"
+                   class="tabellify-col-place tabellify-fixed-header">
+            <html:button class="tabellify-sort" data-sort="subcollection"
+                         data-l10n-id="tabellify-column-subcollection"></html:button>
           </html:th>
           <html:th id="tabellify-items-count-header" scope="col" rowspan="2"
                    class="tabellify-col-count tabellify-fixed-header">
@@ -341,6 +367,37 @@
           <html:span id="tabellify-view-export-status-text"></html:span>
           <html:code id="tabellify-view-export-status-path" hidden="hidden"></html:code>
         </html:p>
+      </html:div>
+    </html:dialog>
+
+    <!-- Feature 011: the collection picker ("Choose several…"), an HTML dialog opened with
+         showModal() like the View table modal above (workspace.js keeps Tab inside it; Esc
+         closes it like Cancel). The tree is a nested list built by workspace.js: each item
+         holds a native checkbox and its label (the collection name as plain text). A parent
+         that is partly ticked gets the checkbox's "mixed" look (indeterminate, set from
+         script). Nothing changes until "Show table"; the picker never changes the library
+         or Zotero's own collection selection. The Library row is shown only when the
+         profile has group libraries. -->
+    <html:dialog id="tabellify-picker-dialog" aria-labelledby="tabellify-picker-heading">
+      <html:h2 id="tabellify-picker-heading" data-l10n-id="tabellify-picker-heading"></html:h2>
+      <html:p id="tabellify-picker-library-row" hidden="hidden">
+        <html:label for="tabellify-picker-library" data-l10n-id="tabellify-picker-library-label"></html:label>
+        <html:select id="tabellify-picker-library"></html:select>
+      </html:p>
+      <html:p id="tabellify-picker-help" data-l10n-id="tabellify-picker-help"></html:p>
+      <html:div id="tabellify-picker-scroll" role="group" data-l10n-id="tabellify-picker-tree">
+        <html:ul id="tabellify-picker-tree"></html:ul>
+      </html:div>
+      <html:p id="tabellify-picker-status" role="status"></html:p>
+      <html:div id="tabellify-picker-actions">
+        <html:button id="tabellify-picker-select-all" data-action="select-all"
+                     data-l10n-id="tabellify-picker-select-all"></html:button>
+        <html:button id="tabellify-picker-clear" data-action="clear"
+                     data-l10n-id="tabellify-picker-clear"></html:button>
+        <html:button id="tabellify-picker-apply" data-action="apply"
+                     data-l10n-id="tabellify-picker-apply"></html:button>
+        <html:button id="tabellify-picker-cancel" data-action="cancel"
+                     data-l10n-id="tabellify-picker-cancel"></html:button>
       </html:div>
     </html:dialog>
   </html:main>

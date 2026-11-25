@@ -142,6 +142,51 @@ tabellify-column-count = k/M
     .title = Codebook tags used on the paper (k of M)
     .aria-label = Codebook tags used on the paper (k of M)
 
+## Feature 011: the Subcollection column (after Title, shown when the table covers more than
+## one collection) and its group header rows ("Asthma · 3 papers"; the collection name and
+## the "·" are added by workspace.js / workspace.css as plain text). The column header is
+## also the CSV header. Messages with `$count` get only a number (numericArgs).
+
+tabellify-column-subcollection = Subcollection
+# The collection row's "Choose several…" button, the dropdown's entry for a selection of
+# several collections, and the line under the row ("Showing: Asthma, COPD +2 more").
+tabellify-collection-choose-several = Choose several…
+tabellify-collection-several =
+    { $count ->
+        [one] 1 collection
+       *[other] { $count } collections
+    }
+tabellify-selection-showing = Showing:
+tabellify-selection-partly-gone =
+    { $count ->
+        [one] 1 chosen collection is no longer available.
+       *[other] { $count } chosen collections are no longer available.
+    }
+# The collection picker dialog ("Choose several…").
+tabellify-picker-heading = Choose collections
+tabellify-picker-library-label = Library
+tabellify-picker-help = Ticking a collection includes its subcollections. Untick a subcollection to leave it out.
+tabellify-picker-tree =
+    .aria-label = Collections
+tabellify-picker-count =
+    { $count ->
+        [one] 1 collection ticked
+       *[other] { $count } collections ticked
+    }
+tabellify-picker-none = Tick at least one collection.
+tabellify-picker-too-many = Too many separate choices. Tick whole parent collections instead.
+tabellify-picker-select-all = Select all
+tabellify-picker-clear = Clear
+tabellify-picker-apply = Show table
+tabellify-picker-cancel = Cancel
+tabellify-place-group-papers =
+    { $count ->
+        [one] 1 paper
+       *[other] { $count } papers
+    }
+# After a short list of collection names: "Asthma, COPD, Diabetes +2 more".
+tabellify-selection-more = +{ $count } more
+
 ## Workspace: per-paper table layout (Feature 005c; codebook tag columns since the
 ## owner's 2026-11-13 change).
 ## `tabellify-column-move` only sets the screen-reader name (`.aria-label`) of the grip
@@ -245,7 +290,8 @@ tabellify-view-count-label = Codebook tags used on the paper (k of M)
 tabellify-saved-heading = Saved tables
 tabellify-saved-filter-label = Show
 tabellify-saved-filter-all = All collections
-tabellify-saved-filter-collection = This collection
+# Feature 011 (spec Q13): the tables whose collection selection equals the one shown now.
+tabellify-saved-filter-collection = Current selection
 tabellify-saved-empty = No saved tables yet. Open "View table" and click "Save table".
 tabellify-saved-empty-collection = No saved tables for this collection.
 tabellify-saved-choose = Choose a collection to see its saved tables.
@@ -295,6 +341,12 @@ tabellify-view-live-missing = Saved columns that are no longer in the codebook:
 tabellify-view-live-no-collection = This table's collection is no longer available (it was deleted, is in the trash, or its group library was removed), so only the saved snapshot can be shown.
 tabellify-view-live-no-codebook = The codebook could not be loaded, so the live table cannot be built.
 tabellify-view-live-error = The live table could not be built. The saved snapshot is still shown.
+# Feature 011: some collections of a saved selection are gone; the live table uses the rest.
+tabellify-view-live-partly-gone =
+    { $count ->
+        [one] 1 saved collection is no longer available.
+       *[other] { $count } saved collections are no longer available.
+    }
 
 ## Item pane / reader section "Tabellify tags" (Feature 005b).
 ## Zotero sets data-l10n-id on the section header and on its side-nav icon, so those two
