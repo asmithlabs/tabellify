@@ -2304,7 +2304,7 @@ test("007a AC14: no Debug Output line holds the Name, Description, a title, tag,
 
 const SAVED_TEXTS = {
   "tabellify-saved-empty": "No saved tables yet.",
-  "tabellify-saved-empty-collection": "No saved tables for this collection.",
+  "tabellify-saved-empty-collection": "No saved tables for this selection.",
   "tabellify-saved-choose": "Choose a collection to see its saved tables.",
   "tabellify-saved-load-error": "The saved tables file could not be read. File:",
   "tabellify-saved-newer": "The saved tables file was made by a newer version of Tabellify. File:",
@@ -2474,7 +2474,7 @@ test("007b AC19: the filter and the three messages; the summary count follows th
   W.renderSavedList();
   assert.equal(listItems(d).length, 0);
   assert.equal(d("tabellify-saved-count").textContent, "0");
-  assert.equal(d("tabellify-saved-message-text").textContent, "No saved tables for this collection.");
+  assert.equal(d("tabellify-saved-message-text").textContent, "No saved tables for this selection.");
   // No collection chosen.
   W.currentCollection = "";
   W.renderSavedList();

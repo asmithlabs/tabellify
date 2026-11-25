@@ -295,7 +295,7 @@ tabellify-saved-filter-all = All collections
 # Feature 011 (spec Q13): the tables whose collection selection equals the one shown now.
 tabellify-saved-filter-collection = Current selection
 tabellify-saved-empty = No saved tables yet. Open "View table" and click "Save table".
-tabellify-saved-empty-collection = No saved tables for this collection.
+tabellify-saved-empty-collection = No saved tables for this selection.
 tabellify-saved-choose = Choose a collection to see its saved tables.
 tabellify-saved-load-error = The saved tables file could not be read. Saving is turned off so the file is not overwritten. File:
 tabellify-saved-newer = The saved tables file was made by a newer version of Tabellify. Saving is turned off. File:
