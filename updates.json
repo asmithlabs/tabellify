@@ -1,0 +1,30 @@
+{
+  "addons": {
+    "tabellify@asmithlabs.com": {
+      "updates": [
+        {
+          "version": "0.2.0",
+          "update_link": "https://github.com/asmithlabs/tabellify/releases/download/v0.2.0/tabellify-0.2.0.xpi",
+          "update_hash": "sha256:9212ab5bce24c16d53cc8fef2bb99e36cd42276f7fe300e29b88059418e06dc5",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "10.0",
+              "strict_max_version": "10.0.*"
+            }
+          }
+        },
+        {
+          "version": "0.2.1",
+          "update_link": "https://github.com/asmithlabs/tabellify/releases/download/v0.2.1/tabellify-0.2.1.xpi",
+          "update_hash": "sha256:4da99b3a93aff9fbd55a84f750f556da0ee48ff42007987edad62e29f3ea4bb9",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "10.0",
+              "strict_max_version": "10.0.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
