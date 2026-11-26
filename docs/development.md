@@ -68,6 +68,23 @@ git add -p && git commit                  # small, reviewed commits
 git push -u origin feat/001-plugin-shell  # you push; agents ask first
 ```
 
+## Builds by devorch (optional)
+devorch is a separate service on the owner's server that can build an approved feature spec
+without supervision: it writes the code on its own branch, runs `npm test` and `npm run build`,
+has other models review the change, and opens a pull request. It cannot merge.
+
+`.devorch.yml` in the repository root tells devorch how to work here: the test command, the
+files a builder must read first, and the paths a builder may not touch. Three limits matter
+for Tabellify:
+
+- devorch cannot run Zotero. Acceptance criteria tagged `[manual]` stay with the owner, in the
+  dev profile, as one checklist at the end.
+- devorch's builders cannot reach zotero.org. Rule 1 in `CLAUDE.md` still applies, so a
+  feature that needs a Zotero API not yet in `docs/zotero-api-notes.md` stops and asks. Verify
+  the API and record it before starting the run.
+- devorch pushes a `devorch/<run>` branch and opens the pull request when a run finishes. The
+  code the owner sends to start a run is the owner's approval for that push (rule 6).
+
 ## Publishing the docs
 
 The pages in `docs/wiki/` are published to https://wiki.asmithlabs.com/tabellify by

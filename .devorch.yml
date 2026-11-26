@@ -1,0 +1,26 @@
+# Settings for devorch, the build service that can implement an approved feature spec on a
+# branch and open a pull request (repository: asmithlabs/devorch, docs/PROJECT_TABELLIFY.md).
+# devorch never merges. A devorch builder can never change this file.
+#
+# Without this file devorch assumes a Ruby on Rails project and would run `bin/rails test`.
+
+language: javascript
+setup: ""                       # nothing to install: Tabellify has no dependencies
+test: "npm test && npm run build"
+lint: ""                        # devorch's linter is for Ruby; the static checks run inside npm test
+dependency_audit: ""            # nothing to audit: no dependencies
+
+# Files a builder reads before writing code.
+context_files:
+  - CLAUDE.md
+  - docs/architecture.md
+  - docs/zotero-api-notes.md
+
+# Paths a builder may not change. devorch always protects CLAUDE.md, .github/workflows/,
+# .git/ and this file; these are added for Tabellify.
+protected_paths:
+  - docs/decisions/             # accepted ADRs are binding; changing one is the owner's call
+  - LICENSE
+  - SECURITY.md
+  - updates.json                # what installed copies of the plugin trust for updates
+  - scripts/build-xpi.mjs       # what ends up inside the .xpi
